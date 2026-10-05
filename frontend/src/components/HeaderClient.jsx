@@ -1,0 +1,808 @@
+import React, { useState, useEffect } from "react";
+import {
+  FaShoppingCart,
+  FaUserCircle,
+  FaKey,
+  FaEyeSlash,
+  FaEye,
+  FaArrowLeft,
+  FaClipboardList,
+  FaUser,
+  FaCheck,
+  FaExclamationCircle,
+} from "react-icons/fa";
+import { FaRightFromBracket } from "react-icons/fa6";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import "../styles/Header.css";
+import "../styles/Modals.css";
+import "../styles/ConfirmModal.css";
+import logo from "../assets/Premiumed logo.png";
+import {
+  validatePassword,
+  getPasswordStrength,
+  getPasswordStrengthColor,
+  getPasswordStrengthLabel,
+  PASSWORD_REQUIREMENTS,
+} from "./passwordValidator.js";
+import NotificationBell from "./NotificationBell";
+import { toast } from "react-hot-toast";
+
+const BACKEND_URL =
+  import.meta.env.VITE_API_URL ||
+  (window.location.hostname === "localhost" ? "http://localhost:5000" : "");
+
+function ClientNavbar() {
+  const [activeMenu, setActiveMenu] = useState(null);
+  const navigate = useNavigate();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [showCheckEmailModal, setShowCheckEmailModal] = useState(false);
+
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const [showPasswords, setShowPasswords] = useState({
+    oldPassword: false,
+    newPassword: false,
+    confirmPassword: false,
+  });
+
+  const [passwordValidation, setPasswordValidation] = useState({
+    newPasswordErrors: [],
+    confirmPasswordErrors: [],
+    newPasswordStrength: "WEAK",
+    confirmPasswordStrength: "WEAK",
+  });
+
+  const [passwords, setPasswords] = useState({
+    oldPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+
+  const clientName = localStorage.getItem("username");
+  const clientEmail = localStorage.getItem("email");
+
+  const toggleVisibility = (field) => {
+    setShowPasswords((prev) => ({
+      ...prev,
+      [field]: !prev[field],
+    }));
+  };
+
+  useEffect(() => {
+    if (passwords.newPassword) {
+      const validation = validatePassword(passwords.newPassword);
+
+      setPasswordValidation((prev) => ({
+        ...prev,
+        newPasswordErrors: validation.errors,
+        newPasswordStrength: validation.strength,
+      }));
+    } else {
+      setPasswordValidation((prev) => ({
+        ...prev,
+        newPasswordErrors: [],
+        newPasswordStrength: "WEAK",
+      }));
+    }
+
+    if (passwords.confirmPassword && passwords.newPassword) {
+      const errors = [];
+
+      if (passwords.newPassword !== passwords.confirmPassword) {
+        errors.push("Passwords do not match");
+      }
+
+      setPasswordValidation((prev) => ({
+        ...prev,
+        confirmPasswordErrors: errors,
+      }));
+    } else if (passwords.confirmPassword) {
+      setPasswordValidation((prev) => ({
+        ...prev,
+        confirmPasswordErrors: ["Please enter the new password first"],
+      }));
+    } else {
+      setPasswordValidation((prev) => ({
+        ...prev,
+        confirmPasswordErrors: [],
+      }));
+    }
+  }, [passwords.newPassword, passwords.confirmPassword]);
+
+  const toggleMenu = (menu) => {
+    setActiveMenu(activeMenu === menu ? null : menu);
+  };
+
+  const handleLogout = () => {
+    localStorage.clear();
+    sessionStorage.removeItem("cartItems");
+    setActiveMenu(null);
+    navigate("/auth");
+  };
+
+  const handlePasswordChange = async () => {
+    const username = localStorage.getItem("username");
+
+    if (!username) {
+      toast.error("User not logged in. Please log in again.");
+      return;
+    }
+
+    if (
+      !passwords.oldPassword ||
+      !passwords.newPassword ||
+      !passwords.confirmPassword
+    ) {
+      toast.error("Please fill in all fields.");
+      return;
+    }
+
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      toast.error("New passwords do not match.");
+      return;
+    }
+
+    const validation = validatePassword(passwords.newPassword);
+
+    if (!validation.isValid) {
+      toast.error(
+        `Password validation failed:\n${validation.errors.join("\n")}`,
+      );
+      return;
+    }
+
+    const toastId = toast.loading("Changing password...");
+
+    try {
+      const response = await axios.post(
+        `${BACKEND_URL}/api/usersAccessControlPage/change-password`,
+        {
+          username: username,
+          oldPassword: passwords.oldPassword,
+          newPassword: passwords.newPassword,
+        },
+        {
+          timeout: 30000,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Username": localStorage.getItem("username") || "",
+            "X-User-Id": localStorage.getItem("userId") || "",
+            "X-Role": localStorage.getItem("role") || "Admin",
+          },
+        },
+      );
+
+      toast.success(response.data.message || "Password changed successfully!", {
+        id: toastId,
+      });
+
+      setShowPasswordModal(false);
+
+      setPasswords({
+        oldPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+
+      setPasswordValidation({
+        newPasswordErrors: [],
+        confirmPasswordErrors: [],
+        newPasswordStrength: "WEAK",
+        confirmPasswordStrength: "WEAK",
+      });
+    } catch (err) {
+      console.error("=== CHANGE PASSWORD ERROR ===");
+      console.error("Error object:", err);
+      console.error("Error response:", err.response);
+      console.error("Error response data:", err.response?.data);
+      console.error("Error response status:", err.response?.status);
+
+      if (err.code === "ECONNABORTED") {
+        toast.error("Request timed out. Please try again.", {
+          id: toastId,
+        });
+        return;
+      }
+
+      if (err.response?.data?.details) {
+        toast.error(
+          `Password validation failed:\n${err.response.data.details.join("\n")}`,
+          {
+            id: toastId,
+          },
+        );
+      } else if (err.response?.data?.error) {
+        toast.error(err.response.data.error, {
+          id: toastId,
+        });
+      } else if (err.message) {
+        toast.error(err.message, {
+          id: toastId,
+        });
+      } else {
+        toast.error("Failed to change password. Please try again.", {
+          id: toastId,
+        });
+      }
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (isLoading) return;
+
+    const email = resetEmail.trim().toLowerCase();
+
+    if (!email) {
+      setResetMessage("Please enter your email address.");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(email)) {
+      setResetMessage("Please enter a valid email address.");
+      return;
+    }
+
+    setIsLoading(true);
+    setResetMessage("");
+
+    try {
+      const verifyResponse = await axios.post(
+        `${BACKEND_URL}/api/usersAccessControlPage/verify-email`,
+        {
+          email,
+        },
+      );
+
+      if (!verifyResponse.data.exists) {
+        setResetMessage("No account found with this email address.");
+        setIsLoading(false);
+        return;
+      }
+
+      await axios.post(
+        `${BACKEND_URL}/api/usersAccessControlPage/forgot-password`,
+        {
+          email,
+        },
+      );
+
+      setIsLoading(false);
+      setShowForgotPasswordModal(false);
+      setResetEmail("");
+      setResetMessage("");
+      setShowCheckEmailModal(true);
+    } catch (err) {
+      console.error("Forgot Password Error:", err);
+
+      if (err.response?.status === 404) {
+        setResetMessage("No account found with this email address.");
+      } else if (err.response?.status === 429) {
+        setResetMessage(
+          "Too many attempts. Please try again after 15 minutes.",
+        );
+      } else if (err.response?.data?.error) {
+        setResetMessage(err.response.data.error);
+      } else {
+        setResetMessage("Failed to send reset email. Please try again later.");
+      }
+
+      setIsLoading(false);
+    }
+  };
+
+  const renderPasswordRequirements = (password) => {
+    const requirements = [
+      {
+        label: `At least ${PASSWORD_REQUIREMENTS.minLength} characters`,
+        valid: password.length >= PASSWORD_REQUIREMENTS.minLength,
+      },
+      {
+        label: `Less than ${PASSWORD_REQUIREMENTS.maxLength} characters`,
+        valid: password.length <= PASSWORD_REQUIREMENTS.maxLength,
+      },
+      {
+        label: "Contains uppercase letter",
+        valid: /[A-Z]/.test(password),
+      },
+      {
+        label: "Contains lowercase letter",
+        valid: /[a-z]/.test(password),
+      },
+      {
+        label: "Contains a number",
+        valid: /[0-9]/.test(password),
+      },
+      {
+        label: "Contains a special character",
+        valid: new RegExp(
+          `[${PASSWORD_REQUIREMENTS.specialChars.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&",
+          )}]`,
+        ).test(password),
+      },
+    ];
+
+    return (
+      <div className="password-requirements">
+        <div className="requirements-list">
+          {requirements.map((req, index) => (
+            <label
+              key={index}
+              className={`requirement-item ${
+                req.valid ? "requirement-met" : ""
+              }`}
+            >
+              <input type="checkbox" checked={req.valid} readOnly />
+              <span>{req.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <nav className="header">
+      <div className="left">
+        <div className="client-logo-container" onClick={() => navigate("/")}>
+          <img src={logo} alt="logo" className="client-logo-icon" />
+        </div>
+
+        <h1 className="client-brand-name" onClick={() => navigate("/")}>
+          Premiumed Enterprises
+        </h1>
+      </div>
+
+      <div className="right">
+        <NotificationBell
+          userName={clientName}
+          isOpen={activeMenu === "notif"}
+          onToggle={() => toggleMenu("notif")}
+          fetchUrl={`${BACKEND_URL}/api/orders/notifications/${encodeURIComponent(
+            clientName || "",
+          )}`}
+          markReadUrl={`${BACKEND_URL}/api/orders/notifications/read/${encodeURIComponent(
+            clientName || "",
+          )}`}
+          markAllReadUrl={`${BACKEND_URL}/api/orders/notifications/read/${encodeURIComponent(
+            clientName || "",
+          )}`}
+          emptyText="No new notifications"
+          title="Notifications"
+        />
+
+        <div
+          className="client-nav-icon-wrapper"
+          title="Your Cart"
+          onClick={() => {
+            setActiveMenu(null);
+            navigate("/cart");
+          }}
+        >
+          <FaShoppingCart className="client-nav-icon" />
+        </div>
+
+        <div
+          className="client-nav-icon-wrapper"
+          title="Order Transactions"
+          onClick={() => {
+            setActiveMenu(null);
+            navigate("/order-transaction");
+          }}
+        >
+          <FaClipboardList className="client-nav-icon" />
+        </div>
+
+        <div
+          className="client-nav-icon-wrapper"
+          title="Profile"
+          onClick={() => toggleMenu("profile")}
+        >
+          <FaUserCircle className="account-icon" />
+
+          {activeMenu === "profile" && (
+            <div className="account-dropdown">
+              <div
+                className="dropdown-item"
+                onClick={() => {
+                  setActiveMenu(null);
+                  navigate("/profile");
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                <FaUser /> Profile
+              </div>
+
+              <div
+                className="dropdown-item"
+                onClick={() => {
+                  setActiveMenu(null);
+                  setShowPasswordModal(true);
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                <FaKey /> Change Password
+              </div>
+
+              <div
+                className="dropdown-item logout"
+                onClick={() => {
+                  setActiveMenu(null);
+                  setShowLogoutModal(true);
+                }}
+                style={{ cursor: "pointer", color: "red" }}
+              >
+                <FaRightFromBracket /> Log Out
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showPasswordModal && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Change Password</h3>
+            </div>
+
+            <div className="password-input-wrapper">
+              <input
+                type={showPasswords.oldPassword ? "text" : "password"}
+                className="password-input"
+                placeholder="Old Password"
+                value={passwords.oldPassword}
+                onChange={(e) =>
+                  setPasswords({
+                    ...passwords,
+                    oldPassword: e.target.value,
+                  })
+                }
+              />
+
+              {showPasswords.oldPassword ? (
+                <FaEyeSlash
+                  className="password-icon"
+                  onClick={() => toggleVisibility("oldPassword")}
+                />
+              ) : (
+                <FaEye
+                  className="password-icon"
+                  onClick={() => toggleVisibility("oldPassword")}
+                />
+              )}
+            </div>
+
+            <div className="password-input-wrapper">
+              <input
+                type={showPasswords.newPassword ? "text" : "password"}
+                className="password-input"
+                placeholder="New Password"
+                value={passwords.newPassword}
+                onChange={(e) =>
+                  setPasswords({
+                    ...passwords,
+                    newPassword: e.target.value,
+                  })
+                }
+              />
+
+              {showPasswords.newPassword ? (
+                <FaEyeSlash
+                  className="password-icon"
+                  onClick={() => toggleVisibility("newPassword")}
+                />
+              ) : (
+                <FaEye
+                  className="password-icon"
+                  onClick={() => toggleVisibility("newPassword")}
+                />
+              )}
+            </div>
+
+            {passwords.newPassword && (
+              <div className="password-strength-container">
+                <div className="strength-bar">
+                  <div
+                    className={`strength-fill ${passwordValidation.newPasswordStrength.toLowerCase()}`}
+                    style={{
+                      width: `${
+                        passwordValidation.newPasswordStrength === "WEAK"
+                          ? 25
+                          : passwordValidation.newPasswordStrength === "MEDIUM"
+                            ? 50
+                            : passwordValidation.newPasswordStrength ===
+                                "STRONG"
+                              ? 75
+                              : 100
+                      }%`,
+                      backgroundColor: getPasswordStrengthColor(
+                        passwordValidation.newPasswordStrength,
+                      ),
+                    }}
+                  ></div>
+                </div>
+
+                <div
+                  className="strength-label"
+                  style={{
+                    color: getPasswordStrengthColor(
+                      passwordValidation.newPasswordStrength,
+                    ),
+                  }}
+                >
+                  {getPasswordStrengthLabel(
+                    passwordValidation.newPasswordStrength,
+                  )}
+                </div>
+              </div>
+            )}
+
+            {passwords.newPassword &&
+              renderPasswordRequirements(passwords.newPassword)}
+
+            <div className="password-input-wrapper">
+              <input
+                type={showPasswords.confirmPassword ? "text" : "password"}
+                className="password-input"
+                placeholder="Confirm New Password"
+                value={passwords.confirmPassword}
+                onChange={(e) =>
+                  setPasswords({
+                    ...passwords,
+                    confirmPassword: e.target.value,
+                  })
+                }
+              />
+
+              {showPasswords.confirmPassword ? (
+                <FaEyeSlash
+                  className="password-icon"
+                  onClick={() => toggleVisibility("confirmPassword")}
+                />
+              ) : (
+                <FaEye
+                  className="password-icon"
+                  onClick={() => toggleVisibility("confirmPassword")}
+                />
+              )}
+            </div>
+
+            {passwordValidation.confirmPasswordErrors.length > 0 && (
+              <div className="validation-errors">
+                {passwordValidation.confirmPasswordErrors.map(
+                  (error, index) => (
+                    <div key={index} className="error-message">
+                      {error}
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+
+            <div className="forgot-password-link">
+              <button
+                className="link-btn"
+                type="button"
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setShowForgotPasswordModal(true);
+                  setResetMessage("");
+
+                  if (clientEmail) {
+                    setResetEmail(clientEmail);
+                  } else {
+                    setResetEmail("");
+                  }
+                }}
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="btn-cancel"
+                onClick={() => {
+                  setShowPasswordModal(false);
+
+                  setPasswords({
+                    oldPassword: "",
+                    newPassword: "",
+                    confirmPassword: "",
+                  });
+
+                  setPasswordValidation({
+                    newPasswordErrors: [],
+                    confirmPasswordErrors: [],
+                    newPasswordStrength: "WEAK",
+                    confirmPasswordStrength: "WEAK",
+                  });
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                className="btn-confirm"
+                onClick={handlePasswordChange}
+                disabled={
+                  !passwords.oldPassword ||
+                  !passwords.newPassword ||
+                  !passwords.confirmPassword ||
+                  passwordValidation.newPasswordErrors.length > 0 ||
+                  passwordValidation.confirmPasswordErrors.length > 0
+                }
+              >
+                Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showForgotPasswordModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            if (!isLoading) {
+              setShowForgotPasswordModal(false);
+              setResetEmail("");
+              setResetMessage("");
+            }
+          }}
+        >
+          <div
+            className="modal-card forgot-password-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <FaArrowLeft
+                className="back-icon"
+                onClick={() => {
+                  if (!isLoading) {
+                    setShowForgotPasswordModal(false);
+                    setShowPasswordModal(true);
+                    setResetMessage("");
+                    setResetEmail("");
+                  }
+                }}
+              />
+
+              <h3>Reset Password</h3>
+            </div>
+
+            <div className="forgot-password-content">
+              <p>
+                Enter your email address and we'll send you instructions to
+                reset your password.
+              </p>
+
+              <input
+                type="email"
+                className="email-input"
+                placeholder="Email Address"
+                value={resetEmail}
+                onChange={(e) => {
+                  setResetEmail(e.target.value);
+                  setResetMessage("");
+                }}
+                disabled={isLoading}
+                autoFocus
+              />
+
+              {resetMessage && (
+                <div
+                  className={`reset-message ${
+                    resetMessage.toLowerCase().includes("sent")
+                      ? "success"
+                      : "error"
+                  }`}
+                >
+                  {resetMessage}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={() => {
+                  if (!isLoading) {
+                    setShowForgotPasswordModal(false);
+                    setResetEmail("");
+                    setResetMessage("");
+                  }
+                }}
+                disabled={isLoading}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="btn-confirm"
+                onClick={handleForgotPassword}
+                disabled={isLoading || !resetEmail.trim()}
+              >
+                {" "}
+                {isLoading ? "Sending..." : "Send Reset Link"}{" "}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCheckEmailModal && (
+        <div className="modal-overlay">
+          <div className="modal-card check-email-card">
+            <div className="check-email-icon">
+              <FaCheck />
+            </div>
+
+            <h3>Check Your Email</h3>
+
+            <p>
+              If an account exists with this email, we've sent a new temporary
+              password to use.
+            </p>
+
+            <button
+              type="button"
+              className="finish-btn"
+              onClick={() => {
+                setShowCheckEmailModal(false);
+              }}
+            >
+              Finish
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showLogoutModal && (
+        <div className="confirm-modal-overlay">
+          <div className="confirm-modal-card">
+            <div className="confirm-modal-icon">
+              <FaExclamationCircle />
+            </div>
+
+            <h3 className="confirm-modal-title">Confirm Logout</h3>
+
+            <p className="confirm-modal-message">
+              Are you sure you want to end your session?
+            </p>
+
+            <div className="confirm-modal-footer">
+              <button
+                className="confirm-modal-btn confirm-modal-btn-cancel"
+                onClick={() => setShowLogoutModal(false)}
+              >
+                Stay
+              </button>
+
+              <button
+                className="confirm-modal-btn confirm-modal-btn-confirm"
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </nav>
+  );
+}
+
+export default ClientNavbar;

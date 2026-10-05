@@ -1,0 +1,92 @@
+.status-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 6px 12px;
+  border-radius: 999px;
+
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+
+  min-width: 90px;
+}
+
+/* Status Colors */
+/* WARNING / WAITING / ATTENTION */
+.status-pending,
+.status-near,
+.status-low {
+  background: #fff3cd;
+  color: #856404;
+}
+
+/* ACTIVE / IN PROGRESS */
+.status-confirmed,
+.status-to-ship,
+.status-partial {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+/* SUCCESS / COMPLETED / GOOD */
+.status-approved,
+.status-delivered,
+.status-stored,
+.status-safe,
+.status-available,
+.status-active {
+  background: #d4edda;
+  color: #155724;
+}
+
+/* ERROR / FAILED / EXPIRED */
+.status-cancelled,
+.status-expired,
+.status-disposed {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.status-for-disposal {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+/* NEUTRAL / DISABLED */
+.status-inactive,
+.status-returned,
+.employee-role {
+  background: #e2e3e5;
+  color: #383d41;
+}
+
+.status-for.disposal {
+  background: #ddd6fe;
+  color: #8b5cf6;
+}
+
+/* for warehouse map status badges */
+.warehouse-container .badge {
+  font-size: 8px;
+  padding: 5px 10px;
+  border-radius: 20px;
+}
+
+/* Variants */
+.warehouse-container .badge.low,
+.status-low-stock {
+  background: #fde7b2;
+  color: #a77700;
+}
+
+.warehouse-container .badge.for-disposal {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+.warehouse-container .badge.expired {
+  background: #f8d7da;
+  color: #721c24;
+}

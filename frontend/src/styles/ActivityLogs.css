@@ -1,0 +1,121 @@
+/* search wrapper */
+.users-header {
+  gap: 10px;
+}
+
+.table-logs td:nth-child(4) {
+  width: 300px;
+  text-align: left;
+}
+
+/* for filters */
+.activity-filters {
+  display: flex;
+  justify-content: right;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.activity-filters select {
+  width: fit-content;
+  padding: 8px 30px 8px 10px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background-color: var(--white);
+  box-shadow:
+    rgba(0, 0, 0, 0.12) 0px 1px 3px,
+    rgba(0, 0, 0, 0.24) 0px 1px 2px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20d%3D%22M6%209L1.5%204.5L2.91%203.09L6%206.17L9.09%203.09L10.5%204.5L6%209Z%22%20fill%3D%22black%22/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+
+  /* text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap; */
+}
+
+.print-logs-btn {
+  background-color: var(--gold);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+
+  .print-logs-icon {
+    font-size: 24px;
+  }
+}
+
+/* Include Archived Logs */
+.include-archived-group {
+  grid-column: 1 / -1;
+}
+
+.include-archived-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  width: fit-content;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dark);
+  user-select: none;
+}
+
+.include-archived-label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #c9c9c9;
+  border-radius: 4px;
+  background-color: var(--white);
+  cursor: pointer;
+  position: relative;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+}
+
+.include-archived-label input[type="checkbox"]:hover {
+  border-color: var(--gold);
+}
+
+.include-archived-label input[type="checkbox"]:checked {
+  background-color: var(--gold);
+  border-color: var(--gold);
+}
+
+.include-archived-label input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 9px;
+  left: 5px;
+  top: 2px;
+  border: solid var(--white);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.include-archived-label input[type="checkbox"]:active {
+  transform: scale(0.92);
+}
+
+.include-archived-label span {
+  line-height: 18px;
+}

@@ -1,0 +1,15 @@
+export const CATEGORIES = [
+  "Cardiovascular & Emergency Medications",
+  "IV & Injectable Medications",
+  "Intravenous Fluids & Solutions",
+  "Dialysis / Blood Administration Supplies",
+  "Respiratory Supplies & Equipment",
+  "Minor Surgical & Clinical Instruments",
+  "Medical Equipment & Furniture",
+  "Personal Protective Equipment (PPE)",
+  "Injection & Sharps Supplies",
+  "Antiseptics & Disinfectants & Sterilization",
+  "Surgical & Clinical Instruments",
+  "Medical Kits",
+  "Kit Inclusions",
+];

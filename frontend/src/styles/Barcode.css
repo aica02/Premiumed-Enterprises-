@@ -1,0 +1,22 @@
+.camera-crop {
+  width: 230px;
+  height: 150px;
+  overflow: hidden;
+  margin: auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: black;
+  transition: border 0.3s ease;
+}
+
+.camera-crop video {
+  min-width: 200px;
+  min-height: 100%;
+  object-fit: cover;
+}
+
+.camera-crop.scanned {
+  border: 4px solid #00ff00;
+  box-sizing: border-box;
+}

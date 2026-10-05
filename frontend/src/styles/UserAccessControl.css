@@ -1,0 +1,492 @@
+.users-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  gap: 20px;
+}
+
+.users-header .search-wrapper-large {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: white;
+  padding: 12px 25px;
+  border-radius: 10px;
+  box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+}
+
+.users-header .search-wrapper-large input {
+  border: none;
+  outline: none;
+  width: 100%;
+  margin-left: 10px;
+  font-size: 14px;
+}
+
+.users-header .add-employee-btn,
+.users-header .filter-employee-btn {
+  background-color: #d4af37;
+  color: white;
+  border: none;
+  padding: 14px 25px;
+  border-radius: 10px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+}
+
+.users-header .add-employee-btn .plus-icon,
+.users-header .filter-employee-btn .filter-icon {
+  margin-right: 10px;
+  font-size: 18px;
+}
+
+.employee-table-wrapper .info-table th,
+.employee-table-wrapper .info-table td {
+  padding: 12px 20px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.employee-table-wrapper .info-table th {
+  font-family: var(--font-heading);
+  color: var(--dark);
+  background: #f6efd7;
+  text-transform: uppercase;
+}
+
+.employee-table-wrapper .info-table tbody tr {
+  background: white;
+  border-bottom: 1px solid #f0f0f0;
+  border-radius: 12px;
+}
+/* 
+.employee-table-wrapper .info-table .employee-name {
+  text-align: left;
+} */
+
+.employee-table-wrapper .info-table .employee-actions {
+  width: 304px;
+}
+
+/* Actions Column */
+.employee-table-wrapper .info-table .action-column {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.employee-table-wrapper .info-table td.empty-order-cell {
+  padding: 0;
+  background: #fff;
+}
+
+.employee-table-wrapper .info-table .view-profile-btn {
+  background-color: var(--gold);
+  color: white;
+  border: none;
+  padding: 9px 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.employee-table-wrapper .info-table .deact-btn {
+  background-color: #d32f2f;
+  min-width: 120px;
+  color: white;
+  border: none;
+  padding: 9px 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.employee-table-wrapper .info-table .deact-btn:hover {
+  opacity: 1;
+}
+.employee-table-wrapper .info-table .deact-btn.activate-mode {
+  background-color: #28a745; /* Green */
+}
+
+.employee-table-wrapper .info-table .deact-btn.activate-mode:hover {
+  background-color: #218838;
+}
+
+/* Overlay */
+.modal-overlay,
+.employee-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+}
+
+/* Modal Box */
+.modal-overlay .modal-container,
+.employee-modal-overlay .employee-modal-container {
+  background: #f4f4f4;
+  width: 750px;
+  border-radius: 10px;
+  padding: 20px;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Header */
+.modal-overlay .modal-container .modal-header,
+.employee-modal-overlay .employee-modal-container .employee-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #e5cc7e;
+  margin-bottom: 15px;
+}
+
+.modal-container .modal-header h3,
+.employee-modal-container .employee-modal-header h3 {
+  font-weight: 600;
+}
+
+.modal-container .close-icon,
+.employee-modal-container .employee-close-icon {
+  margin-top: -48px;
+  margin-right: -13px;
+  cursor: pointer;
+  font-size: 24px;
+  background-color: #d32f2f;
+  color: #f4f4f4;
+  padding: 5px;
+  border-radius: 7px;
+  opacity: 0.8;
+}
+
+.modal-container .close-icon:hover,
+.employee-modal-container .employee-close-icon:hover {
+  opacity: 1;
+}
+
+/* Body */
+.modal-container .modal-body,
+.employee-modal-overlay .employee-modal-body {
+  display: flex;
+  gap: 30px;
+  margin-top: 20px;
+}
+
+.modal-container .modal-body .modal-image-placeholder,
+.employee-modal-overlay .employee-modal-body .employee-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.employee-modal-overlay .employee-modal-body .employee-image-placeholder img {
+  width: 220px;
+  height: 260px;
+  background: #ddd;
+  border-radius: 8px;
+}
+
+.employee-modal-overlay
+  .employee-modal-body
+  .employee-image-placeholder
+  .profile-btn {
+  width: 100%;
+  background: #caa439;
+  color: white;
+  border: none;
+  margin-top: 10px;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.modal-container .modal-body .modal-form,
+.employee-modal-overlay .employee-modal-body .employee-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.employee-modal-body .employee-form .form-title {
+  border-bottom: 1px solid #dcdcdc;
+  border-left: 4px solid #f4b400;
+  padding-left: 12px;
+}
+
+.employee-modal-overlay .employee-modal-body .employee-form .label {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+
+.modal-container .modal-body .modal-form input,
+.employee-modal-overlay .employee-modal-body .employee-form input,
+.employee-modal-overlay .employee-modal-body .employee-form select {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #eaeaea;
+}
+
+.employee-modal-overlay .employee-modal-body .employee-form select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20d%3D%22M6%209L1.5%204.5L2.91%203.09L6%206.17L9.09%203.09L10.5%204.5L6%209Z%22%20fill%3D%22black%22/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.modal-container .modal-body .modal-buttons,
+.employee-modal-overlay .employee-modal-body .employee-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #ccc;
+  padding-top: 15px;
+}
+
+.modal-container .modal-body .modal-buttons .edit-btn,
+.employee-modal-overlay
+  .employee-modal-body
+  .employee-modal-buttons
+  .save-employee-btn {
+  background: #caa439;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.modal-container .modal-body .modal-buttons .save-btn,
+.employee-modal-overlay
+  .employee-modal-body
+  .employee-modal-buttons
+  .cancel-btn {
+  background: #9e9e9e;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.password-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.password-field .password-input {
+  flex: 1;
+}
+
+.password-field .generate-pw-link {
+  display: flex;
+  align-items: center;
+  background: #caa439;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.generate-pw-link .passKey-icon {
+  font-size: 14px;
+  margin-right: 10px;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 767px) {
+  .users-header {
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+
+  .search-wrapper-large {
+    padding: 10px 20px;
+  }
+
+  .search-wrapper-large input {
+    font-size: 12px;
+  }
+
+  .add-employee-btn {
+    justify-content: center;
+    padding: 12px 20px;
+    font-size: 12px;
+  }
+
+  .employee-list-card {
+    padding: 20px;
+    border-radius: 10px;
+  }
+
+  .employee-table th,
+  .employee-table td {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .employee-table .employee-actions {
+    width: auto;
+  }
+
+  .badge-role,
+  .badge-status-active {
+    padding: 3px 12px;
+    font-size: 10px;
+  }
+
+  .employee-table td.text-center {
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .employee-table .view-profile-btn,
+  .employee-table .deact-btn {
+    width: 186px;
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+
+  .modal-overlay .modal-container,
+  .employee-modal-overlay .employee-modal-container {
+    width: 90%;
+    max-width: 400px;
+    padding: 15px;
+    margin-top: 13%;
+  }
+
+  .modal-container .modal-header h3,
+  .employee-modal-container .employee-modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-container .close-icon,
+  .employee-modal-container .employee-close-icon {
+    font-size: 12px;
+    margin-top: -45px;
+    margin-right: -8px;
+  }
+
+  .modal-container .modal-body,
+  .employee-modal-overlay .employee-modal-body {
+    flex-direction: column;
+    gap: 20px;
+    margin-top: 15px;
+  }
+
+  .modal-container .modal-body .modal-image-placeholder,
+  .employee-modal-overlay .employee-modal-body .employee-image-placeholder {
+    width: 100%;
+    height: 200px;
+  }
+
+  .modal-container .modal-body .modal-form,
+  .employee-modal-overlay .employee-modal-body .employee-form {
+    gap: 12px;
+  }
+
+  .modal-container .modal-body .modal-form input,
+  .employee-modal-overlay .employee-modal-body .employee-form input,
+  .employee-modal-overlay .employee-modal-body .employee-form select {
+    padding: 8px;
+    font-size: 14px;
+  }
+
+  .modal-container .modal-body .modal-buttons .edit-btn,
+  .employee-modal-overlay
+    .employee-modal-body
+    .employee-modal-buttons
+    .save-employee-btn,
+  .modal-container .modal-body .modal-buttons .save-btn,
+  .employee-modal-overlay
+    .employee-modal-body
+    .employee-modal-buttons
+    .cancel-btn {
+    width: 100%;
+    padding: 12px;
+    opacity: 0.8;
+  }
+
+  .modal-container .modal-body .modal-buttons .edit-btn:hover,
+  .employee-modal-overlay
+    .employee-modal-body
+    .employee-modal-buttons
+    .save-employee-btn:hover,
+  .modal-container .modal-body .modal-buttons .save-btn:hover,
+  .employee-modal-overlay
+    .employee-modal-body
+    .employee-modal-buttons
+    .cancel-btn:hover {
+    opacity: 1;
+  }
+}
+
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px 25px;
+  border-radius: 8px;
+  color: white;
+  z-index: 9999;
+  animation: slideIn 0.3s ease-out;
+}
+.toast-notification.success {
+  background-color: #28a745;
+}
+.toast-notification.error {
+  background-color: #dc3545;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.uploaded-img {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  object-fit: cover;
+}

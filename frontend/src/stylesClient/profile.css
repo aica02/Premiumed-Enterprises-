@@ -1,0 +1,498 @@
+.Profile-Client-buttonGroup {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.profile-btn{
+    width: 100%;
+  background: #caa439;
+  color: white;
+  border: none;
+  margin-top: 10px;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.employee-image-placeholder img{
+    width: 220px;
+  height: 260px;
+  background: #ddd;
+  border-radius: 8px;
+}
+
+.Profile-Client-cancelBtn {
+  padding: 10px 20px;
+  background-color: #f44336;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.Profile-Client-cancelBtn:hover {
+  background-color: #d32f2f;
+}
+
+
+.Profile-Client-container {
+  padding: 40px 60px;
+  background: #f5f6f8;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+.Profile-Client-container .Profile-Client-title {
+  font-size: 35px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  color: var(--dark);
+}
+
+.Profile-Client-container .Profile-Client-wrapper {
+  display: flex;
+  gap: 40px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.Profile-Client-container .Profile-Client-imageCard {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.Profile-Client-container .Profile-Client-imageOverlay {
+  position: relative;
+  background: #ffffff;
+  width: 320px;
+  height: 380px;
+  aspect-ratio: auto;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.Profile-Client-imageLabel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.uploaded-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: 12px;
+}
+
+.placeholder-icon-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.placeholder-avatar-icon {
+  font-size: 140px;
+  color: #8e8e8e;
+}
+
+/* .Profile-Client-container .Profile-Client-imageWrapper img {
+  width: 100%;
+  height: 100%;
+  border-radius: 0; 
+  background: #fff;
+  object-fit: cover;
+  border: none;
+  box-shadow: none;
+} */
+
+.uploading-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.Profile-Client-container .Profile-Client-editImageBtn {
+  position: static;
+  background: #f4b400;
+  color: #fff;
+  width: 100%;
+  height: auto;
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
+  font-size: 14px;
+  box-sizing: border-box;
+  transition: background 0.2s;
+}
+
+.Profile-Client-container .Profile-Client-editImageBtn:hover {
+  background: #d99c00;
+}
+
+.Profile-Client-deleteImageBtn {
+  position: static;
+  width: 100%;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  box-sizing: border-box;
+  transition: background 0.2s;
+}
+
+.Profile-Client-deleteImageBtn:hover {
+  background-color: #c82333;
+}
+
+.Profile-Client-deleteImageBtn:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.Profile-Client-card {
+  flex: 1;
+  background: #fff;
+  border-radius: 16px;
+  padding: 35px 40px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.05);
+  min-height: 500px;
+}
+
+.Profile-Client-card .Information-Header {
+  font-size: 25px;
+  font-weight: 600;
+  color: #1f2d3d;
+  margin-bottom: 20px;
+}
+
+.Profile-Client-card .Profile-Client-cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  /* align-items: center;
+  margin-bottom: 35px;
+  font-family: var(--font-heading);
+  flex-wrap: wrap;
+  gap: 15px; */
+}
+
+.Profile-Client-card .Profile-Client-editBtn {
+  background: var(--gold);
+  color: var(--white);
+  border: none;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.Profile-Client-section {
+  margin-bottom: 45px;
+}
+
+.Profile-Client-sectionTitle {
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  margin-bottom: 20px;
+  border-left: 4px solid var(--gold);
+  padding-left: 12px;
+  color: #1f2d3d;
+}
+
+.Profile-Client-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px 30px;
+  font-family: var(--font-body);
+}
+
+.Profile-Client-full {
+  grid-column: span 2;
+}
+
+.Profile-Client-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.Profile-Client-group label {
+  font-size: 13px;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #555;
+}
+
+.Profile-Client-group input,
+.Profile-Client-group select {
+  padding: 12px 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #f9fafb;
+  transition: 0.2s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.Profile-Client-group input:focus,
+.Profile-Client-group select:focus {
+  outline: none;
+  border-color: var(--gold);
+  background: #fff;
+}
+
+.Profile-Client-ownershipOptions {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  margin-bottom: 25px;
+  flex-wrap: wrap;
+}
+
+.Profile-Client-group input:disabled,
+.Profile-Client-group select:disabled {
+  background: #f1f1f1;
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1024px) {
+  .Profile-Client-container {
+    padding: 30px 40px;
+  }
+
+  .Profile-Client-container .Profile-Client-title {
+    font-size: 28px;
+  }
+
+  .Profile-Client-card {
+    padding: 30px 30px;
+  }
+
+  .Profile-Client-grid {
+    gap: 20px 25px;
+  }
+}
+
+@media (max-width: 768px) {
+  .Profile-Client-container {
+    padding: 20px 16px;
+  }
+
+  .Profile-Client-container .Profile-Client-title {
+    font-size: 24px;
+    margin-bottom: 20px;
+  }
+
+  .Profile-Client-card .Information-Header {
+    font-size: 16px;
+    margin: 0;
+    white-space: nowrap;
+    flex-shrink: 1;
+  }
+
+  .Profile-Client-container .Profile-Client-wrapper {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .Profile-Client-container .Profile-Client-imageCard {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+
+  .Profile-Client-container .Profile-Client-imageOverlay {
+    width: 160px;
+    height: 160px;
+    margin: 0 auto;
+    border-radius: 50%;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  .Profile-Client-container .Profile-Client-imageOverlay img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .profile-btn {
+    width: 180px;
+    margin-top: 0;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  .profile-btn:hover {
+    background-color: #b38f2c;
+  }
+
+  .Profile-Client-container .Profile-Client-editImageBtn {
+    width: 100%;
+    height: auto;
+  }
+
+  .Profile-Client-card {
+    display: flex;
+    flex-direction: column;
+    padding: 20px 24px;
+  }
+
+  .Profile-Client-card .Profile-Client-cardHeader {
+    display: flex;
+    flex-direction: row;
+    flex-wrap:wrap;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 25px;
+    gap: 10px;
+  }
+
+  .Profile-Client-buttonGroup {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin:0;
+    padding: 0;
+    border: none;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .Profile-Client-buttonGroup:has(button:nth-child(2)) {
+    width: 100%;
+    padding-top: 15px;
+    margin-top: 15px;
+    border-top: 1px solid #e0e0e0;
+  }
+
+  .Profile-Client-card .Profile-Client-editBtn {
+    width:auto;
+    padding: 8px 14px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .Profile-Client-buttonGroup:has(button:nth-child(2)) .Profile-Client-editBtn {
+    flex: 1;
+    padding: 10px 16px;
+    font-size: 14px;
+    text-align: center;
+    background-color: #caa439;
+  }
+
+  .Profile-Client-section {
+    order: 4;
+  }
+
+  .Profile-Client-saveBtn, .Profile-Client-cancelBtn {
+    flex: 1;
+    padding: 10px 16px;
+    font-size: 14px;
+    text-align: center;
+    border: 1px solid #cccccc;
+    border-radius: 8px;
+    font-weight: 600;
+    /* width: 100%;
+    padding: 14px;
+    font-size: 15px;
+    text-align: center; */
+  }
+
+  .Profile-Client-sectionTitle {
+    font-size: 14px;
+    margin-bottom: 15px;
+  }
+
+  .Profile-Client-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .Profile-Client-full {
+    grid-column: span 1;
+  }
+
+  .Profile-Client-ownershipOptions {
+    gap: 20px;
+  }
+
+  .Profile-Client-group input,
+  .Profile-Client-group select {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .Profile-Client-container {
+    padding: 16px 12px;
+  }
+
+  .Profile-Client-container .Profile-Client-title {
+    font-size: 20px;
+  }
+
+  .Profile-Client-card .Information-Header {
+    font-size: 18px;
+  }
+
+  .Profile-Client-container .Profile-Client-imageWrapper img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .Profile-Client-card {
+    padding: 16px;
+  }
+
+  .Profile-Client-sectionTitle {
+    font-size: 13px;
+  }
+
+  .Profile-Client-group label {
+    font-size: 12px;
+  }
+}

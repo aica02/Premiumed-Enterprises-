@@ -1,0 +1,1104 @@
+.dashboard-filter {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+  box-sizing: border-box;
+}
+
+.dashboard-filter .dashboard-range-select {
+  width: clamp(120px, 10%, 180px);
+  min-width: 120px;
+  padding: 6px 32px 6px 10px;
+  font-size: 14px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  box-shadow:
+    rgba(0, 0, 0, 0.12) 0px 1px 3px,
+    rgba(0, 0, 0, 0.24) 0px 1px 2px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20d%3D%22M6%209L1.5%204.5L2.91%203.09L6%206.17L9.09%203.09L10.5%204.5L6%209Z%22%20fill%3D%22black%22/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  box-sizing: border-box;
+}
+
+.cards {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: clamp(10px, 1.2vw, 15px);
+  box-sizing: border-box;
+}
+
+.cards .card {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  background: white;
+  border-radius: 12px;
+  padding: clamp(14px, 1.5vw, 20px) 10px;
+  box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+  box-sizing: border-box;
+}
+
+.cards .card .title-value {
+  min-width: 0;
+  margin-left: 10px;
+}
+
+.cards .card .title {
+  font-family: var(--font-heading);
+  padding: 0;
+  margin: 0;
+  text-transform: uppercase;
+  text-align: center;
+  color: gray;
+  font-size: clamp(10px, 0.8vw, 12px);
+  overflow-wrap: break-word;
+}
+
+.cards .card .values {
+  font-size: clamp(20px, 2vw, 24px);
+  font-weight: bold;
+  color: var(--dark);
+  margin: 0;
+}
+
+.cards .card .icon {
+  flex-shrink: 0;
+  font-size: clamp(34px, 3.5vw, 45px);
+  margin-right: 5px;
+  margin-left: clamp(12px, 2vw, 20px);
+  padding: 8px;
+  border-radius: 20%;
+}
+
+.cards .card .icon.orders {
+  color: #27ae60;
+  background-color: #e8f5e9;
+}
+
+.cards .card .icon.urgent {
+  color: #ffd700;
+  background-color: #ffffcc;
+}
+
+.cards .card .icon.outgoing {
+  color: #023c85;
+  background-color: #c3e7ef;
+}
+
+.cards .card .icon.critical {
+  color: #dc6601;
+  background-color: #f9ddb1;
+}
+
+.cards .card .icon.expired {
+  color: #c0392b;
+  background-color: #ffebee;
+}
+
+.dashboard-bottom {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(0, 2.5fr);
+  gap: clamp(10px, 1.2vw, 15px);
+  margin-top: 15px;
+  box-sizing: border-box;
+}
+
+.approvals-restock.container {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.panel {
+  min-width: 0;
+  background: var(--white);
+  border-radius: 14px;
+  padding: clamp(12px, 1.5vw, 15px) clamp(14px, 2vw, 20px);
+  box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+  box-sizing: border-box;
+}
+
+.panel.approvals,
+.panel.urgent-restock,
+.panel.graph {
+  height: fit-content;
+}
+
+.panel-title {
+  font-family: var(--font-heading);
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--gold);
+  padding-bottom: 8px;
+  font-size: clamp(14px, 1.2vw, 14px);
+}
+
+.panel-scroll-content {
+  max-height: 175px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+  box-sizing: border-box;
+}
+
+.panel-scroll-content::-webkit-scrollbar {
+  /* width: 1px; */
+  scrollbar-width: none;
+}
+
+/* .panel-scroll-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-scroll-content::-webkit-scrollbar-thumb {
+  background: var(--gold);
+  border-radius: 10px;
+}
+
+.panel-scroll-content::-webkit-scrollbar-thumb:hover {
+  background: var(--gold);
+} */
+
+.panel-scroll-content {
+  scrollbar-width: none;
+  /* scrollbar-color: var(--gold) transparent; */
+}
+
+.dashboard-bottom .restock-item,
+.dashboard-bottom .approval-item {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #c3e7ef;
+  min-height: 38px;
+  box-sizing: border-box;
+}
+
+.restock-item .restock-item-quantity {
+  flex-shrink: 0;
+  color: red;
+}
+
+.approvals-restock.container .no-data-text {
+  text-align: center;
+  color: #27ae60;
+}
+
+.chart-container {
+  width: 100%;
+  min-width: 0;
+  height: fit-content;
+  background: white;
+  padding: clamp(12px, 1.5vw, 15px);
+  border-radius: 10px;
+  box-shadow: rgba(0, 0, 0, 0.16) 0px 1px 4px;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.chart-container h3 {
+  font-family: var(--font-heading);
+  margin: 0;
+  font-size: clamp(14px, 1.3vw, 16px);
+  color: #333;
+  font-weight: 700;
+}
+
+.chart-container .chart-header {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  box-sizing: border-box;
+  border-bottom: 2px solid var(--gold);
+}
+
+.chart-title-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.view-excel-data-icon {
+  flex-shrink: 0;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--dark);
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
+}
+
+.view-excel-data-icon:hover {
+  transform: scale(1.1);
+  color: var(--gold);
+}
+
+.chart-container .chart-header .filters-column {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.filters-column .filters-select.clients-name {
+  width: auto;
+  min-width: 100px;
+  max-width: 150px;
+  flex: 0 1 auto;
+}
+
+.chart-container .chart-header .filters-date {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-container .chart-header .filters-date .custom-dropdown {
+  flex: 0 0 auto;
+}
+
+.chart-container .chart-header .filters-date button {
+  width: 120px;
+  min-width: 0;
+  text-align: start;
+}
+
+.chart-container .chart-header .filters-select.day {
+  width: 120px;
+  min-width: 0;
+  text-align: start;
+}
+
+.inventory-trends-chart-area {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inventory-trends-chart-area .empty-state {
+  width: 100%;
+  min-height: 160px;
+}
+
+.chart-container .chart-header select,
+.filters-select {
+  min-width: 0;
+  padding: 6px 32px 6px 10px;
+  font-size: 14px;
+  border-radius: 4px;
+  background-color: var(--white);
+  border: 1px solid #ddd;
+  box-shadow:
+    rgba(0, 0, 0, 0.12) 0px 1px 3px,
+    rgba(0, 0, 0, 0.24) 0px 1px 2px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20d%3D%22M6%209L1.5%204.5L2.91%203.09L6%206.17L9.09%203.09L10.5%204.5L6%209Z%22%20fill%3D%22black%22/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  box-sizing: border-box;
+}
+
+.custom-dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.calendar-panel {
+  position: absolute;
+  top: 45px;
+  right: 0;
+  max-width: calc(100vw - 20px);
+  background: var(--white);
+  border: 1px solid var(--white);
+  padding: 8px;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+}
+
+.grid-7 {
+  grid-template-columns: repeat(5, 40px);
+}
+
+.grid-4 {
+  grid-template-columns: repeat(3, 60px);
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, 60px);
+}
+
+.calendar-item {
+  padding: 6px;
+  text-align: center;
+  cursor: pointer;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.calendar-item:hover {
+  background: #e0e0e0;
+}
+
+.calendar-item.active {
+  background: var(--gold);
+  color: var(--white);
+}
+
+.bar-chart .recharts-bar-rectangle {
+  fill: #ffd700;
+  border-radius: 10px;
+}
+
+.recharts-cartesian-grid line {
+  stroke: var(--gold);
+}
+
+.view-excel-data-icon {
+  font-size: 22px;
+}
+
+.excel-modal {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+  padding: 15px;
+  box-sizing: border-box;
+}
+
+.excel-content {
+  width: min(700px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  background: white;
+  padding: clamp(14px, 2vw, 20px);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.excel-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+
+.excel-header h3 {
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+}
+
+.excel-header .header-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.excel-header .header-actions button {
+  width: 42px;
+  height: 34px;
+  padding: 7px 10px;
+  font-size: 16px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.excel-header .header-actions .cancel-button {
+  background: #ffebee;
+  color: #c0392b;
+}
+
+.excel-header .header-actions .download-button {
+  background: #c3e7ef;
+  color: #023c85;
+}
+
+.excel-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+  margin-left: 5px;
+  border-radius: 5px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.excel-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.excel-table {
+  width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  box-sizing: border-box;
+}
+
+.excel-table th,
+.excel-table td {
+  border: 1px solid #ccc;
+  padding: 10px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.excel-table th:first-child,
+.excel-table td:first-child {
+  width: 75%;
+}
+
+.excel-table th:last-child,
+.excel-table td:last-child {
+  width: 25%;
+  text-align: center;
+}
+
+.excel-table th {
+  background: var(--gold);
+  color: white;
+}
+
+.excel-table tr:nth-child(even) {
+  background: #f5f5f5;
+}
+
+@media (max-width: 1280px) {
+  .cards {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .cards .card {
+    padding: 14px 8px;
+  }
+
+  .cards .card .icon {
+    margin-left: 15px;
+    font-size: 38px;
+  }
+
+  .cards .card .title-value {
+    margin-left: 7px;
+  }
+
+  .dashboard-bottom {
+    grid-template-columns: minmax(200px, 1fr) minmax(0, 2fr);
+  }
+
+  .panel-title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .chart-container .chart-header {
+    gap: 15px;
+  }
+
+  .chart-title-row {
+    gap: 6px;
+  }
+
+  .chart-title-row h3 {
+    font-size: 16px;
+  }
+
+  .chart-title-row .view-excel-data-icon {
+    font-size: 18px;
+  }
+
+  .filters-column .filters-select.clients-name {
+    font-size: 10px;
+    width: auto;
+    max-width: 80px;
+    min-width: 85px;
+  }
+
+  .chart-container .chart-header .filters-date button,
+  .chart-container .chart-header .filters-select.day {
+    font-size: 10px;
+    max-width: 85px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .dashboard-filter .dashboard-range-select {
+    width: 160px;
+  }
+
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .cards .card {
+    padding: 15px 10px;
+  }
+
+  .cards .card .icon {
+    margin-left: 15px;
+    font-size: 38px;
+  }
+
+  .cards .card .values {
+    font-size: 22px;
+  }
+
+  .dashboard-bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-container .chart-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "title icon"
+      "filters filters";
+    align-items: center;
+    gap: 10px;
+  }
+
+  .chart-title-row {
+    display: contents;
+  }
+
+  .chart-container .chart-header h3 {
+    grid-area: title;
+  }
+
+  .chart-container .chart-header .view-excel-data-icon {
+    grid-area: icon;
+    justify-self: end;
+  }
+
+  .chart-container .chart-header .filters-column {
+    grid-area: filters;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .filters-column .filters-select.clients-name {
+    width: 200px;
+    max-width: 200px;
+  }
+
+  .chart-container .chart-header .filters-date {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chart-container .chart-header .filters-date button,
+  .chart-container .chart-header .filters-select.day {
+    width: 100px;
+  }
+
+  .excel-content {
+    width: min(700px, 95vw);
+  }
+}
+
+@media (max-width: 767px) {
+  .dashboard-filter {
+    justify-content: stretch;
+  }
+
+  .dashboard-filter .dashboard-range-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .cards {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .cards .card {
+    grid-column: span 2;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 6px;
+  }
+
+  .cards .card:nth-child(5) {
+    grid-column: span 4;
+  }
+
+  .cards .card .icon {
+    font-size: 20px;
+    padding: 4px;
+    margin-left: 2px;
+    margin-right: 4px;
+  }
+
+  .cards .card .title-value {
+    margin-left: 2px;
+  }
+
+  .cards .card .title {
+    text-align: left;
+    font-size: 8px;
+    line-height: 1;
+  }
+
+  .cards .card .values {
+    font-size: 15px;
+  }
+
+  .dashboard-bottom {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .panel-scroll-content {
+    max-height: 150px;
+  }
+
+  .chart-container {
+    padding: 12px;
+  }
+
+  .chart-container .chart-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "title icon"
+      "filters filters";
+    gap: 10px;
+    margin-bottom: 15px;
+  }
+
+  .chart-container .chart-header h3 {
+    font-size: 14px;
+  }
+
+  .chart-container .chart-header .view-excel-data-icon {
+    font-size: 21px;
+  }
+
+  .chart-container .chart-header .filters-column {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    width: 100%;
+    gap: 7px;
+  }
+
+  .filters-column .filters-select.clients-name {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .chart-container .chart-header .filters-date {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .chart-container .chart-header .filters-date .custom-dropdown {
+    width: 100%;
+  }
+
+  .chart-container .chart-header .filters-date button,
+  .chart-container .chart-header .filters-select.day {
+    width: 100%;
+  }
+
+  .chart-container .chart-header .filters-select {
+    font-size: 13px;
+    padding: 6px 28px 6px 8px;
+  }
+
+  .excel-modal {
+    padding: 8px;
+  }
+
+  .excel-content {
+    width: 100%;
+    max-width: 100%;
+    max-height: 94vh;
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: hidden;
+  }
+
+  .excel-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .excel-header h3 {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .excel-header .header-actions {
+    flex-shrink: 0;
+    flex-direction: row;
+    gap: 5px;
+  }
+
+  .excel-header .header-actions button {
+    width: 36px;
+    height: 32px;
+    padding: 6px;
+    font-size: 13px;
+  }
+
+  .excel-info {
+    font-size: 11px;
+    margin-left: 0;
+    gap: 4px;
+  }
+
+  .excel-table-wrapper {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .excel-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .excel-table th,
+  .excel-table td {
+    padding: 7px 6px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .excel-table th:first-child,
+  .excel-table td:first-child {
+    width: 72%;
+  }
+
+  .excel-table th:last-child,
+  .excel-table td:last-child {
+    width: 28%;
+  }
+}
+
+@media (max-width: 479px) {
+  .dashboard-filter {
+    margin-bottom: 12px;
+  }
+
+  .dashboard-filter .dashboard-range-select {
+    font-size: 13px;
+    padding: 6px 30px 6px 8px;
+  }
+
+  .cards {
+    gap: 8px;
+  }
+
+  .cards .card {
+    padding: 12px 10px;
+    border-radius: 10px;
+  }
+
+  .cards .card .icon {
+    font-size: 30px;
+    padding: 6px;
+    margin-left: 2px;
+  }
+
+  .cards .card .title-value {
+    margin-left: 8px;
+  }
+
+  .cards .card .title {
+    font-size: 9px;
+  }
+
+  .cards .card .values {
+    font-size: 19px;
+  }
+
+  .panel {
+    padding: 11px;
+    border-radius: 10px;
+  }
+
+  .panel-title {
+    font-size: 13px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+  }
+
+  .panel-scroll-content {
+    max-height: 135px;
+  }
+
+  .dashboard-bottom .restock-item,
+  .dashboard-bottom .approval-item {
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .chart-container {
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .chart-container h3 {
+    font-size: 13px;
+  }
+
+  .chart-container .chart-header {
+    margin-bottom: 12px;
+  }
+
+  .chart-container .chart-header .filters-date {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .chart-container .chart-header .filters-select {
+    font-size: 12px;
+    padding: 6px 24px 6px 7px;
+  }
+
+  .calendar-panel {
+    top: 40px;
+    padding: 6px;
+    gap: 4px;
+    max-width: calc(100vw - 20px);
+  }
+
+  .grid-7 {
+    grid-template-columns: repeat(5, 30px);
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(3, 45px);
+  }
+
+  .grid-2 {
+    grid-template-columns: repeat(2, 45px);
+  }
+
+  .calendar-item {
+    padding: 5px;
+    font-size: 12px;
+  }
+
+  .excel-modal {
+    padding: 6px;
+  }
+
+  .excel-content {
+    width: 100%;
+    max-width: 100%;
+    max-height: 94vh;
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .excel-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .excel-header h3 {
+    font-size: 13px;
+  }
+
+  .excel-header .header-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .excel-header .header-actions button {
+    width: 34px;
+    height: 30px;
+    padding: 5px;
+    font-size: 12px;
+  }
+
+  .excel-info {
+    font-size: 10px;
+    margin-left: 0;
+  }
+
+  .excel-table {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .excel-table th,
+  .excel-table td {
+    padding: 6px 5px;
+    font-size: 10px;
+  }
+
+  .excel-table th:first-child,
+  .excel-table td:first-child {
+    width: 70%;
+  }
+
+  .excel-table th:last-child,
+  .excel-table td:last-child {
+    width: 30%;
+  }
+}
+
+@media (max-width: 360px) {
+  .cards .card .icon {
+    font-size: 27px;
+    padding: 5px;
+  }
+
+  .cards .card .title {
+    font-size: 8px;
+  }
+
+  .cards .card .values {
+    font-size: 18px;
+  }
+
+  .panel-title {
+    font-size: 12px;
+  }
+
+  .grid-7 {
+    grid-template-columns: repeat(5, 27px);
+  }
+
+  .grid-4 {
+    grid-template-columns: repeat(3, 40px);
+  }
+
+  .grid-2 {
+    grid-template-columns: repeat(2, 40px);
+  }
+
+  .calendar-item {
+    font-size: 11px;
+    padding: 4px;
+  }
+
+  .excel-header h3 {
+    font-size: 12px;
+  }
+
+  .excel-header .header-actions button {
+    width: 32px;
+    height: 29px;
+    font-size: 11px;
+  }
+
+  .excel-info {
+    font-size: 9px;
+  }
+
+  .excel-table th,
+  .excel-table td {
+    padding: 5px 4px;
+    font-size: 9px;
+  }
+
+  .excel-table th:first-child,
+  .excel-table td:first-child {
+    width: 68%;
+  }
+
+  .excel-table th:last-child,
+  .excel-table td:last-child {
+    width: 32%;
+  }
+
+  .chart-container .chart-header h3 {
+    font-size: 12px;
+  }
+
+  .chart-container .chart-header .view-excel-data-icon {
+    font-size: 18px;
+  }
+
+  .chart-container .chart-header .filters-select {
+    font-size: 11px;
+    padding: 5px 21px 5px 6px;
+    background-position: right 6px center;
+  }
+
+  .chart-container .chart-header .filters-date {
+    gap: 4px;
+  }
+}

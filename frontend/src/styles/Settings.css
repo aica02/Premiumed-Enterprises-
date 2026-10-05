@@ -1,0 +1,231 @@
+/* --- Main Container --- */
+.settings-container {
+  min-height: 100vh;
+  background-color: var(--bg-color);
+  display: flex;
+  justify-content: center;
+  font-family: var(--font-body);
+}
+
+.settings-section {
+  background-color: var(--white);
+  width: 100%;
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 40px;
+}
+
+.settings-title {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 30px;
+  border-bottom: 2px solid var(--bg-color);
+  padding-bottom: 15px;
+}
+
+.settings-group {
+  margin-bottom: 35px;
+  padding-bottom: 25px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.settings-group .checked-group {
+  display: flex;
+  gap: 10px;
+}
+.settings-group .sync-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.settings-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.settings-group h3 {
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 20px;
+}
+
+.settings-group span {
+  text-transform: none;
+}
+
+/* --- Toggle Items --- */
+.toggle-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.toggle-item:hover {
+  background-color: #f9fafb;
+  border-radius: 8px;
+  margin: 0 -12px;
+  padding: 12px 12px;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.setting-desc {
+  font-size: 12px;
+  color: grey;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* --- Custom Switch (Toggle) --- */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: 0.4s;
+  border-radius: 34px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input:checked + .slider {
+  background-color: var(--gold);
+}
+
+input:checked + .slider:before {
+  transform: translateX(24px);
+}
+
+/* --- Input Group (Urgency Threshold) --- */
+.setting-input {
+  margin-top: 15px;
+  padding-left: 10px;
+  border-left: 3px solid var(--gold);
+}
+
+.flex-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.flex-row input {
+  flex: 1;
+  padding: 10px 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.flex-row input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+/* --- Buttons --- */
+button {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+/* Small Action Buttons (Save, Backup, Restore) */
+.save-btn,
+.backup-btn,
+.restore-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.save-btn {
+  background-color: var(--gold);
+  color: white;
+}
+
+.backup-btn {
+  background-color: var(--gold-btn);
+  color: var(--white);
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+}
+.restore-btn {
+  background-color: var(--gold-btn);
+  color: white;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+/* --- Status Text --- */
+.status-text {
+  font-size: 13px;
+  color: grey;
+  margin: 8px 0;
+  font-style: italic;
+}
+
+/* --- Responsive --- */
+@media (max-width: 600px) {
+  .settings-section {
+    padding: 20px;
+  }
+
+  .settings-actions {
+    flex-direction: column-reverse;
+  }
+
+  .primary-btn,
+  .secondary-btn {
+    width: 100%;
+  }
+}
