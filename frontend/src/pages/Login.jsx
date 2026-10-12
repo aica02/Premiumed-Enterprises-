@@ -1,36 +1,22 @@
 import React, { useState } from "react";
 import axios from "axios";
 import "../styles/Login.css";
+import "../styles/formValidation.css";
 import logo from "../assets/Premiumed logo.png";
 import { useNavigate } from "react-router-dom";
 import { Toaster, toast } from "react-hot-toast";
 import { FaArrowLeft, FaCheck, FaEye, FaEyeSlash } from "react-icons/fa";
+import {
+  COUNTRY_CODES,
+  FIELD_MAX_LENGTHS,
+  formatFieldInput,
+  formatInternationalPhone,
+} from "../utils/fieldFormatting";
+import { validateField } from "../utils/formValidation";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (window.location.hostname === "localhost" ? "http://localhost:5000" : "");
-
-const COUNTRY_CODES = [
-  { code: "+63", country: "Philippines", flag: "🇵🇭" },
-  { code: "+1", country: "United States / Canada", flag: "🇺🇸" },
-  { code: "+44", country: "United Kingdom", flag: "🇬🇧" },
-  { code: "+61", country: "Australia", flag: "🇦🇺" },
-  { code: "+81", country: "Japan", flag: "🇯🇵" },
-  { code: "+82", country: "South Korea", flag: "🇰🇷" },
-  { code: "+86", country: "China", flag: "🇨🇳" },
-  { code: "+65", country: "Singapore", flag: "🇸🇬" },
-  { code: "+60", country: "Malaysia", flag: "🇲🇾" },
-  { code: "+66", country: "Thailand", flag: "🇹🇭" },
-  { code: "+84", country: "Vietnam", flag: "🇻🇳" },
-  { code: "+91", country: "India", flag: "🇮🇳" },
-  { code: "+971", country: "United Arab Emirates", flag: "🇦🇪" },
-  { code: "+966", country: "Saudi Arabia", flag: "🇸🇦" },
-  { code: "+49", country: "Germany", flag: "🇩🇪" },
-  { code: "+33", country: "France", flag: "🇫🇷" },
-  { code: "+39", country: "Italy", flag: "🇮🇹" },
-  { code: "+34", country: "Spain", flag: "🇪🇸" },
-  { code: "+7", country: "Russia / Kazakhstan", flag: "🇷🇺" },
-];
 
 const Login = () => {
   const navigate = useNavigate();
@@ -114,318 +100,6 @@ const Login = () => {
 
   const [touchedFields, setTouchedFields] = useState({});
 
-  // fields label
-  const formatLabel = (name) => {
-    const labels = {
-      dialysisCenterName: "Dialysis Center Name",
-      facilityType: "Type of Facility",
-      yearEstablished: "Year Established",
-      registrationNumber: "Registration Number",
-      machines: "Number of Machines",
-      address: "Registered Address",
-      mobile: "Mobile Number",
-      landline: "Landline Number",
-      email: "Email Address",
-      ownership: "Ownership",
-      ownerName: "Owner's Name",
-      medicalDirector: "Medical Director's Name",
-      nephrologist: "Nephrologist Name",
-      unitManager: "Unit Manager / Administrator",
-      purchasingContact: "Purchasing Contact Person",
-      designation: "Designation",
-      procurementMobile: "Procurement Mobile Number",
-      procurementEmail: "Procurement Email Address",
-    };
-
-    return labels[name] || name;
-  };
-
-  // autoformatting
-  const formatFieldValue = (name, value) => {
-    switch (name) {
-      // numbers only
-      case "machines":
-        return value.replace(/\D/g, "");
-
-      // landline
-      case "landline": {
-        // Remove everything except numbers
-        value = value.replace(/\D/g, "");
-
-        // maximum 10 digits: 0XX-XXX-XXXX
-        value = value.slice(0, 10);
-
-        // format: 0X-XXXX-XXXX
-        if (value.length > 2) {
-          value = value.slice(0, 2) + "-" + value.slice(2);
-        }
-
-        if (value.length > 7) {
-          value = value.slice(0, 7) + "-" + value.slice(7);
-        }
-
-        return value;
-      }
-
-      // phone number
-      case "mobile":
-      case "procurementMobile": {
-        // remove non-numeric characters
-        value = value.replace(/\D/g, "");
-
-        // limit to 10 digits
-        value = value.slice(0, 10);
-
-        // format: 917 123 4567
-        if (value.length > 3) {
-          value = value.slice(0, 3) + " " + value.slice(3);
-        }
-
-        if (value.length > 7) {
-          value = value.slice(0, 7) + " " + value.slice(7);
-        }
-
-        return value;
-      }
-
-      // email
-      case "email":
-      case "procurementEmail":
-        return value.toLowerCase().replace(/\s/g, "");
-
-      // registration / LTO number
-      case "registrationNumber": {
-        // convert to uppercase
-        value = value.toUpperCase();
-
-        // remove everything except letters and numbers
-        value = value.replace(/[^A-Z0-9]/g, "");
-
-        // maximum: 6 letters + 10 digits
-        value = value.slice(0, 16);
-
-        // format: DOH-LTO-2024-009842
-        if (value.length > 3) {
-          value = value.slice(0, 3) + "-" + value.slice(3);
-        }
-
-        if (value.length > 7) {
-          value = value.slice(0, 7) + "-" + value.slice(7);
-        }
-
-        if (value.length > 12) {
-          value = value.slice(0, 12) + "-" + value.slice(12);
-        }
-
-        return value;
-      }
-
-      // text fields
-      case "dialysisCenterName":
-      case "address":
-      case "ownerName":
-      case "medicalDirector":
-      case "nephrologist":
-      case "unitManager":
-      case "purchasingContact":
-      case "designation":
-        // replace multiple spaces with one space
-        return value.replace(/\s{2,}/g, " ");
-
-      default:
-        return value;
-    }
-  };
-
-  // field validation
-  const validateField = (name, value) => {
-    const trimmedValue = value.trim();
-
-    switch (name) {
-      // facility info
-      case "dialysisCenterName":
-        if (!trimmedValue) {
-          return "Dialysis Center Name is required.";
-        }
-
-        if (trimmedValue.length > 100) {
-          return "Dialysis Center Name cannot exceed 100 characters.";
-        }
-
-        if (!/^[a-zA-Z0-9\s&.,'-]+$/.test(trimmedValue)) {
-          return "Invalid input. Letters, numbers, spaces, (.), (') (,) and (-) only.";
-        }
-
-        return "";
-
-      case "facilityType":
-        if (!trimmedValue) {
-          return "Type of Facility is required.";
-        }
-
-        return "";
-
-      case "yearEstablished": {
-        if (!trimmedValue) {
-          return "Year Established is required.";
-        }
-
-        if (!/^\d{4}$/.test(trimmedValue)) {
-          return "Year Established must contain exactly 4 digits.";
-        }
-
-        const year = Number(trimmedValue);
-        const currentYear = new Date().getFullYear();
-
-        if (year < 1900 || year > currentYear) {
-          return `Year Established must be between 1900 and ${currentYear}.`;
-        }
-
-        return "";
-      }
-
-      case "registrationNumber":
-        if (!trimmedValue) {
-          return "Registration Number is required.";
-        }
-
-        if (!/^DOH-LTO-\d{4}-\d{6}$/.test(trimmedValue)) {
-          return "Enter a valid registration number (DOH-LTO-YYYY-000000).";
-        }
-
-        return "";
-
-      case "machines":
-        if (!trimmedValue) {
-          return "Number of Machines is required.";
-        }
-
-        if (!/^\d+$/.test(trimmedValue)) {
-          return "Number of Machines must contain numbers only.";
-        }
-
-        const machineCount = Number(trimmedValue);
-
-        if (machineCount < 1) {
-          return "Number of Machines must be at least 1.";
-        }
-
-        if (machineCount > 500) {
-          return "Number of Machines cannot exceed 500.";
-        }
-
-        return "";
-
-      case "address":
-        if (!trimmedValue) {
-          return "Registered Address is required.";
-        }
-
-        if (trimmedValue.length > 250) {
-          return "Registered Address cannot exceed 250 characters.";
-        }
-
-        return "";
-
-      case "mobile":
-      case "procurementMobile":
-        if (!trimmedValue) {
-          return "Mobile Number is required.";
-        }
-
-        if (!/^\d{3} \d{3} \d{4}$/.test(trimmedValue)) {
-          return "Enter a valid mobile number.";
-        }
-
-        return "";
-
-      case "landline":
-        if (!trimmedValue) {
-          return "Landline Number is required.";
-        }
-
-        if (!/^\d{2}-\d{4}-\d{4}$/.test(trimmedValue)) {
-          return "Enter a valid landline number (XX-XXXX-XXXX).";
-        }
-
-        return "";
-
-      case "email":
-      case "procurementEmail":
-        if (!trimmedValue) {
-          return "Email Address is required.";
-        }
-
-        if (!trimmedValue.toLowerCase().endsWith("@gmail.com")) {
-          return "Email must include @gmail.com";
-        }
-
-        return "";
-
-      // ownership info
-      case "ownership":
-        if (!trimmedValue) {
-          return "Ownership is required.";
-        }
-
-        return "";
-
-      case "ownerName":
-      case "medicalDirector":
-      case "nephrologist":
-      case "unitManager":
-      case "purchasingContact":
-        if (!trimmedValue) {
-          return `${formatLabel(name)} is required.`;
-        }
-
-        if (trimmedValue.length > 100) {
-          return `${formatLabel(name)} cannot exceed 100 characters.`;
-        }
-
-        if (!/^[a-zA-Z\s.,'-]+$/.test(trimmedValue)) {
-          return `Invalid input. Letters, spaces, (.), (') (,) and (-) only.`;
-        }
-
-        return "";
-
-      // procurement info
-      case "designation":
-        if (!trimmedValue) {
-          return "Designation is required.";
-        }
-
-        if (trimmedValue.length > 100) {
-          return "Designation cannot exceed 100 characters.";
-        }
-
-        return "";
-
-      default:
-        return "";
-    }
-  };
-
-  // max length
-  const maxLengths = {
-    dialysisCenterName: 100,
-    yearEstablished: 4,
-    registrationNumber: 19,
-    machines: 3,
-    address: 250,
-    mobile: 12,
-    landline: 12,
-    email: 150,
-    ownerName: 100,
-    medicalDirector: 100,
-    nephrologist: 100,
-    unitManager: 100,
-    purchasingContact: 100,
-    designation: 100,
-    procurementMobile: 12,
-    procurementEmail: 150,
-  };
-
   // signup field change
   const handleRegisterChange = (e) => {
     const { name } = e.target;
@@ -446,13 +120,7 @@ const Login = () => {
       return;
     }
 
-    // apply auto-formatting
-    value = formatFieldValue(name, value);
-
-    // apply maximum length
-    if (maxLengths[name]) {
-      value = value.slice(0, maxLengths[name]);
-    }
+    value = formatFieldInput(name, value);
 
     // update form data
     setFormData((prev) => ({
@@ -762,7 +430,10 @@ const Login = () => {
       machines: formData.machines,
       address: formData.address,
 
-      mobile: `${formData.mobileCountryCode}${formData.mobile.replace(/\s/g, "")}`,
+      mobile: formatInternationalPhone(
+        formData.mobileCountryCode,
+        formData.mobile,
+      ),
       landline: formData.landline,
 
       email: formData.email,
@@ -776,7 +447,10 @@ const Login = () => {
       purchasingContact: formData.purchasingContact,
       designation: formData.designation,
 
-      procurementMobile: `${formData.procurementMobileCountryCode}${formData.procurementMobile.replace(/\s/g, "")}`,
+      procurementMobile: formatInternationalPhone(
+        formData.procurementMobileCountryCode,
+        formData.procurementMobile,
+      ),
       procurementEmail: formData.procurementEmail,
     };
 
@@ -795,7 +469,7 @@ const Login = () => {
         dialysisCenterName: "",
         facilityType: "Standalone Dialysis Center",
         yearEstablished: "",
-        registrationNumber: "",
+        registrationNumber: "", //TIN number
         machines: "",
         address: "",
         mobileCountryCode: "+63",
@@ -918,7 +592,7 @@ const Login = () => {
           <div className="login-form-section">
             <div className="form-wrapper">
               <h2 className="form-title">
-                {isLogin ? "LOG IN" : "FACILITY REGISTRATION"}
+                {isLogin ? "LOG IN" : "DIALYSIS CENTER  REGISTRATION"}
               </h2>
 
               {/* login form */}
@@ -1094,13 +768,13 @@ const Login = () => {
                         />
 
                         <InputBox
-                          label="Registration Number / LTO Number"
+                          label="TIN Number"
                           name="registrationNumber"
-                          placeholder="DOH-LTO-YYYY-000000"
+                          placeholder="xxx-xxx-xxx-xxxxx"
                           value={formData.registrationNumber}
                           onChange={handleRegisterChange}
                           onBlur={handleRegisterBlur}
-                          maxLength={19}
+                          maxLength={FIELD_MAX_LENGTHS.registrationNumber}
                           error={
                             touchedFields.registrationNumber
                               ? registerErrors.registrationNumber
@@ -1157,7 +831,7 @@ const Login = () => {
                         <InputBox
                           label="Landline Number"
                           name="landline"
-                          placeholder="X0-0000-0000"
+                          placeholder="00-0000-0000"
                           value={formData.landline}
                           onChange={handleRegisterChange}
                           onBlur={handleRegisterBlur}
@@ -1441,8 +1115,8 @@ const Login = () => {
 
             <div className="forgot-password-content">
               <p>
-                Enter your email address and we'll send you instructions to
-                reset your password.
+                Enter your email address and we'll send you a temporary
+                password.
               </p>
 
               <input
@@ -1494,7 +1168,7 @@ const Login = () => {
                 disabled={resetLoading || !resetEmail.trim()}
               >
                 {" "}
-                {resetLoading ? "Sending..." : "Send Reset Link"}{" "}
+                {resetLoading ? "Sending..." : "Send Temporary Password"}{" "}
               </button>
             </div>
           </div>

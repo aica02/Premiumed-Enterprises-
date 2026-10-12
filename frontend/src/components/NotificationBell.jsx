@@ -9,6 +9,7 @@ const BACKEND_URL =
 
 const NotificationBell = ({
   userName,
+  containerRef,
   isOpen,
   onToggle,
   fetchUrl,
@@ -37,6 +38,9 @@ const NotificationBell = ({
     };
 
     fetchNotifications();
+    const refreshInterval = setInterval(fetchNotifications, 30000);
+
+    return () => clearInterval(refreshInterval);
   }, [fetchUrl, userName]);
 
   const handleNotificationClick = async (e, notification) => {
@@ -92,6 +96,7 @@ const NotificationBell = ({
 
   return (
     <div
+      ref={containerRef}
       className="admin-nav-icon-wrapper"
       title="Notification"
       onClick={onToggle}

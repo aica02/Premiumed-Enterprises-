@@ -2,7 +2,6 @@
 import express from "express";
 import Product from "../models/Product.js";
 import Batch from "../models/Batch.js";
-
 const router = express.Router();
 
 // GET all inventory items with their batches

@@ -5,14 +5,13 @@ import watermark from "../../assets/Premiumed-Watermark.png";
 export const generateSupplyFilteredReport = ({
   title = "Supply Report",
   companyName = "Company",
-  sectionTitle = "Supply List",
   companyAddress = "",
   ceo = "",
   vatReg = "",
   landlineNum = "",
   columns = [],
   data = [],
-  logo = null,
+  logo,
   reportType = "purchase",
   filename = "Supply Report.pdf",
 }) => {
@@ -33,28 +32,42 @@ export const generateSupplyFilteredReport = ({
     doc.setFillColor(212, 175, 55);
     doc.rect(0, headerHeight + 10, pageWidth, 2, "F");
 
-    // Company name
+    // company logo
+    if (logo) {
+      doc.addImage(
+        logo,
+        "PNG",
+        paddingX,
+        20,
+        70,
+        70,
+        "Premiumed-Logo",
+        "FAST"
+      );
+    }
+
+    // ================= COMPANY NAME =================
     doc.setFont("helvetica", "bold");
     doc.setTextColor(212, 175, 55);
     doc.setFontSize(15);
-    doc.text(companyName, paddingX, 31);
+    doc.text(companyName, paddingX + 85, 31, { align: "left" });
 
-    // Company address
-    doc.setFont("helvetica", "normal");
+    // ================= COMPANY ADDRESS =================
     doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    doc.text(companyAddress, paddingX, 46);
+    doc.text(companyAddress, paddingX + 85, 46, { align: "left" });
 
-    // CEO
+    // ================= CEO =================
     doc.setFontSize(11);
-    doc.text(ceo, paddingX, 62);
+    doc.text(ceo, paddingX + 85, 62, { align: "left" });
 
-    // VAT
+    // ================= VAT =================
     doc.setFontSize(10);
-    doc.text(vatReg, paddingX, 76);
+    doc.text(vatReg, paddingX + 85, 76, { align: "left" });
 
-    // Landline
-    doc.text(landlineNum, paddingX, 90);
+    // ================= LANDLINE =================
+    doc.text(landlineNum, paddingX + 85, 90, { align: "left" });
   };
 
   const drawWatermark = () => {
@@ -68,10 +81,10 @@ export const generateSupplyFilteredReport = ({
       pageWidth,
       pageHeight,
       "Premiumed-Watermark",
-      "FAST"
+      "FAST",
     );
   };
-  
+
   drawWatermark();
 
   drawHeader();
@@ -96,23 +109,21 @@ export const generateSupplyFilteredReport = ({
   // ================= DIVIDER =================
   doc.setDrawColor(212, 175, 55);
   doc.setLineWidth(1);
-  doc.line(paddingX,sectionY + 8,pageWidth - paddingX,sectionY + 8);
+  doc.line(paddingX, sectionY + 8, pageWidth - paddingX, sectionY + 8);
 
   // ================= TOTAL RECORDS =================
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
-  doc.text(`Total Records: ${data.length}`,
-    paddingX + 86,
-    sectionY + 28,
-    { align: "right" }
-  );
+  doc.text(`Total Records: ${data.length}`, paddingX + 86, sectionY + 28, {
+    align: "right",
+  });
 
   // ================= TABLE =================
   autoTable(doc, {
     startY: sectionY + 42,
     head: [columns],
     body: data,
-    margin: {top: 125, left: paddingX,right: paddingX,},
+    margin: { top: 125, left: paddingX, right: paddingX },
 
     styles: {
       fontSize: 10,
@@ -133,29 +144,30 @@ export const generateSupplyFilteredReport = ({
     },
 
     columnStyles:
-    reportType === "suppliers"
+      reportType === "suppliers"
         ? {
             // SUPPLIERS REPORT
-            0: { cellWidth: 50, halign: "center"}, // Supplier ID
-            1: { cellWidth: 95, halign: "left"}, // Supplier Name
-            2: { cellWidth: 85, halign: "left"}, // Contact Person
-            3: { cellWidth: 45, halign: "center"}, // Status
-            4: { cellWidth: 100, halign: "left"}, // Address
-            5: { cellWidth: 70, halign: "left"}, // Phone
-            6: { cellWidth: 90, halign: "left"}, // Email
-        }
+            0: { cellWidth: 50, halign: "center" }, // Supplier ID
+            1: { cellWidth: 95, halign: "left" }, // Supplier Name
+            2: { cellWidth: 85, halign: "left" }, // Contact Person
+            3: { cellWidth: 45, halign: "center" }, // Status
+            4: { cellWidth: 100, halign: "left" }, // Address
+            5: { cellWidth: 70, halign: "left" }, // Phone
+            6: { cellWidth: 90, halign: "left" }, // Email
+          }
         : {
             // PURCHASE BATCHES REPORT
-            0: { cellWidth: 75, halign: "center"}, // Batch number
-            1: { cellWidth: 90, halign: "left"}, // Item Name
-            2: { cellWidth: 90, halign: "left"}, // Supplier Name
-            3: { cellWidth: 65, halign: "center"}, // Status
-            4: { cellWidth: 65, halign: "center"}, // Location
-            5: { cellWidth: 70, halign: "center"}, // Quantity
-            6: { cellWidth: 80, halign: "center"}, // Expiration Date
-        },
+            0: { cellWidth: 65, halign: "center" }, // Batch number
+            1: { cellWidth: 80, halign: "left" }, // Item Name
+            2: { cellWidth: 50, halign: "center" }, // Unit Type
+            3: { cellWidth: 80, halign: "left" }, // Supplier Name
+            4: { cellWidth: 55, halign: "center" }, // Status
+            5: { cellWidth: 55, halign: "center" }, // Location
+            6: { cellWidth: 55, halign: "center" }, // Quantity
+            7: { cellWidth: 95, halign: "center" }, // Expiration Date
+          },
 
-    alternateRowStyles: {fillColor: [245, 245, 245],},
+    alternateRowStyles: { fillColor: [245, 245, 245] },
     willDrawPage: (dataArg) => {
       if (dataArg.pageNumber > 1) {
         drawWatermark();
@@ -170,7 +182,11 @@ export const generateSupplyFilteredReport = ({
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(0, 0, 0);
-    doc.text(`Page ${i} of ${pageCount}`,pageWidth - paddingX,pageHeight - 20,{ align: "right" }
+    doc.text(
+      `Page ${i} of ${pageCount}`,
+      pageWidth - paddingX,
+      pageHeight - 20,
+      { align: "right" },
     );
   }
   doc.save(filename);

@@ -4,18 +4,17 @@
   align-items: center;
 }
 
-.profile-btn{
-    width: 100%;
+.profile-btn {
+  width: 100%;
   background: #caa439;
   color: white;
   border: none;
-  margin-top: 10px;
   padding: 10px 20px;
   border-radius: 6px;
   cursor: pointer;
 }
-.employee-image-placeholder img{
-    width: 220px;
+.employee-image-placeholder img {
+  width: 220px;
   height: 260px;
   background: #ddd;
   border-radius: 8px;
@@ -26,7 +25,7 @@
   background-color: #f44336;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 14px;
 }
@@ -34,7 +33,6 @@
 .Profile-Client-cancelBtn:hover {
   background-color: #d32f2f;
 }
-
 
 .Profile-Client-container {
   padding: 40px 60px;
@@ -268,6 +266,21 @@
   box-sizing: border-box;
 }
 
+.Profile-Client-phoneInput {
+  display: flex;
+  gap: 6px;
+}
+
+.Profile-Client-phoneInput select {
+  flex: 0 0 100px;
+  width: 100px;
+  padding-right: 20px;
+}
+
+.Profile-Client-phoneInput input {
+  min-width: 0;
+}
+
 .Profile-Client-group input:focus,
 .Profile-Client-group select:focus {
   outline: none;
@@ -381,7 +394,7 @@
   .Profile-Client-card .Profile-Client-cardHeader {
     display: flex;
     flex-direction: row;
-    flex-wrap:wrap;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     width: 100%;
@@ -394,7 +407,7 @@
     flex-direction: row;
     align-items: center;
     gap: 8px;
-    margin:0;
+    margin: 0;
     padding: 0;
     border: none;
     flex-shrink: 0;
@@ -409,7 +422,7 @@
   }
 
   .Profile-Client-card .Profile-Client-editBtn {
-    width:auto;
+    width: auto;
     padding: 8px 14px;
     font-size: 13px;
     white-space: nowrap;
@@ -427,7 +440,8 @@
     order: 4;
   }
 
-  .Profile-Client-saveBtn, .Profile-Client-cancelBtn {
+  .Profile-Client-saveBtn,
+  .Profile-Client-cancelBtn {
     flex: 1;
     padding: 10px 16px;
     font-size: 14px;

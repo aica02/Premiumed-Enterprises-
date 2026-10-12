@@ -10,6 +10,7 @@ export const generateActivityReport = ({
   vatReg = "",
   landlineNum = "",
   columns = [],
+  logo,
   data = [],
   filename = "Activity Log Report.pdf",
 }) => {
@@ -30,28 +31,42 @@ export const generateActivityReport = ({
     doc.setFillColor(212, 175, 55);
     doc.rect(0, headerHeight + 10, pageWidth, 2, "F");
 
-    // Company name
+    // company logo
+    if (logo) {
+      doc.addImage(
+        logo,
+        "PNG",
+        paddingX,
+        20,
+        70,
+        70,
+        "Premiumed-Logo",
+        "FAST"
+      );
+    }
+
+    // ================= COMPANY NAME =================
     doc.setFont("helvetica", "bold");
     doc.setTextColor(212, 175, 55);
     doc.setFontSize(15);
-    doc.text(companyName, paddingX, 31);
+    doc.text(companyName, paddingX + 85, 31, { align: "left" });
 
-    // Company address
-    doc.setFont("helvetica", "normal");
+    // ================= COMPANY ADDRESS =================
     doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    doc.text(companyAddress, paddingX, 46);
+    doc.text(companyAddress, paddingX + 85, 46, { align: "left" });
 
-    // CEO
+    // ================= CEO =================
     doc.setFontSize(11);
-    doc.text(ceo, paddingX, 62);
+    doc.text(ceo, paddingX + 85, 62, { align: "left" });
 
-    // VAT
+    // ================= VAT =================
     doc.setFontSize(10);
-    doc.text(vatReg, paddingX, 76);
+    doc.text(vatReg, paddingX + 85, 76, { align: "left" });
 
-    // Landline
-    doc.text(landlineNum, paddingX, 90);
+    // ================= LANDLINE =================
+    doc.text(landlineNum, paddingX + 85, 90, { align: "left" });
   };
 
   const drawWatermark = () => {
@@ -83,11 +98,11 @@ export const generateActivityReport = ({
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(212, 175, 55);
-  doc.text("Date:", pageWidth - 140, sectionY);
+  doc.text("Date:", pageWidth - 132, sectionY);
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(0, 0, 0);
-  doc.text(formattedDate, pageWidth - 102, sectionY);
+  doc.text(formattedDate, pageWidth - 94, sectionY);
 
   // ================= DIVIDER =================
   doc.setDrawColor(212, 175, 55);

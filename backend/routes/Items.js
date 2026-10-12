@@ -6,7 +6,10 @@ import Product from "../models/Product.js";
 import Batch from "../models/Batch.js";
 import createActivityLog from "../utils/createActivityLogs.js";
 import { fileURLToPath } from "url";
-
+import {
+  checkBatchById,
+  checkProductStock,
+} from "../utils/inventoryAlertService.js"; 
 const router = express.Router();
 
 // Get current file path for ES modules
@@ -53,6 +56,57 @@ const getActor = (req) => ({
   userId: req.actor?.userId || null,
   username: req.actor?.username || "Unknown",
   role: req.actor?.role || "Unknown",
+});
+
+router.patch("/product/:itemCode/image", async (req, res) => {
+  try {
+    const itemImage =
+      typeof req.body.itemImage === "string" ? req.body.itemImage.trim() : "";
+    if (!itemImage) {
+      return res
+        .status(400)
+        .json({ message: "A product image URL is required." });
+    }
+
+    let parsedImageUrl;
+    try {
+      parsedImageUrl = new URL(itemImage);
+    } catch {
+      return res
+        .status(400)
+        .json({ message: "A valid product image URL is required." });
+    }
+    if (!["http:", "https:"].includes(parsedImageUrl.protocol)) {
+      return res
+        .status(400)
+        .json({ message: "Product images must use HTTP or HTTPS." });
+    }
+
+    const product = await Product.findOneAndUpdate(
+      { itemCode: req.params.itemCode },
+      { $set: { itemImage } },
+      { new: true, runValidators: true },
+    ).lean();
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found." });
+    }
+
+    const actor = getActor(req);
+    await createActivityLog({
+      userId: actor.userId,
+      username: actor.username,
+      role: actor.role,
+      action: "Update product image",
+      module: "Inventory",
+      description: `Product ${product.name} (${product.itemCode}) image was updated.`,
+    });
+
+    return res.json({ success: true, product });
+  } catch (err) {
+    console.error("Product image update error:", err);
+    return res.status(500).json({ message: "Failed to update product image." });
+  }
 });
 
 router.get("/", async (req, res) => {
@@ -236,7 +290,7 @@ router.get("/stored", async (req, res) => {
   }
 });
 
-//ADD or RESTOCK in Inventory Mobile ( SUPPLY)
+// ADD or RESTOCK in Inventory Mobile (SUPPLY)
 router.post("/", async (req, res) => {
   try {
     const {
@@ -245,40 +299,71 @@ router.post("/", async (req, res) => {
       category,
       unitType,
       supplierName,
-      quantity,
+      quantity, 
+      box,
       reorderLevel,
       expirationDate,
       storageLocation,
       itemImage,
     } = req.body;
 
+    const boxCount = Number(box) || 0;
+    if (boxCount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Box must be greater than 0.",
+      });
+    }
+
     let product;
     let batch;
 
-    // --- REGULAR ITEM (NON-KIT) ---
     let existingProduct = null;
     if (itemCode && itemCode !== "null" && itemCode !== "") {
       existingProduct = await Product.findOne({ itemCode });
     }
 
+    let unitsPerBox;
+
     if (existingProduct) {
-      // RESTOCK: Update metadata only - DO NOT update totalQuantity
+      // ---- RESTOCK ----
+      unitsPerBox = Number(existingProduct.quantityPerBox) || 0;
+      if (unitsPerBox <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Existing item has no quantity per box configured.",
+        });
+      }
+
       existingProduct.unitType =
         unitType || existingProduct.unitType || "Piece";
+
       if (itemImage) {
         existingProduct.itemImage = itemImage;
       }
+
       await existingProduct.save();
       product = existingProduct;
     } else {
-      // CREATE NEW: Create new product with totalQuantity = 0
+      // ---- ADD NEW ----
+      unitsPerBox = Number(quantity);
+      if (!Number.isFinite(unitsPerBox) || unitsPerBox <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Quantity per box must be greater than 0.",
+        });
+      }
+
       const productData = {
         name,
         category,
         supplierName: supplierName || "Unknown",
         reorderLevel: Number(reorderLevel) || 50,
-        totalQuantity: 0,
         unitType: unitType || "Piece",
+        quantityPerBox: unitsPerBox,
+        // Start at 0 — only putaway increments these
+        totalBoxes: 0,
+        totalQuantity: 0,
         isKit: false,
         kitItems: [],
       };
@@ -295,13 +380,15 @@ router.post("/", async (req, res) => {
       await product.save();
     }
 
+    // ---- Create batch (pending, will be stored later) ----
     const batchData = {
       itemName: product.name,
       itemCode: product.itemCode,
       supplierName: supplierName || "Unknown",
       expirationDate:
         expirationDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      quantity: Number(quantity) || 0,
+      quantity: unitsPerBox * boxCount,
+      box: boxCount,
       storageLocation: storageLocation || "R1-A",
       status: "pending",
       unitType: unitType || "Piece",
@@ -310,7 +397,9 @@ router.post("/", async (req, res) => {
 
     batch = new Batch(batchData);
     await batch.save();
-
+checkBatchById(batch._id).catch(err =>
+  console.error("[Hook] checkBatchById failed:", err)
+);
     const savedProduct = await Product.findById(product._id).lean();
     const actor = getActor(req);
 
@@ -318,16 +407,18 @@ router.post("/", async (req, res) => {
       userId: actor.userId,
       username: actor.username,
       role: actor.role,
-      action: itemCode ? "Restock supply" : "Create supply",
+      action: existingProduct ? "Restock supply" : "Create supply",
       module: "Inventory",
-      description: `${product.name} was ${itemCode ? "restocked" : "added"} to inventory with pending batch ${batch.batchCode}.`,
+      description: `${product.name} was ${
+        existingProduct ? "restocked" : "added"
+      } to inventory with pending batch ${batch.batchCode}.`,
     });
 
     res.status(201).json({
       success: true,
       product: savedProduct,
       batch: batch,
-      message: itemCode
+      message: existingProduct
         ? "Item restocked successfully (pending storage)"
         : "Item added successfully (pending storage)",
       isKit: false,
@@ -341,8 +432,7 @@ router.post("/", async (req, res) => {
     });
   }
 });
-
-//ADD or RESTOCK in Inventory Mobile (KIT)
+// ADD or RESTOCK in Inventory Mobile (KIT)
 router.post("/kit", async (req, res) => {
   try {
     const {
@@ -351,7 +441,8 @@ router.post("/kit", async (req, res) => {
       category,
       unitType,
       supplierName,
-      quantity,
+      box,
+      quantity, // will be 100
       reorderLevel,
       expirationDate,
       storageLocation,
@@ -359,17 +450,30 @@ router.post("/kit", async (req, res) => {
       kitItems,
     } = req.body;
 
+    const KIT_QUANTITY_PER_BOX = 100;
+    const boxCount = Number(box) || 0;
+
+    if (boxCount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Box must be greater than 0.",
+      });
+    }
+
+    // Hardcoded 2-year expiration from today
+    const twoYearsFromNow = new Date();
+    twoYearsFromNow.setFullYear(twoYearsFromNow.getFullYear() + 2);
+
     let product;
     let batch;
 
-    // Check if product already exists (this is a RESTOCK)
     let existingProduct = null;
     if (itemCode && itemCode !== "null" && itemCode !== "") {
       existingProduct = await Product.findOne({ itemCode });
     }
 
     if (existingProduct) {
-      // 1. Check if kit has items defined
+      // ---- RESTOCK ----
       if (!existingProduct.kitItems || existingProduct.kitItems.length === 0) {
         return res.status(400).json({
           success: false,
@@ -378,24 +482,16 @@ router.post("/kit", async (req, res) => {
         });
       }
 
-      // 2. Validate each kit item still exists in the database
       const validationResults = await Promise.all(
         existingProduct.kitItems.map(async (kitItem) => {
           const productItem = await Product.findOne({
             itemCode: kitItem.itemCode,
           });
-
-          return {
-            kitItem,
-            exists: !!productItem,
-            productItem,
-          };
+          return { kitItem, exists: !!productItem, productItem };
         }),
       );
 
-      // 3. Check if any kit items are missing
       const missingItems = validationResults.filter((r) => !r.exists);
-
       if (missingItems.length > 0) {
         const missingNames = missingItems.map((r) => r.kitItem.name).join(", ");
         return res.status(400).json({
@@ -405,6 +501,8 @@ router.post("/kit", async (req, res) => {
         });
       }
 
+      // Inclusion qty is now PER KIT-BOX.
+      // For validation, total required = item.quantity × boxCount.
       const stockCheck = await Promise.all(
         validationResults.map(async (r) => {
           const batches = await Batch.find({
@@ -416,8 +514,8 @@ router.post("/kit", async (req, res) => {
             (sum, b) => sum + b.quantity,
             0,
           );
-          const requiredPerKit = r.kitItem.quantity || 1;
-          const totalRequired = requiredPerKit * (Number(quantity) || 1);
+          const requiredPerBox = r.kitItem.quantity || 1;
+          const totalRequired = requiredPerBox * boxCount;
 
           return {
             itemCode: r.kitItem.itemCode,
@@ -429,9 +527,7 @@ router.post("/kit", async (req, res) => {
         }),
       );
 
-      // Check if any item has insufficient stock
       const insufficientStock = stockCheck.filter((s) => !s.hasStock);
-
       if (insufficientStock.length > 0) {
         const stockDetails = insufficientStock
           .map(
@@ -446,19 +542,17 @@ router.post("/kit", async (req, res) => {
         });
       }
 
-      // Update metadata only - kit composition is locked
       existingProduct.name = name;
       existingProduct.supplierName = supplierName || "Internal";
       existingProduct.reorderLevel = Number(reorderLevel) || 50;
-      existingProduct.unitType =
-        unitType || existingProduct.unitType || "Piece";
+      existingProduct.unitType = unitType || existingProduct.unitType || "Set";
+      existingProduct.quantityPerBox = KIT_QUANTITY_PER_BOX;
       if (itemImage) existingProduct.itemImage = itemImage;
-
-      // existingProduct.kitItems remains unchanged
 
       await existingProduct.save();
       product = existingProduct;
     } else {
+      // ---- ADD NEW ----
       if (!kitItems || kitItems.length === 0) {
         return res.status(400).json({
           success: false,
@@ -466,17 +560,12 @@ router.post("/kit", async (req, res) => {
         });
       }
 
-      // Validate all kit items exist in database
       const itemValidation = await Promise.all(
         kitItems.map(async (item) => {
           const productItem = await Product.findOne({
             itemCode: item.itemCode,
           });
-          return {
-            item,
-            exists: !!productItem,
-            productItem,
-          };
+          return { item, exists: !!productItem, productItem };
         }),
       );
 
@@ -490,7 +579,8 @@ router.post("/kit", async (req, res) => {
         });
       }
 
-      // Check stock for kit items
+      // Inclusion qty is PER KIT-BOX.
+      // Total required for this batch = item.quantity × boxCount.
       const stockValidation = await Promise.all(
         itemValidation.map(async (r) => {
           const batches = await Batch.find({
@@ -502,8 +592,8 @@ router.post("/kit", async (req, res) => {
             (sum, b) => sum + b.quantity,
             0,
           );
-          const requiredPerKit = r.item.quantity || 1;
-          const totalRequired = requiredPerKit * (Number(quantity) || 1);
+          const requiredPerBox = r.item.quantity || 1;
+          const totalRequired = requiredPerBox * boxCount;
 
           return {
             itemCode: r.item.itemCode,
@@ -516,7 +606,6 @@ router.post("/kit", async (req, res) => {
       );
 
       const insufficientStock = stockValidation.filter((s) => !s.hasStock);
-
       if (insufficientStock.length > 0) {
         const stockDetails = insufficientStock
           .map(
@@ -531,6 +620,7 @@ router.post("/kit", async (req, res) => {
         });
       }
 
+      // Store inclusion quantity as PER KIT-BOX directly (no multiplication).
       const resolvedKitItems = await Promise.all(
         kitItems.map(async (item) => {
           const productItem = await Product.findOne({
@@ -540,8 +630,7 @@ router.post("/kit", async (req, res) => {
             _id: productItem._id,
             name: productItem.name,
             itemCode: productItem.itemCode,
-            quantity: item.quantity || 1,
-            totalQuantity: (item.quantity || 1) * (Number(quantity) || 1),
+            quantity: item.quantity || 1, // per kit-box
             category: productItem.category,
             unitType: productItem.unitType || "Piece",
           };
@@ -554,7 +643,9 @@ router.post("/kit", async (req, res) => {
         supplierName: supplierName || "Internal",
         reorderLevel: Number(reorderLevel) || 50,
         totalQuantity: 0,
-        unitType: unitType || "Piece",
+        totalBoxes: 0,
+        quantityPerBox: KIT_QUANTITY_PER_BOX,
+        unitType: unitType || "Set",
         itemImage: itemImage || null,
         isKit: true,
         kitItems: resolvedKitItems,
@@ -568,24 +659,25 @@ router.post("/kit", async (req, res) => {
       await product.save();
     }
 
-    // Create batch with PENDING status
+    // Batch = boxCount × 100 kits
     const batchData = {
       itemName: product.name,
       itemCode: product.itemCode,
       supplierName: supplierName || "Internal",
-      expirationDate:
-        expirationDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      quantity: Number(quantity) || 1,
+      expirationDate: twoYearsFromNow,
+      quantity: boxCount * KIT_QUANTITY_PER_BOX,
+      box: boxCount,
       storageLocation: storageLocation || "R1-A",
       status: "pending",
-      unitType: unitType || "Piece",
-      isKit: true,
+      unitType: unitType || "Set",
       disposedDate: null,
     };
 
     batch = new Batch(batchData);
     await batch.save();
-
+checkBatchById(batch._id).catch(err =>
+  console.error("[Hook] checkBatchById failed:", err)
+);
     const actor = getActor(req);
     await createActivityLog({
       userId: actor.userId,
@@ -608,11 +700,6 @@ router.post("/kit", async (req, res) => {
       isKit: true,
       pendingDeduction: true,
       isRestock: !!existingProduct,
-      kitItems: product.kitItems.map((item) => ({
-        name: item.name,
-        quantity: item.totalQuantity || item.quantity || 1,
-        unitType: item.unitType || "Piece",
-      })),
     });
   } catch (err) {
     console.error("ERROR creating/restocking kit:", err.message);
@@ -638,22 +725,19 @@ router.patch("/batch/stored", async (req, res) => {
       return res.status(400).json({ message: "Batch is already stored" });
     }
 
-    // CHECK IF BATCH IS EXPIRED
-    let warningMessage = null;
-    let daysUntilExpiry = null;
-
+    // Check expired
     if (batch.expirationDate) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-
       const expiryDate = new Date(batch.expirationDate);
       expiryDate.setHours(0, 0, 0, 0);
 
-      // Check if expired - BLOCK STORAGE
       if (expiryDate < today) {
         return res.status(400).json({
           success: false,
-          message: `Cannot store expired batch. Expiration Date: ${batch.expirationDate.toISOString().split("T")[0]}`,
+          message: `Cannot store expired batch. Expiration Date: ${batch.expirationDate
+            .toISOString()
+            .split("T")[0]}`,
           batch: {
             batchCode: batch.batchCode,
             itemCode: batch.itemCode,
@@ -669,6 +753,17 @@ router.patch("/batch/stored", async (req, res) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
+    // Helper: derive totalBoxes from totalQuantity (Option A)
+    const deriveTotalBoxes = (target) => {
+      if (target.quantityPerBox > 0) {
+        target.totalBoxes = Math.floor(
+          target.totalQuantity / target.quantityPerBox
+        );
+      } else {
+        target.totalBoxes = 0;
+      }
+    };
+
     let deductionResults = [];
 
     if (
@@ -676,26 +771,23 @@ router.patch("/batch/stored", async (req, res) => {
       product.kitItems &&
       product.kitItems.length > 0
     ) {
-      // --- KIT DEDUCTION LOGIC ---
+      // ===== KIT PUTAWAY =====
       for (const kitItem of product.kitItems) {
         try {
           const itemToDeduct = await Product.findById(kitItem._id);
           if (!itemToDeduct) {
-            console.warn(
-              "Product",
-              kitItem._id,
-              "not found, skipping deduction",
-            );
+            console.warn("Product", kitItem._id, "not found, skipping");
             continue;
           }
 
-          const deductQty = kitItem.totalQuantity || kitItem.quantity || 0;
+          // Inclusion qty is PER KIT-BOX; multiply by batch.box
+          const deductQty = (kitItem.quantity || 1) * (batch.box || 0);
 
           if (deductQty <= 0) {
             console.warn(
-              "Invalid deduction quantity for",
+              "Invalid deduction qty for",
               itemToDeduct.name + ":",
-              deductQty,
+              deductQty
             );
             continue;
           }
@@ -709,16 +801,19 @@ router.patch("/batch/stored", async (req, res) => {
 
           const totalStoredQty = availableBatches.reduce(
             (sum, b) => sum + b.quantity,
-            0,
+            0
           );
           const actualDeduct = Math.min(deductQty, totalStoredQty);
 
+          // Deduct totalQuantity, then derive totalBoxes
           itemToDeduct.totalQuantity = Math.max(
             0,
-            itemToDeduct.totalQuantity - actualDeduct,
+            itemToDeduct.totalQuantity - actualDeduct
           );
+          deriveTotalBoxes(itemToDeduct);
           await itemToDeduct.save();
 
+          // FEFO deduction from individual batches
           let remainingToDeduct = actualDeduct;
           let batchesUpdated = 0;
 
@@ -726,7 +821,10 @@ router.patch("/batch/stored", async (req, res) => {
             if (remainingToDeduct <= 0) break;
 
             const take = Math.min(batchToDeduct.quantity, remainingToDeduct);
-            batchToDeduct.quantity = Math.max(0, batchToDeduct.quantity - take);
+            batchToDeduct.quantity = Math.max(
+              0,
+              batchToDeduct.quantity - take
+            );
             remainingToDeduct -= take;
             batchesUpdated++;
 
@@ -738,6 +836,7 @@ router.patch("/batch/stored", async (req, res) => {
             itemCode: itemToDeduct.itemCode,
             deducted: actualDeduct,
             remaining: itemToDeduct.totalQuantity,
+            remainingBoxes: itemToDeduct.totalBoxes,
             batchesUpdated,
             wasShort: totalStoredQty < deductQty,
           });
@@ -745,17 +844,35 @@ router.patch("/batch/stored", async (req, res) => {
           console.error(
             "Error deducting",
             kitItem.name + ":",
-            deductError.message,
+            deductError.message
           );
         }
       }
 
-      // Update kit batch status to stored
+      // Mark batch stored
       batch.status = "stored";
       await batch.save();
 
-      product.totalQuantity += batch.quantity;
+      // Increment kit totals, then derive boxes
+      product.totalQuantity =
+        (Number(product.totalQuantity) || 0) + (Number(batch.quantity) || 0);
+      deriveTotalBoxes(product);
       await product.save();
+      checkBatchById(batch._id).catch(err =>
+  console.error("[Hook] checkBatchById failed:", err)
+);
+
+// Also check every kit component's stock (kit putaway deducts them)
+if (product.isKit && product.kitItems?.length) {
+  const codes = product.kitItems.map(k => k.itemCode);
+  Promise.all(codes.map(c => checkProductStock(c))).catch(err =>
+    console.error("[Hook] kit component stock check failed:", err)
+  );
+} else {
+  checkProductStock(product.itemCode).catch(err =>
+    console.error("[Hook] checkProductStock failed:", err)
+  );
+}
 
       const actor = getActor(req);
       await createActivityLog({
@@ -764,25 +881,25 @@ router.patch("/batch/stored", async (req, res) => {
         role: actor.role,
         action: "Store kit batch",
         module: "Putaway",
-        description: `Kit ${product.name} batch ${batch.batchCode} was stored. Components deducted from inventory. Total kit quantity: ${product.totalQuantity}`,
+        description: `Kit ${product.name} batch ${batch.batchCode} was stored. Components deducted. Total kit quantity: ${product.totalQuantity}`,
       });
 
       return res.status(200).json({
         success: true,
         message: "Kit batch stored and inventory deducted (FEFO)",
-        warning: warningMessage,
-        daysUntilExpiry: daysUntilExpiry,
         batch: batch,
         product: product,
         deductions: deductionResults,
         isKit: true,
       });
     } else {
-      // --- NON-KIT STORAGE LOGIC ---
+      // ===== NON-KIT PUTAWAY =====
       batch.status = "stored";
       await batch.save();
 
-      product.totalQuantity += batch.quantity;
+      product.totalQuantity =
+        (Number(product.totalQuantity) || 0) + (Number(batch.quantity) || 0);
+      deriveTotalBoxes(product);
       await product.save();
 
       const actor = getActor(req);
@@ -792,14 +909,12 @@ router.patch("/batch/stored", async (req, res) => {
         role: actor.role,
         action: "Store batch",
         module: "Putaway",
-        description: `Batch ${batch.batchCode} for ${product.name} was stored successfully. Quantity: ${batch.quantity}`,
+        description: `Batch ${batch.batchCode} for ${product.name} was stored. Quantity: ${batch.quantity}`,
       });
 
       res.status(200).json({
         success: true,
         message: "Batch stored successfully",
-        warning: warningMessage,
-        daysUntilExpiry: daysUntilExpiry,
         batch: batch,
         product: product,
         isKit: false,
@@ -808,10 +923,7 @@ router.patch("/batch/stored", async (req, res) => {
   } catch (err) {
     console.error("ERROR storing batch:", err.message);
     console.error("Stack:", err.stack);
-    res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -892,6 +1004,10 @@ router.patch("/batch/:batchCode/dispose", async (req, res) => {
     batch.status = "disposed";
     batch.disposedDate = new Date().toISOString().split("T")[0];
     await batch.save();
+
+    checkProductStock(product.itemCode).catch(err =>
+  console.error("[Hook] dispose checkProductStock failed:", err)
+);
 
     // Log the activity
     await createActivityLog({

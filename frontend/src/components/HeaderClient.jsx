@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   FaShoppingCart,
   FaUserCircle,
@@ -12,7 +12,7 @@ import {
   FaExclamationCircle,
 } from "react-icons/fa";
 import { FaRightFromBracket } from "react-icons/fa6";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import "../styles/Header.css";
 import "../styles/Modals.css";
@@ -35,6 +35,17 @@ const BACKEND_URL =
 function ClientNavbar() {
   const [activeMenu, setActiveMenu] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  const notificationRef = useRef(null);
+  const profileRef = useRef(null);
+  const [previousLocationKey, setPreviousLocationKey] = useState(location.key);
+
+  if (previousLocationKey !== location.key) {
+    setPreviousLocationKey(location.key);
+    setActiveMenu(null);
+  }
+
+  const visibleMenu = activeMenu;
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -116,8 +127,22 @@ function ClientNavbar() {
   }, [passwords.newPassword, passwords.confirmPassword]);
 
   const toggleMenu = (menu) => {
-    setActiveMenu(activeMenu === menu ? null : menu);
+    setActiveMenu(visibleMenu === menu ? null : menu);
   };
+
+  useEffect(() => {
+    if (!visibleMenu) return;
+
+    const menuRef = visibleMenu === "notif" ? notificationRef : profileRef;
+    const handlePointerDown = (event) => {
+      if (!menuRef.current?.contains(event.target)) {
+        setActiveMenu(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [visibleMenu]);
 
   const handleLogout = () => {
     localStorage.clear();
@@ -364,8 +389,9 @@ function ClientNavbar() {
 
       <div className="right">
         <NotificationBell
+          containerRef={notificationRef}
           userName={clientName}
-          isOpen={activeMenu === "notif"}
+          isOpen={visibleMenu === "notif"}
           onToggle={() => toggleMenu("notif")}
           fetchUrl={`${BACKEND_URL}/api/orders/notifications/${encodeURIComponent(
             clientName || "",
@@ -403,13 +429,14 @@ function ClientNavbar() {
         </div>
 
         <div
+          ref={profileRef}
           className="client-nav-icon-wrapper"
           title="Profile"
           onClick={() => toggleMenu("profile")}
         >
           <FaUserCircle className="account-icon" />
 
-          {activeMenu === "profile" && (
+          {visibleMenu === "profile" && (
             <div className="account-dropdown">
               <div
                 className="dropdown-item"

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import "../styles/InformationLayout.css";
 import "../styles/ActivityLogs.css";
 import { FaPlusCircle, FaPrint, FaSearch, FaTimes } from "react-icons/fa";
+import { MdAutorenew } from "react-icons/md";
 import { generateActivityReport } from "../utils/pdf/ActivityLogReport";
 import { Toaster, toast } from "react-hot-toast";
 import EmptyState from "../components/EmptyState";
@@ -15,6 +16,7 @@ const displayRole = (role) => (role === "User" ? "Client" : role);
 const ActivityLogs = () => {
   const [activityLogs, setActivityLogs] = useState([]);
   const [allLogsForReport, setAllLogsForReport] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
 
   // table filters
@@ -31,6 +33,7 @@ const ActivityLogs = () => {
   const [includeArchivedLogs, setIncludeArchivedLogs] = useState(true);
 
   const fetchActivityLogs = async (includeArchived = true) => {
+    setLoading(true);
     try {
       const response = await fetch(
         `${API_URL}/api/activitylogs?includeArchived=${includeArchived}`,
@@ -45,6 +48,8 @@ const ActivityLogs = () => {
       setActivityLogs(data.filter((log) => log.source !== "Archived"));
     } catch (error) {
       console.error("Error fetching activity logs:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -142,7 +147,7 @@ const ActivityLogs = () => {
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       columns,
       data: rows,
@@ -364,7 +369,21 @@ const ActivityLogs = () => {
             </thead>
 
             <tbody>
-              {filteredLogs.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="empty-order-cell">
+                    <div className="activity-logs-loading" aria-live="polite">
+                      <EmptyState
+                        icon={
+                          <MdAutorenew className="activity-logs-loading-spinner" />
+                        }
+                        title="Loading activity logs"
+                        message="Please wait while we load the activity logs."
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredLogs.length > 0 ? (
                 filteredLogs.map((log, index) => (
                   <tr key={log._id}>
                     <td>{index + 1}</td>

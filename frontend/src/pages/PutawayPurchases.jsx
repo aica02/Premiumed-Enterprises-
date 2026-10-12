@@ -23,10 +23,6 @@ const PutawayPurchases = () => {
     { id: "Rack 5", top: "76%", left: "15%", width: "70%", height: "10%" }
   ];
 
-  useEffect(() => {
-    fetchPendingPutaways();
-  }, []);
-
 const fetchPendingPutaways = async () => {
   try {
    const res = await axios.get(`${BACKEND_URL}/api/putaway`);
@@ -41,25 +37,33 @@ const fetchPendingPutaways = async () => {
   }
 };
 
+  useEffect(() => {
+    Promise.resolve().then(fetchPendingPutaways);
+  }, []);
+
   const handlePutawayClick = (batch) => {
     setActiveRacks([batch.storageLocation]);
   };
 
-  const handleCompletePutaway = async (batchId) => {
+  const handleCompletePutaway = async (batch) => {
     try {
-      await axios.patch(`${BACKEND_URL}/api/putaway/${batchId}/complete`, {}, {
+      await axios.patch(`${BACKEND_URL}/api/inventoryPage/batch/stored`, {
+        itemCode: batch.itemCode,
+        batchCode: batch.batchCode,
+      }, {
         headers: {
           'X-Username': localStorage.getItem('username') || '',
           'X-User-Id': localStorage.getItem('userId') || '',
           'X-Role': localStorage.getItem('role') || 'Admin'
         }
       });
-      setPutawayList(prev => prev.filter(b => b._id !== batchId));
+      setPutawayList(prev => prev.filter(b => b._id !== batch._id));
       closeModal();
       setActiveRacks([]);
       alert("Item verified and stored!");
     } catch (err) {
-      alert("Failed to complete putaway.");
+      console.error("Failed to complete putaway:", err);
+      alert(err.response?.data?.message || "Failed to complete putaway.");
     }
   };
 
@@ -104,7 +108,7 @@ const fetchPendingPutaways = async () => {
                     className={`purchases-item ${activeRacks.includes(batch.storageLocation) ? "active-item" : ""}`}
                     onClick={() => handlePutawayClick(batch)}
                   >
-                    <span>{batch.batchNumber}</span>
+                    <span>{batch.batchCode}</span>
                     <button className="purchases-view-btn" onClick={(e) => handleViewClick(batch, e)}>
                       View
                     </button>
@@ -129,8 +133,7 @@ const fetchPendingPutaways = async () => {
             </div>
 
             <div className="modal-grid">
-              <div><strong>Item Name:</strong> {selectedPutaway.product?.name}</div>
-              <div><strong>Category:</strong> {selectedPutaway.product?.category}</div>
+              <div><strong>Item Name:</strong> {selectedPutaway.itemName}</div>
               <div><strong>Quantity:</strong> {selectedPutaway.quantity}</div>
               <div><strong>Location:</strong> {selectedPutaway.storageLocation}</div>
               <div><strong>Batch #:</strong> {selectedPutaway.batchNumber}</div>
@@ -142,7 +145,7 @@ const fetchPendingPutaways = async () => {
                 <button 
                   className="save-btn" 
                   style={{width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px"}}
-                  onClick={() => handleCompletePutaway(selectedPutaway._id)}
+                  onClick={() => handleCompletePutaway(selectedPutaway)}
                 >
                   <FaCheckCircle /> MARK AS STORED
                 </button>

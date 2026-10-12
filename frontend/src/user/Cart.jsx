@@ -24,7 +24,6 @@ export default function Cart() {
     useState(false);
   const [invalidQuantityItem, setInvalidQuantityItem] = useState("");
 
-  // Added Modal State without changing existing variables
   const [showStockModal, setShowStockModal] = useState(false);
   const [insufficientItems, setInsufficientItems] = useState([]);
 
@@ -34,11 +33,6 @@ export default function Cart() {
     const username = localStorage.getItem("username");
     const token = localStorage.getItem("token");
     return username && username !== "guest" && username !== "null" && token;
-  };
-
-  const getCurrentUsername = () => {
-    const username = localStorage.getItem("username");
-    return username && username !== "null" ? username : "guest";
   };
 
   const getItemId = (item) => item.itemCode || item._id;
@@ -54,11 +48,13 @@ export default function Cart() {
 
       if (isLoggedIn) {
         const dbItems = await cartService.fetchCart();
-
         const itemsWithPrice = dbItems.map((item) => ({
           ...item,
           price: Number(item.price) || 0,
           quantity: Number(item.quantity) || 1,
+          orderMode: item.orderMode === "box" ? "box" : "piece",
+          boxes: Number(item.boxes) || 0,
+          quantityPerBox: Number(item.quantityPerBox) || 0,
         }));
 
         setItems(itemsWithPrice);
@@ -75,6 +71,9 @@ export default function Cart() {
               ...item,
               price: Number(item.price) || 0,
               quantity: Number(item.quantity) || 1,
+              orderMode: item.orderMode === "box" ? "box" : "piece",
+              boxes: Number(item.boxes) || 0,
+              quantityPerBox: Number(item.quantityPerBox) || 0,
             }));
             setItems(itemsWithPrice);
             if (itemsWithPrice.length > 0) {
@@ -112,8 +111,16 @@ export default function Cart() {
     );
 
     const invalidItem = checkoutItems.find((item) => {
+      if (item.orderMode === "box") {
+        const b = Number(item.boxes);
+        return (
+          item.boxes === "" ||
+          !Number.isFinite(b) ||
+          b <= 0 ||
+          !Number.isInteger(b)
+        );
+      }
       const qty = Number(item.quantity);
-
       return (
         item.quantity === "" ||
         !Number.isFinite(qty) ||
@@ -132,22 +139,23 @@ export default function Cart() {
       ...item,
       price: Number(item.price) || 0,
       quantity: Number(item.quantity),
+      boxes: item.orderMode === "box" ? Number(item.boxes) : 0,
+      quantityPerBox: Number(item.quantityPerBox) || 0,
     }));
 
     sessionStorage.setItem("checkoutItems", JSON.stringify(itemsWithPrice));
-
     navigate("/OrderSummary");
   };
 
-  // Intermediate click handler to trigger the stock check condition
   const handleCheckoutClick = () => {
-    const checkoutItems = items.filter(item => 
-      selectedItems.includes(getItemId(item))
+    const checkoutItems = items.filter((item) =>
+      selectedItems.includes(getItemId(item)),
     );
 
-    // Checks if item quantity exceeds available stock space
     const outOfStockList = checkoutItems.filter(
-      item => item.quantity > (item.stock ?? item.availableStock ?? item.qtyInStock ?? Infinity)
+      (item) =>
+        item.quantity >
+        (item.stock ?? item.availableStock ?? item.qtyInStock ?? Infinity),
     );
 
     if (outOfStockList.length > 0) {
@@ -158,49 +166,18 @@ export default function Cart() {
     }
   };
 
-  const runModalTest = () => {
-    const mockTestItems = [
-      {
-        itemCode: "TEST-001",
-        name: "Paracetamol 500mg",
-        category: "Tablets",
-        quantity: 2, // Normal item (within stock)
-        stock: 10,   // Available stock
-        itemImage: "https://via.placeholder.com/150"
-      },
-      {
-        itemCode: "TEST-002",
-        name: "Amiodarone HCI Injection",
-        category: "Injectables",
-        quantity: 5, // ⚠️ EXCEEDS STOCK! (Requested 5, only 2 available)
-        stock: 2,    // Available stock
-        itemImage: "https://via.placeholder.com/150"
-      }
-    ];
-
-    // Set mock state and select both items
-    setItems(mockTestItems);
-    setSelectedItems(["TEST-001", "TEST-002"]);
-
-    // Open the modal with the over-requested item
-    setInsufficientItems([mockTestItems[1]]);
-    setShowStockModal(true);
-    
-    toast.success("Test items loaded & Modal triggered!");
-  };
-
-  // Triggered when user confirms partial delivery in modal
   const handleConfirmPartial = () => {
     const checkoutItems = items
-      .filter(item => selectedItems.includes(getItemId(item)))
-      .map(item => {
-        const avail = item.stock ?? item.availableStock ?? item.qtyInStock ?? item.quantity;
-        return {
-          ...item,
-          quantity: item.quantity > avail ? avail : item.quantity
-        };
+      .filter((item) => selectedItems.includes(getItemId(item)))
+      .map((item) => {
+        const avail =
+          item.stock ?? item.availableStock ?? item.qtyInStock ?? item.quantity;
+        if (item.quantity > avail) {
+          return { ...item, quantity: avail };
+        }
+        return item;
       })
-      .filter(item => item.quantity > 0);
+      .filter((item) => item.quantity > 0);
 
     sessionStorage.setItem("checkoutItems", JSON.stringify(checkoutItems));
     setShowStockModal(false);
@@ -223,57 +200,138 @@ export default function Cart() {
     }
   };
 
-  const updateQty = async (id, delta) => {
-    const item = items.find((i) => getItemId(i) === id);
-    if (!item) return;
-
-    const currentQty = Number(item.quantity);
-
-    // If the quantity is currently empty/invalid,
-    // don't allow the +/- buttons to make assumptions.
-    if (!Number.isFinite(currentQty)) {
-      return;
-    }
-
-    const newQty = currentQty + delta;
-
-    // Quantity would reach zero
-    if (newQty <= 0) {
-      setItemToRemove(item);
-      setShowRemoveModal(true);
-      return;
-    }
+  const persistItem = async (id, nextItem) => {
+    const currentItem = items.find((item) => getItemId(item) === id);
+    if (!currentItem) return false;
+    const updatedItem = { ...currentItem, ...nextItem };
 
     if (isUserLoggedIn()) {
       try {
-        await cartService.updateQuantity(id, newQty);
-
-        setItems((prevItems) =>
-          prevItems.map((item) =>
-            getItemId(item) === id ? { ...item, quantity: newQty } : item,
-          ),
+        await cartService.updateQuantity(
+          id,
+          updatedItem.quantity,
+          updatedItem.orderMode,
+          updatedItem.boxes,
+          updatedItem.quantityPerBox,
         );
       } catch (error) {
         console.error("Failed to update quantity:", error);
         toast.error("Failed to update quantity");
+        return false;
       }
-    } else {
-      setItems((prevItems) =>
-        prevItems.map((item) =>
-          getItemId(item) === id ? { ...item, quantity: newQty } : item,
-        ),
-      );
     }
+    setItems((prevItems) =>
+      prevItems.map((item) => (getItemId(item) === id ? updatedItem : item)),
+    );
+    return true;
+  };
+
+  const changeOrderMode = async (id, nextMode) => {
+    const item = items.find((currentItem) => getItemId(currentItem) === id);
+    if (!item || (nextMode !== "piece" && nextMode !== "box")) return;
+    if (nextMode === item.orderMode) return;
+
+    const quantityPerBox = Number(item.quantityPerBox) || 0;
+    if (quantityPerBox <= 0) return;
+
+    const quantity = Number(item.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      toast.error("Enter a valid quantity before changing the order type.");
+      return;
+    }
+
+    if (nextMode === "box") {
+      if (quantity % quantityPerBox !== 0) {
+        toast.error(
+          `Not enough ${item.unitType || "units"} to order by ${
+            String(item.unitType || "")
+              .trim()
+              .toLowerCase() === "box"
+              ? "case"
+              : "box"
+          }.`,
+        );
+        return;
+      }
+      await persistItem(id, {
+        orderMode: "box",
+        boxes: quantity / quantityPerBox,
+      });
+      return;
+    }
+
+    await persistItem(id, { orderMode: "piece", boxes: 0 });
+  };
+
+  const updateQty = async (id, delta) => {
+    const item = items.find((i) => getItemId(i) === id);
+    if (!item) return;
+
+    if (item.orderMode === "box") {
+      const current = Number(item.boxes);
+      if (!Number.isFinite(current)) return;
+      const next = current + delta;
+      if (next <= 0) {
+        setItemToRemove(item);
+        setShowRemoveModal(true);
+        return;
+      }
+      await persistItem(id, {
+        boxes: next,
+        quantity: next * (item.quantityPerBox || 0),
+      });
+    } else {
+      const current = Number(item.quantity);
+      if (!Number.isFinite(current)) return;
+      const next = current + delta;
+      if (next <= 0) {
+        setItemToRemove(item);
+        setShowRemoveModal(true);
+        return;
+      }
+      await persistItem(id, { quantity: next, boxes: 0 });
+    }
+  };
+
+  const setBoxes = async (id, value) => {
+    const item = items.find((i) => getItemId(i) === id);
+    if (!item) return;
+
+    if (value === "") {
+      setItems((prev) =>
+        prev.map((i) => (getItemId(i) === id ? { ...i, boxes: "" } : i)),
+      );
+      return;
+    }
+
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0 || !Number.isInteger(num)) return;
+
+    await persistItem(id, {
+      boxes: num,
+      quantity: num * (item.quantityPerBox || 0),
+    });
+  };
+
+  const setQuantity = async (id, value) => {
+    if (value === "") {
+      setItems((prev) =>
+        prev.map((i) => (getItemId(i) === id ? { ...i, quantity: "" } : i)),
+      );
+      return;
+    }
+
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0 || !Number.isInteger(num)) return;
+
+    await persistItem(id, { quantity: num, boxes: 0 });
   };
 
   const confirmRemoveItem = async () => {
     if (!itemToRemove) return;
-
     const id = getItemId(itemToRemove);
-
     setShowRemoveModal(false);
     setItemToRemove(null);
-
     await removeItem(id);
   };
 
@@ -303,55 +361,6 @@ export default function Cart() {
     return <div className="cart-loading">Loading your cart...</div>;
   }
 
-  const setQuantity = async (id, quantity) => {
-    // Allow empty input
-    if (quantity === "") {
-      setItems((prevItems) =>
-        prevItems.map((item) =>
-          getItemId(item) === id ? { ...item, quantity: "" } : item,
-        ),
-      );
-
-      return;
-    }
-
-    const numericQuantity = Number(quantity);
-
-    // Don't save invalid quantities
-    if (
-      !Number.isFinite(numericQuantity) ||
-      numericQuantity <= 0 ||
-      !Number.isInteger(numericQuantity)
-    ) {
-      return;
-    }
-
-    if (isUserLoggedIn()) {
-      try {
-        await cartService.updateQuantity(id, numericQuantity);
-
-        setItems((prevItems) =>
-          prevItems.map((item) =>
-            getItemId(item) === id
-              ? { ...item, quantity: numericQuantity }
-              : item,
-          ),
-        );
-      } catch (error) {
-        console.error("Failed to update quantity:", error);
-        toast.error("Failed to update quantity");
-      }
-    } else {
-      setItems((prevItems) =>
-        prevItems.map((item) =>
-          getItemId(item) === id
-            ? { ...item, quantity: numericQuantity }
-            : item,
-        ),
-      );
-    }
-  };
-
   return (
     <div className="cart-page">
       <Toaster position="top-center" reverseOrder={false} autoClose={3000} />
@@ -369,7 +378,7 @@ export default function Cart() {
 
           <button
             className="checkout-btn"
-           onClick={handleCheckoutClick}
+            onClick={handleCheckoutClick}
             disabled={selectedItems.length === 0}
           >
             Checkout
@@ -408,6 +417,12 @@ export default function Cart() {
             ) : (
               items.map((item, index) => {
                 const itemId = getItemId(item);
+                const isBox = item.orderMode === "box";
+                const unitType = item.unitType || "Piece";
+                const packageLabel =
+                  String(unitType).trim().toLowerCase() === "box"
+                    ? "Case"
+                    : "Box";
                 return (
                   <div className="cart-item" key={itemId || index}>
                     <input
@@ -427,28 +442,70 @@ export default function Cart() {
                     </div>
                     <div className="item-info">
                       <p className="item-name">{item.name}</p>
-                      <p className="item-category">{item.category}</p>
-                      <p className="item-unit-type">{item.unitType || "N/A"}</p>
+                      <div className="item-unitCategory-row">
+                        <p className="item-unit-type">{unitType}</p>
+                        <p className="item-category">{item.category}</p>
+                      </div>
+                      {Number(item.quantityPerBox) > 0 && (
+                        <label className="item-order-control">
+                          <span>Order by: </span>
+                          <select
+                            className="item-order-select"
+                            value={isBox ? "box" : "piece"}
+                            onChange={(event) =>
+                              changeOrderMode(itemId, event.target.value)
+                            }
+                            aria-label={`Order ${item.name} by`}
+                          >
+                            <option value="piece">{unitType}</option>
+                            <option value="box">{packageLabel}</option>
+                          </select>
+                        </label>
+                      )}
                     </div>
-                    <div className="item-qty">
-                      <button onClick={() => updateQty(itemId, -1)}>
-                        <FiMinusCircle />
-                      </button>
 
-                      <input
-                        type="number"
-                        value={item.quantity}
-                        min="0"
-                        onChange={(e) => {
-                          setQuantity(itemId, e.target.value);
-                        }}
-                        className="qty-input"
-                      />
+                    <div className="item-quantity-group">
+                      <div className="item-quantity-control">
+                        <span className="item-quantity-label">
+                          Total {isBox ? packageLabel : unitType}:
+                        </span>
+                        <div className="item-qty">
+                          <button onClick={() => updateQty(itemId, -1)}>
+                            <FiMinusCircle />
+                          </button>
 
-                      <button onClick={() => updateQty(itemId, 1)}>
-                        <FaRegSquarePlus />
-                      </button>
+                          {isBox ? (
+                            <input
+                              type="number"
+                              value={item.boxes}
+                              min="0"
+                              onChange={(e) => setBoxes(itemId, e.target.value)}
+                              className="qty-input"
+                            />
+                          ) : (
+                            <input
+                              type="number"
+                              value={item.quantity}
+                              min="0"
+                              onChange={(e) =>
+                                setQuantity(itemId, e.target.value)
+                              }
+                              className="qty-input"
+                            />
+                          )}
+
+                          <button onClick={() => updateQty(itemId, 1)}>
+                            <FaRegSquarePlus />
+                          </button>
+                        </div>
+                      </div>
+                      {isBox && (
+                        <span className="item-package-total">
+                          Total {unitType}: {item.quantity}
+                        </span>
+                      )}
                     </div>
+
                     <button
                       className="remove-btn"
                       onClick={() => removeItem(itemId)}
@@ -462,6 +519,7 @@ export default function Cart() {
           </div>
         </div>
       </div>
+
       {showRemoveModal && itemToRemove && (
         <div className="cart-modal-overlay" onClick={cancelRemoveItem}>
           <div
@@ -469,14 +527,11 @@ export default function Cart() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="cart-modal-icon warning-icon">!</div>
-
             <h3>Remove Item?</h3>
-
             <p>
               The quantity of <strong>{itemToRemove.name}</strong> has reached{" "}
-              <strong> 0</strong>. This item will be removed from your cart.
+              <strong>0</strong>. This item will be removed from your cart.
             </p>
-
             <div className="cart-modal-actions">
               <button
                 type="button"
@@ -485,14 +540,12 @@ export default function Cart() {
               >
                 Cancel
               </button>
-
               <button
                 type="button"
                 className="cart-modal-remove"
                 onClick={confirmRemoveItem}
               >
-                <FaTrash />
-                Remove
+                <FaTrash /> Remove
               </button>
             </div>
           </div>
@@ -509,15 +562,12 @@ export default function Cart() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="cart-modal-icon warning-icon">!</div>
-
             <h3>Invalid Quantity</h3>
-
             <p>
               Please enter a quantity greater than <strong>0</strong> for{" "}
               <strong>{invalidQuantityItem}</strong> before proceeding to
               checkout.
             </p>
-
             <button
               type="button"
               className="cart-modal-ok"
@@ -529,7 +579,6 @@ export default function Cart() {
         </div>
       )}
 
-      {/* --- MODAL 3: INSUFFICIENT STOCK / PARTIAL DELIVERY --- */}
       {showStockModal && (
         <div className="stock-modal-overlay">
           <div className="stock-modal-container">
@@ -539,22 +588,18 @@ export default function Cart() {
               </div>
               <h2>Insufficient Stock</h2>
             </div>
-
             <p className="stock-modal-description">
-              The requested item quantity exceeds available stock. Would you like to confirm partial delivery for the unavailable items?
+              The requested item quantity exceeds available stock. Would you
+              like to confirm partial delivery for the unavailable items?
             </p>
-
             <div className="stock-modal-list">
-              {insufficientItems.map((item, idx) => {
-                return (
-                  <div key={idx} className="stock-modal-item">
-                    <span className="stock-item-name">{item.name}</span>
-                    <span className="stock-item-category">{item.category}</span>
-                  </div>
-                );
-              })}
+              {insufficientItems.map((item, idx) => (
+                <div key={idx} className="stock-modal-item">
+                  <span className="stock-item-name">{item.name}</span>
+                  <span className="stock-item-category">{item.category}</span>
+                </div>
+              ))}
             </div>
-
             <div className="stock-modal-actions">
               <button
                 className="cancel-btn"
@@ -562,10 +607,7 @@ export default function Cart() {
               >
                 Cancel
               </button>
-              <button
-                className="proceed-btn"
-                onClick={handleConfirmPartial}
-              >
+              <button className="proceed-btn" onClick={handleConfirmPartial}>
                 Proceed
               </button>
             </div>

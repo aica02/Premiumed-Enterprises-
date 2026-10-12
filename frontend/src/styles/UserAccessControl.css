@@ -248,6 +248,39 @@
   background: #eaeaea;
 }
 
+.employee-phone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.employee-phone-field > label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.employee-phone-input {
+  display: flex;
+  gap: 6px;
+}
+
+.employee-phone-country-code {
+  flex: 0 0 96px;
+  width: 96px;
+  padding: 10px 25px 10px 12px !important;
+  background-color: #f2f2f2;
+  border-radius: 8px !important;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.employee-phone-input {
+  flex: 1;
+  min-width: 0;
+  border-radius: 8px !important;
+  background-color: #f2f2f2;
+}
+
 .employee-modal-overlay .employee-modal-body .employee-form select {
   -webkit-appearance: none;
   -moz-appearance: none;

@@ -168,6 +168,56 @@ input:checked + .slider:before {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
+.attachment-file-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 10px 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+.attachment-file-stem {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-file-extension {
+  flex: none;
+  white-space: nowrap;
+}
+
+.attachment-file-placeholder {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #757575;
+}
+
+.settings-confirm-file-name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-overflow: clip;
+}
+
+.settings-confirm-file-name .confirm-file-stem {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-confirm-file-name .confirm-file-extension {
+  flex: none;
+  white-space: nowrap;
+}
+
 /* --- Buttons --- */
 button {
   cursor: pointer;

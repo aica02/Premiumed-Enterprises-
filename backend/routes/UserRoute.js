@@ -2,37 +2,23 @@ import express from "express";
 import mongoose from "mongoose";
 const router = express.Router();
 import User from "../models/User.js";
-import nodemailer from "nodemailer";
 import Counter from "../models/Counter.js";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import createActivityLog from "../utils/createActivityLogs.js";
 import { validatePassword } from "../utils/passwordValidator.js";
 import cloudinaryConfig from '../config/cloudinary.js';
-import { sendEmployeeAccountEmail } from "../utils/emailService.js";
+import {
+  sendEmailWithRetry,
+  sendEmployeeAccountEmail,
+} from "../utils/emailService.js";
 
 dotenv.config();
 
 const { cloudinary, upload, uploadToCloudinary, deleteFromCloudinary } = cloudinaryConfig;
 
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.SYSTEM_EMAIL,
-      pass: process.env.SYSTEM_PASSWORD,
-    },
-    tls: {
-      rejectUnauthorized: false
-    },
-    connectionTimeout: 10000,
-    socketTimeout: 10000
-  });
-};
 const escapeRegex = (value = "") =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const transporter = createTransporter();
 
 const getActor = (req) => ({
   userId: req.actor?.userId || null,
@@ -82,20 +68,6 @@ const getNextEmployeeId = async (role) => {
   }
 };
 
-const sendEmailWithRetry = async (mailOptions, retries = 3) => {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      return { success: true, info };
-    } catch (error) {
-      if (i === retries - 1) {
-        return { success: false, error: error.message };
-      }
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  }
-  return { success: false, error: "All retry attempts failed" };
-};
 // GET - Fetch all users
 router.get("/", async (req, res) => {
   try {
@@ -251,12 +223,7 @@ router.post("/upload-image/:username", upload.single('profileImage'), async (req
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (user.profileImagePublicId) {
-      try {
-        await deleteFromCloudinary(user.profileImagePublicId);
-      } catch (error) {
-      }
-    }
+    const previousProfileImagePublicId = user.profileImagePublicId;
 
     const result = await uploadToCloudinary(req.file.buffer, {
       folder: 'profile_images',
@@ -264,10 +231,24 @@ router.post("/upload-image/:username", upload.single('profileImage'), async (req
       overwrite: false,
       transformation: [{ width: 500, height: 500, crop: 'limit' }]
     });
+    if (!result?.secure_url || !result.public_id) {
+      throw new Error('Cloudinary did not return a profile image URL and ID.');
+    }
 
     user.profileImage = result.secure_url;
     user.profileImagePublicId = result.public_id;
     await user.save();
+
+    if (
+      previousProfileImagePublicId &&
+      previousProfileImagePublicId !== user.profileImagePublicId
+    ) {
+      try {
+        await deleteFromCloudinary(previousProfileImagePublicId);
+      } catch (error) {
+        console.error('Failed to delete previous profile image:', error);
+      }
+    }
 
     await createActivityLog({
       userId: user._id,
@@ -314,19 +295,15 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
 
     if (req.file) {
       try {
-        if (user.profileImagePublicId) {
-          try {
-            await deleteFromCloudinary(user.profileImagePublicId);
-          } catch (error) {
-          }
-        }
-
         const result = await uploadToCloudinary(req.file.buffer, {
           folder: 'profile_images',
           public_id: `profile_${user.username}_${Date.now()}`,
           overwrite: false,
           transformation: [{ width: 500, height: 500, crop: 'limit' }]
         });
+        if (!result?.secure_url || !result.public_id) {
+          throw new Error('Cloudinary did not return a profile image URL and ID.');
+        }
 
         updates.profileImage = result.secure_url;
         updates.profileImagePublicId = result.public_id;
@@ -350,6 +327,18 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
 
     if (!updatedUser) {
       return res.status(404).json({ error: "User not found after update" });
+    }
+
+    if (
+      updates.profileImagePublicId &&
+      user.profileImagePublicId &&
+      user.profileImagePublicId !== updates.profileImagePublicId
+    ) {
+      try {
+        await deleteFromCloudinary(user.profileImagePublicId);
+      } catch (error) {
+        console.error('Failed to delete previous profile image:', error);
+      }
     }
 
     const actor = getActor(req);
@@ -534,7 +523,7 @@ router.post("/forgot-password", async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
     const updatedUser = await User.findOneAndUpdate(
-      { email: email },
+      { _id: user._id, password: user.password },
       { $set: { password: hashedPassword } },
       { new: true, runValidators: false }
     );
@@ -545,20 +534,14 @@ router.post("/forgot-password", async (req, res) => {
         error: "Failed to update password."
       });
     }
-    createActivityLog({
-      userId: user._id,
-      username: user.username,
-      role: user.role,
-      action: "Reset password",
-      module: "Security",
-      description: `${user.role} "${user.username}" had their password reset.`,
-    }).catch(err => console.error("Log error:", err));
-
     const mailOptions = {
-      from: `"Premiumed Enterprises" <${process.env.SYSTEM_EMAIL}>`,
-      to: user.email,
+      sender: {
+        name: "Premiumed Enterprises",
+        email: process.env.SYSTEM_EMAIL,
+      },
+      to: [{ email: user.email }],
       subject: "Password Reset - Premiumed Enterprises",
-      html: `
+      htmlContent: `
           <div style=" margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif;color: #333333;">
             <div style=" max-width: 600px; margin: 30px auto; background-color: #ffffff; border: 1px solid #dddddd;">
               <div style=" background-color: #000000; padding: 25px; text-align: center;">
@@ -622,25 +605,43 @@ router.post("/forgot-password", async (req, res) => {
     const emailResult = await sendEmailWithRetry(mailOptions);
 
     if (!emailResult.success) {
-      return res.json({
-        message: "Your password has been reset. Please check your email for the new password.",
-        email: user.email,
-        warning: "Email delivery may be delayed. If you don't receive it, please contact support."
+      const rollbackResult = await User.findOneAndUpdate(
+        { _id: user._id, password: hashedPassword },
+        { $set: { password: user.password } },
+        { new: true, runValidators: false }
+      );
+
+      if (!rollbackResult) {
+        console.error(
+          `Could not restore the previous password after reset email delivery failed for user ${user._id}.`
+        );
+      }
+
+      console.error("Forgot password email delivery failed:", emailResult.error);
+      return res.status(502).json({
+        success: false,
+        error: rollbackResult
+          ? "Unable to send the reset email. Your password was not changed. Please try again later."
+          : "Unable to confirm the reset email or restore your previous password. Please contact support."
       });
     }
 
+    createActivityLog({
+      userId: user._id,
+      username: user.username,
+      role: user.role,
+      action: "Reset password",
+      module: "Security",
+      description: `${user.role} "${user.username}" had their password reset.`,
+    }).catch(err => console.error("Log error:", err));
+
     res.json({
+      success: true,
       message: "A new password has been sent to your email address.",
       email: user.email
     });
 
   } catch (err) {
-    if (err.code === 'EAUTH') {
-      return res.status(500).json({
-        error: "Email service configuration error. Please contact support."
-      });
-    }
-
     console.error("Forgot password error:", err);
     res.status(500).json({
       error: "Failed to process password reset request. Please try again later."

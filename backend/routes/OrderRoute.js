@@ -19,7 +19,6 @@ import {
   sendOrderStatusUpdate,
 } from "../utils/emailService.js";
 
-
 const router = express.Router();
 
 const uploadDir = path.join(process.cwd(), "uploads");
@@ -57,6 +56,71 @@ const findProductForOrderItem = async (itemCode) => {
   return null;
 };
 
+const normalizeUnitType = (unitType) => {
+  const value = String(unitType || "").trim();
+  return ["", "-", "n/a", "na"].includes(value.toLowerCase()) ? "" : value;
+};
+
+const addUnitTypesToOrders = async (orders) => {
+  const orderData = orders.map((order) => order.toObject());
+  const itemIdentifiers = [
+    ...new Set(
+      orderData
+        .flatMap((order) =>
+          order.items.flatMap((item) => [item.itemCode, item.productId]),
+        )
+        .filter(Boolean)
+        .map(String),
+    ),
+  ];
+  const productIds = itemIdentifiers.filter((id) =>
+    mongoose.isValidObjectId(id),
+  );
+
+  if (itemIdentifiers.length === 0) return orderData;
+
+  const products = await Product.find({
+    $or: [{ itemCode: { $in: itemIdentifiers } }, { _id: { $in: productIds } }],
+  })
+    .select("itemCode unitType")
+    .lean();
+
+  const unitTypesByIdentifier = new Map();
+  products.forEach((product) => {
+    const unitType = normalizeUnitType(product.unitType);
+    if (product.itemCode) {
+      unitTypesByIdentifier.set(String(product.itemCode), unitType);
+    }
+    unitTypesByIdentifier.set(String(product._id), unitType);
+  });
+
+  const batches = await Batch.find({ itemCode: { $in: itemIdentifiers } })
+    .select("itemCode unitType")
+    .sort({ createdAt: -1 })
+    .lean();
+  const batchUnitTypesByItemCode = new Map();
+  batches.forEach((batch) => {
+    const unitType = normalizeUnitType(batch.unitType);
+    const itemCode = String(batch.itemCode);
+    if (unitType && !batchUnitTypesByItemCode.has(itemCode)) {
+      batchUnitTypesByItemCode.set(itemCode, unitType);
+    }
+  });
+
+  return orderData.map((order) => ({
+    ...order,
+    items: order.items.map((item) => ({
+      ...item,
+      unitType:
+        normalizeUnitType(item.unitType) ||
+        unitTypesByIdentifier.get(String(item.itemCode)) ||
+        unitTypesByIdentifier.get(String(item.productId)) ||
+        batchUnitTypesByItemCode.get(String(item.itemCode)) ||
+        "N/A",
+    })),
+  }));
+};
+
 router.get("/reset-counters", async (req, res) => {
   try {
     await Counter.deleteMany({});
@@ -66,14 +130,35 @@ router.get("/reset-counters", async (req, res) => {
   }
 });
 
+const getClientNotificationNameFilter = async (username) => {
+  const rawUsername = String(username || "").trim();
+  if (!rawUsername) return null;
+
+  const client = await User.findOne({ username: rawUsername })
+    .select("fullName")
+    .lean();
+  const names = [rawUsername, client?.fullName].filter(Boolean);
+  const namePatterns = names.map((name) => {
+    const flexibleName = name
+      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/\s+/g, "")
+      .split("")
+      .join("\\s*");
+    return new RegExp(`^\\s*${flexibleName}\\s*$`, "i");
+  });
+
+  return { name: { $in: namePatterns } };
+};
+
 router.get("/notifications/:name", async (req, res) => {
   try {
-    const rawName = decodeURIComponent(req.params.name);
-    const flexibleName = rawName.replace(/\s+/g, "").split("").join("\\s*");
-    const nameRegex = new RegExp(`^\\s*${flexibleName}\\s*$`, "i");
+    const nameFilter = await getClientNotificationNameFilter(req.params.name);
+    if (!nameFilter) {
+      return res.status(400).json({ message: "Client username is required" });
+    }
 
     const notifications = await Notification.find({
-      name: { $regex: nameRegex },
+      ...nameFilter,
     })
       .sort({ createdAt: -1 })
       .limit(20);
@@ -86,12 +171,13 @@ router.get("/notifications/:name", async (req, res) => {
 
 router.patch("/notifications/read/:name", async (req, res) => {
   try {
-    const rawName = decodeURIComponent(req.params.name);
-    const flexibleName = rawName.replace(/\s+/g, "").split("").join("\\s*");
-    const nameRegex = new RegExp(`^\\s*${flexibleName}\\s*$`, "i");
+    const nameFilter = await getClientNotificationNameFilter(req.params.name);
+    if (!nameFilter) {
+      return res.status(400).json({ message: "Client username is required" });
+    }
 
     await Notification.updateMany(
-      { name: { $regex: nameRegex }, isRead: false },
+      { ...nameFilter, isRead: false },
       { $set: { isRead: true } },
     );
     res.json({ message: "Notifications marked as read" });
@@ -102,12 +188,13 @@ router.patch("/notifications/read/:name", async (req, res) => {
 
 router.patch("/notifications/read/:name/:id", async (req, res) => {
   try {
-    const rawName = decodeURIComponent(req.params.name);
-    const flexibleName = rawName.replace(/\s+/g, "").split("").join("\\s*");
-    const nameRegex = new RegExp(`^\\s*${flexibleName}\\s*$`, "i");
+    const nameFilter = await getClientNotificationNameFilter(req.params.name);
+    if (!nameFilter) {
+      return res.status(400).json({ message: "Client username is required" });
+    }
 
     const notification = await Notification.findOneAndUpdate(
-      { _id: req.params.id, name: { $regex: nameRegex } },
+      { _id: req.params.id, ...nameFilter },
       { $set: { isRead: true } },
       { new: true },
     );
@@ -156,6 +243,7 @@ const getNextOrderId = async (userIdentifier) => {
 
   return newOrderId;
 };
+
 //checkout
 router.post("/", async (req, res) => {
   const {
@@ -179,16 +267,28 @@ router.post("/", async (req, res) => {
         const quantity = Number(item.quantity) || 0;
         const product = await findProductForOrderItem(item.itemCode);
 
+        const orderMode = item.orderMode === "box" ? "box" : "piece";
+        const boxes = Number(item.boxes) || 0;
+        const quantityPerBox =
+          Number(item.quantityPerBox) || Number(product?.quantityPerBox) || 0;
+
         return {
           productId: item.productId || item._id,
           itemCode: product?.itemCode || item.itemCode,
           name: item.name,
           category: item.category || "Medical Supply",
+          unitType:
+            normalizeUnitType(item.unitType) ||
+            normalizeUnitType(product?.unitType) ||
+            "Piece",
           quantity: quantity,
           price: price,
           image: item.image || item.itemImage || "",
+          orderMode,
+          boxes: orderMode === "box" ? boxes : 0,
+          quantityPerBox,
         };
-      }),
+      })
     );
 
     const calculatedSubtotal =
@@ -235,40 +335,46 @@ router.post("/", async (req, res) => {
     });
   }
 });
+
 //remove supply sa cart pag checkout
-router.delete('/remove-items', async (req, res) => {
+router.delete("/remove-items", async (req, res) => {
   try {
     const { username, itemCodes } = req.body;
-    
-    if (!username || !itemCodes || !Array.isArray(itemCodes) || itemCodes.length === 0) {
-      return res.status(400).json({ 
-        message: 'Username and itemCodes array are required' 
+
+    if (
+      !username ||
+      !itemCodes ||
+      !Array.isArray(itemCodes) ||
+      itemCodes.length === 0
+    ) {
+      return res.status(400).json({
+        message: "Username and itemCodes array are required",
       });
     }
 
     const cart = await Cart.findOne({ username });
-    
+
     if (!cart) {
-      return res.status(404).json({ message: 'Cart not found' });
+      return res.status(404).json({ message: "Cart not found" });
     }
 
     cart.items = cart.items.filter(
-      item => !itemCodes.includes(item.itemCode)
+      (item) => !itemCodes.includes(item.itemCode),
     );
 
     cart.totalItems = cart.items.reduce((sum, item) => sum + item.quantity, 0);
-    
+
     await cart.save();
 
     res.status(200).json({
-      message: 'Items removed from cart successfully',
-      cart: cart
+      message: "Items removed from cart successfully",
+      cart: cart,
     });
   } catch (error) {
-    console.error('Error removing items from cart:', error);
-    res.status(500).json({ 
-      message: 'Failed to remove items from cart',
-      error: error.message 
+    console.error("Error removing items from cart:", error);
+    res.status(500).json({
+      message: "Failed to remove items from cart",
+      error: error.message,
     });
   }
 });
@@ -374,7 +480,7 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
         if (emailResult.success) {
           emailSent = true;
           console.log(
-            ` Deposit slip email sent to accountant: ${accountantEmail}`,
+            `Deposit slip email sent to accountant: ${accountantEmail}`,
           );
           order.notes = order.notes
             ? `${order.notes} | Deposit Slip has been sent.`
@@ -382,14 +488,14 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
           await order.save();
         } else {
           emailError = emailResult.error;
-          console.error(" Failed to send email to accountant:", emailError);
+          console.error("Failed to send email to accountant:", emailError);
         }
       } catch (emailError) {
-        console.error(" Error sending email to accountant:", emailError);
+        console.error("Error sending email to accountant:", emailError);
         emailError = emailError.message;
       }
     } else {
-      console.warn(" Accountant email not configured in settings");
+      console.warn("Accountant email not configured in settings");
     }
 
     const actor = getActor(req);
@@ -399,7 +505,7 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
       role: actor.role,
       action: "Upload payment slip",
       module: "Order",
-      description: `Order ${order.orderId} had a payment slip uploaded.${emailSent ? "  Email sent to accountant." : "  No email sent."}`,
+      description: `Order ${order.orderId} had a payment slip uploaded.${emailSent ? " Email sent to accountant." : " No email sent."}`,
     });
 
     try {
@@ -416,7 +522,7 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
       emailError: emailError,
     });
   } catch (error) {
-    console.error(" Slip upload error:", error);
+    console.error("Slip upload error:", error);
 
     if (req.file && req.file.path) {
       try {
@@ -439,9 +545,9 @@ const getClientEmail = async (username) => {
       console.warn("No username provided to getClientEmail");
       return null;
     }
-    
+
     const user = await User.findOne({ username });
-    
+
     if (user) {
       return user?.email || null;
     } else {
@@ -675,7 +781,6 @@ router.patch("/:orderId/status", async (req, res) => {
           const accountantEmail = settings?.accountantEmail;
 
           if (accountantEmail) {
-
             const slipPath = path.join(__dirname, "..", order.paymentSlip);
             if (fs.existsSync(slipPath)) {
               const fileBuffer = fs.readFileSync(slipPath);
@@ -762,16 +867,22 @@ router.patch("/:orderId/status", async (req, res) => {
 
       // SEND EMAIL FOR RETURNED - WITH BETTER DEBUGGING
       try {
-        console.log(`Attempting to send RETURNED email for order: ${order.orderId}`);
+        console.log(
+          `Attempting to send RETURNED email for order: ${order.orderId}`,
+        );
         console.log(`Order username: ${order.username}`);
         console.log(`Order name: ${order.name}`);
-        
+
         const clientEmail = await getClientEmail(order.username);
-        console.log(`Client email retrieved: ${clientEmail || 'NULL'}`);
-        
+        console.log(`Client email retrieved: ${clientEmail || "NULL"}`);
+
         if (clientEmail) {
           console.log(`Sending RETURNED email to: ${clientEmail}`);
-          const result = await sendOrderStatusUpdate(order, clientEmail, "RETURNED");
+          const result = await sendOrderStatusUpdate(
+            order,
+            clientEmail,
+            "RETURNED",
+          );
           console.log(`Email send result:`, result);
           if (result.success) {
             console.log(`Return email sent successfully to ${clientEmail}`);
@@ -779,14 +890,18 @@ router.patch("/:orderId/status", async (req, res) => {
             console.error(`Failed to send return email:`, result.error);
           }
         } else {
-          console.warn(` No client email found for order ${order.orderId}. Username: ${order.username}`);
-          
+          console.warn(
+            `No client email found for order ${order.orderId}. Username: ${order.username}`,
+          );
+
           // Try to find user by name as fallback
           if (order.name) {
             console.log(`Trying to find user by name: ${order.name}`);
             const userByName = await User.findOne({ fullName: order.name });
             if (userByName && userByName.email) {
-              console.log(`Found user by name: ${userByName.username}, Email: ${userByName.email}`);
+              console.log(
+                `Found user by name: ${userByName.username}, Email: ${userByName.email}`,
+              );
               await sendOrderStatusUpdate(order, userByName.email, "RETURNED");
             }
           }
@@ -825,37 +940,52 @@ router.patch("/:orderId/status", async (req, res) => {
 
       // SEND EMAIL FOR PARTIAL - WITH BETTER DEBUGGING
       try {
-        console.log(`Attempting to send PARTIAL email for order: ${order.orderId}`);
+        console.log(
+          `Attempting to send PARTIAL email for order: ${order.orderId}`,
+        );
         console.log(`Order username: ${order.username}`);
         console.log(`Order name: ${order.name}`);
-        
+
         const clientEmail = await getClientEmail(order.username);
-        console.log(`Client email retrieved: ${clientEmail || 'NULL'}`);
-        
+        console.log(`Client email retrieved: ${clientEmail || "NULL"}`);
+
         if (clientEmail) {
           console.log(`Sending PARTIAL email to: ${clientEmail}`);
-          const result = await sendOrderStatusUpdate(order, clientEmail, "PARTIAL");
+          const result = await sendOrderStatusUpdate(
+            order,
+            clientEmail,
+            "PARTIAL",
+          );
           console.log(`Email send result:`, result);
           if (result.success) {
-            console.log(`✅ Partial delivery email sent successfully to ${clientEmail}`);
+            console.log(
+              `Partial delivery email sent successfully to ${clientEmail}`,
+            );
           } else {
-            console.error(`❌ Failed to send partial delivery email:`, result.error);
+            console.error(
+              `Failed to send partial delivery email:`,
+              result.error,
+            );
           }
         } else {
-          console.warn(`⚠️ No client email found for order ${order.orderId}. Username: ${order.username}`);
-          
+          console.warn(
+            `No client email found for order ${order.orderId}. Username: ${order.username}`,
+          );
+
           // Try to find user by name as fallback
           if (order.name) {
             console.log(`Trying to find user by name: ${order.name}`);
             const userByName = await User.findOne({ fullName: order.name });
             if (userByName && userByName.email) {
-              console.log(`Found user by name: ${userByName.username}, Email: ${userByName.email}`);
+              console.log(
+                `Found user by name: ${userByName.username}, Email: ${userByName.email}`,
+              );
               await sendOrderStatusUpdate(order, userByName.email, "PARTIAL");
             }
           }
         }
       } catch (emailError) {
-        console.error("❌ Failed to send partial delivery email:", emailError);
+        console.error("Failed to send partial delivery email:", emailError);
         console.error("Error details:", emailError.stack);
       }
 
@@ -922,22 +1052,21 @@ router.patch("/:orderId/status", async (req, res) => {
 router.get("/user/:username", async (req, res) => {
   try {
     let { username } = req.params;
-    
+
     username = decodeURIComponent(username);
-    
+
     username = username.replace(/['"]+/g, "").trim();
-    
-    
+
     const flexibleSearch = username.split("").join("\\s*");
-    
+
     const orders = await Order.find({
       $or: [
         { name: { $regex: new RegExp(`^${flexibleSearch}$`, "i") } },
-        { username: { $regex: new RegExp(`^${flexibleSearch}$`, "i") } }
-      ]
+        { username: { $regex: new RegExp(`^${flexibleSearch}$`, "i") } },
+      ],
     }).sort({ createdAt: -1 });
-    
-    res.json(orders);
+
+    res.json(await addUnitTypesToOrders(orders));
   } catch (err) {
     console.error("Error fetching user orders:", err);
     res.status(500).json({ error: err.message });
@@ -949,7 +1078,7 @@ router.get("/", async (req, res) => {
     const { status } = req.query;
     const filter = status ? { status } : {};
     const orders = await Order.find(filter).sort({ createdAt: -1 });
-    res.json(orders);
+    res.json(await addUnitTypesToOrders(orders));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -970,7 +1099,6 @@ router.post("/:orderId/complete", async (req, res) => {
       let remaining = totalToDeduct;
       const cleanCode = scannedCode.trim();
 
-
       const batches = await Batch.find({
         itemCode: cleanCode,
         quantity: { $gt: 0 },
@@ -979,7 +1107,7 @@ router.post("/:orderId/complete", async (req, res) => {
       }).sort({ expirationDate: 1 });
 
       const totalAvailable = batches.reduce((acc, b) => acc + b.quantity, 0);
-      
+
       if (totalAvailable < totalToDeduct) {
         return res.status(400).json({
           success: false,
@@ -995,26 +1123,38 @@ router.post("/:orderId/complete", async (req, res) => {
         remaining -= take;
         deductedFromBatches += take;
         await batch.save();
-        
       }
 
       const product = await Product.findOne({ itemCode: cleanCode });
       if (product) {
         const oldTotalQuantity = product.totalQuantity;
-        
-        product.totalQuantity = Math.max(0, product.totalQuantity - totalToDeduct);
+
+        product.totalQuantity = Math.max(
+          0,
+          product.totalQuantity - totalToDeduct,
+        );
+
+        // Derive totalBoxes from totalQuantity (Option A)
+        if (product.quantityPerBox > 0) {
+          product.totalBoxes = Math.floor(
+            product.totalQuantity / product.quantityPerBox,
+          );
+        } else {
+          product.totalBoxes = 0;
+        }
+
         await product.save();
-        
-        
+
         deductionLog.push({
           itemCode: cleanCode,
           itemName: product.name,
           deducted: totalToDeduct,
           oldTotalQuantity: oldTotalQuantity,
-          newTotalQuantity: product.totalQuantity
+          newTotalQuantity: product.totalQuantity,
+          newTotalBoxes: product.totalBoxes,
         });
       } else {
-        console.warn(` Product not found for itemCode: ${cleanCode}`);
+        console.warn(`Product not found for itemCode: ${cleanCode}`);
       }
     }
 
@@ -1025,25 +1165,24 @@ router.post("/:orderId/complete", async (req, res) => {
     let emailError = null;
 
     let user = null;
-    
+
     if (order.username) {
       user = await User.findOne({ username: order.username });
     }
-    
+
     if (!user && order.name) {
       user = await User.findOne({ fullName: order.name });
     }
-    
+
     if (!user && req.body.username) {
       user = await User.findOne({ username: req.body.username });
     }
-    
+
     if (!user && req.headers["x-username"]) {
       user = await User.findOne({ username: req.headers["x-username"] });
     }
 
     if (user && user.email) {
-      
       const orderData = {
         orderNumber: order.orderId,
         _id: order._id,
@@ -1082,14 +1221,14 @@ router.post("/:orderId/complete", async (req, res) => {
     }
 
     const actor = getActor(req);
-    
+
     await createActivityLog({
       userId: userId || actor.userId,
       username: username || actor.username || order.username,
       role: role || actor.role || "User",
       action: "Complete order - Inventory deduction",
       module: "Inventory",
-      description: `Inventory deducted for order ${order.orderId}. ${deductionLog.map(d => `${d.itemName}: ${d.deducted} pcs (${d.oldTotalQuantity} → ${d.newTotalQuantity})`).join(', ')}`,
+      description: `Inventory deducted for order ${order.orderId}. ${deductionLog.map((d) => `${d.itemName}: ${d.deducted} pcs (${d.oldTotalQuantity} → ${d.newTotalQuantity} pcs, ${d.newTotalBoxes} boxes)`).join(", ")}`,
     });
 
     await createActivityLog({
@@ -1112,7 +1251,7 @@ router.post("/:orderId/complete", async (req, res) => {
       message: "Inventory updated and order moved to shipping.",
       emailSent: emailSent,
       emailError: emailError,
-      deductions: deductionLog, 
+      deductions: deductionLog,
     });
   } catch (error) {
     console.error("Complete order error:", error);
@@ -1189,6 +1328,7 @@ router.post("/:orderId/email", async (req, res) => {
     });
   }
 });
+
 //partial ni admin
 router.patch("/:orderId/partial", async (req, res) => {
   const { items } = req.body;
@@ -1207,14 +1347,25 @@ router.patch("/:orderId/partial", async (req, res) => {
       const deliveredQty = item.deliveredQty || 0;
       const remainingQty = item.originalQty - deliveredQty;
 
+      const orderMode = item.orderMode === "box" ? "box" : "piece";
+      const quantityPerBox = Number(item.quantityPerBox) || 0;
+      const calcBoxes = (qty) => {
+        if (orderMode !== "box" || !quantityPerBox) return 0;
+        return Math.round((qty / quantityPerBox) * 100) / 100;
+      };
+
       deliveredItems.push({
         productId: item.productId,
         itemCode: item.itemCode,
         name: item.name,
         category: item.category,
+        unitType: item.unitType,
         quantity: deliveredQty,
         price: item.price,
         image: item.image,
+        orderMode,
+        boxes: calcBoxes(deliveredQty),
+        quantityPerBox,
       });
 
       if (remainingQty > 0) {
@@ -1223,9 +1374,13 @@ router.patch("/:orderId/partial", async (req, res) => {
           itemCode: item.itemCode,
           name: item.name,
           category: item.category,
+          unitType: item.unitType,
           quantity: remainingQty,
           price: item.price,
           image: item.image,
+          orderMode,
+          boxes: calcBoxes(remainingQty),
+          quantityPerBox,
         });
       }
     });
@@ -1247,7 +1402,9 @@ router.patch("/:orderId/partial", async (req, res) => {
         await sendOrderStatusUpdate(originalOrder, clientEmail, "PARTIAL");
         console.log(`Partial split email sent to ${clientEmail}`);
       } else {
-        console.warn(`No client email found for order ${originalOrder.orderId}`);
+        console.warn(
+          `No client email found for order ${originalOrder.orderId}`,
+        );
       }
     } catch (emailError) {
       console.error("Failed to send partial split email:", emailError);
@@ -1300,6 +1457,7 @@ router.patch("/:orderId/partial", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
 //return for new proposed date ni admin
 router.patch("/:orderId/edit-date", async (req, res) => {
   const { newDate, reason } = req.body;
@@ -1393,11 +1551,11 @@ router.patch("/:orderId/edit-date", async (req, res) => {
 
 router.post("/check-stock", async (req, res) => {
   const { items } = req.body;
-  
+
   try {
     let insufficientItems = [];
     let stockLevels = [];
-    
+
     for (const item of items) {
       const product = await findProductForOrderItem(item.itemCode);
       const itemCode = product?.itemCode || item.itemCode;
@@ -1415,7 +1573,7 @@ router.post("/check-stock", async (req, res) => {
 
       stockLevels.push({
         itemCode,
-        available: totalAvailable
+        available: totalAvailable,
       });
 
       if (totalAvailable < item.quantity) {
@@ -1428,10 +1586,10 @@ router.post("/check-stock", async (req, res) => {
         });
       }
     }
-    
+
     res.json({
       insufficientItems,
-      stockLevels
+      stockLevels,
     });
   } catch (err) {
     console.error("Error checking stock:", err);
@@ -1448,7 +1606,7 @@ router.post("/checkout-with-split", async (req, res) => {
     userId,
     role,
     name,
-    items, 
+    items,
     shippingAddress,
     notes,
     requestedDeliveryDate,
@@ -1460,32 +1618,61 @@ router.post("/checkout-with-split", async (req, res) => {
     const deliveredItems = [];
     const backorderItems = [];
     const newOrderID = await getNextOrderId(username);
-    items.forEach((item) => {
-      const deliveredQty = Number(item.deliveredQty ?? item.quantity) || 0;
-      const originalQty = Number(item.quantity) || 0;
-      const remainingQty = originalQty - deliveredQty;
 
-      if (deliveredQty > 0) {
+    items.forEach((item) => {
+      const orderMode = item.orderMode === "box" ? "box" : "piece";
+      const quantityPerBox = Number(item.quantityPerBox) || 0;
+
+      // Total pieces ordered
+      const originalPcs = Number(item.quantity) || 0;
+
+      // How many pieces the client is willing to accept now
+      // (frontend sends deliveredQty as min(requested, available) in pcs)
+      let deliveredPcs = Number(item.deliveredQty);
+      if (!Number.isFinite(deliveredPcs)) deliveredPcs = originalPcs;
+
+      // Clamp to valid range
+      deliveredPcs = Math.max(0, Math.min(deliveredPcs, originalPcs));
+
+      // If box mode: only deliver WHOLE boxes, push leftover pcs to backorder
+      let deliveredBoxes = 0;
+      let backorderBoxes = 0;
+
+      if (orderMode === "box" && quantityPerBox > 0) {
+        deliveredBoxes = Math.floor(deliveredPcs / quantityPerBox);
+        deliveredPcs = deliveredBoxes * quantityPerBox; // drop partial box
+        const remainingPcs = originalPcs - deliveredPcs;
+        backorderBoxes =
+          Math.round((remainingPcs / quantityPerBox) * 100) / 100;
+      }
+
+      const remainingPcs = originalPcs - deliveredPcs;
+
+      const baseItem = {
+        productId: item.productId,
+        itemCode: item.itemCode,
+        name: item.name,
+        category: item.category,
+        unitType: item.unitType || "Piece",
+        price: item.price,
+        image: item.image,
+        orderMode,
+        quantityPerBox,
+      };
+
+      if (deliveredPcs > 0) {
         deliveredItems.push({
-          productId: item.productId,
-          itemCode: item.itemCode,
-          name: item.name,
-          category: item.category,
-          quantity: deliveredQty,
-          price: item.price,
-          image: item.image,
+          ...baseItem,
+          quantity: deliveredPcs,
+          boxes: deliveredBoxes,
         });
       }
 
-      if (remainingQty > 0) {
+      if (remainingPcs > 0) {
         backorderItems.push({
-          productId: item.productId,
-          itemCode: item.itemCode,
-          name: item.name,
-          category: item.category,
-          quantity: remainingQty,
-          price: item.price,
-          image: item.image,
+          ...baseItem,
+          quantity: remainingPcs,
+          boxes: backorderBoxes,
         });
       }
     });
@@ -1567,10 +1754,12 @@ router.post("/checkout-with-split", async (req, res) => {
         deliveredItems: deliveredItems.map((i) => ({
           name: i.name,
           quantity: i.quantity,
+          boxes: i.boxes,
         })),
         backorderItems: backorderItems.map((i) => ({
           name: i.name,
           quantity: i.quantity,
+          boxes: i.boxes,
         })),
       },
     });
@@ -1584,7 +1773,7 @@ router.post("/checkout-with-split", async (req, res) => {
 router.patch("/:orderId/cancel", async (req, res) => {
   try {
     const { orderId } = req.params;
-    
+
     // Get user info from headers
     const username = req.headers["x-username"];
     const userId = req.headers["x-user-id"];
@@ -1593,9 +1782,9 @@ router.patch("/:orderId/cancel", async (req, res) => {
     // Validate order exists
     const order = await Order.findOne({ orderId: orderId });
     if (!order) {
-      return res.status(404).json({ 
-        success: false, 
-        message: "Order not found" 
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
       });
     }
 
@@ -1603,7 +1792,7 @@ router.patch("/:orderId/cancel", async (req, res) => {
     if (order.status !== "PENDING" && order.status !== "RETURNED") {
       return res.status(400).json({
         success: false,
-        message: `Order cannot be cancelled in its current status: ${order.status}`
+        message: `Order cannot be cancelled in its current status: ${order.status}`,
       });
     }
 
@@ -1611,7 +1800,7 @@ router.patch("/:orderId/cancel", async (req, res) => {
     if (order.status === "CANCELLED") {
       return res.status(400).json({
         success: false,
-        message: "Order is already cancelled"
+        message: "Order is already cancelled",
       });
     }
 
@@ -1622,15 +1811,14 @@ router.patch("/:orderId/cancel", async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Order cancelled successfully",
-      order: order
+      order: order,
     });
-
   } catch (error) {
     console.error("Error cancelling order:", error);
     res.status(500).json({
       success: false,
       message: "Failed to cancel order",
-      error: error.message
+      error: error.message,
     });
   }
 });

@@ -1,0 +1,14 @@
+.inline-error-message {
+  color: #ff3333;
+  font-size: 0.95rem;
+  margin-top: 3px;
+  margin-left: 6px;
+  text-align: left;
+  text-transform: none;
+  font-weight: 500;
+}
+
+.input-error,
+.input-error:focus {
+  border-color: #ff3333 !important;
+}

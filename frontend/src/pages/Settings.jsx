@@ -234,6 +234,25 @@ const Settings = () => {
     return filename.split("?")[0];
   };
 
+  const attachmentFileName = getFileName(attachmentUrl);
+  const extensionIndex = attachmentFileName.lastIndexOf(".");
+  const attachmentFileStem =
+    extensionIndex > 0
+      ? attachmentFileName.slice(0, extensionIndex)
+      : attachmentFileName;
+  const attachmentFileExtension =
+    extensionIndex > 0 ? attachmentFileName.slice(extensionIndex) : "";
+  const newUploadFileName = confirmData?.file?.name || "";
+  const newUploadExtensionIndex = newUploadFileName.lastIndexOf(".");
+  const newUploadFileStem =
+    newUploadExtensionIndex > 0
+      ? newUploadFileName.slice(0, newUploadExtensionIndex)
+      : newUploadFileName;
+  const newUploadFileExtension =
+    newUploadExtensionIndex > 0
+      ? newUploadFileName.slice(newUploadExtensionIndex)
+      : "";
+
   return (
     <>
       <Toaster position="top-center" reverseOrder={false} autoClose={3000} />
@@ -272,13 +291,29 @@ const Settings = () => {
             <div className="setting-input">
               <p className="setting-label">Pricing & Policy Document</p>
               <div className="flex-row">
-                <input
-                  type="text"
-                  placeholder="Upload documents containing pricing, policies, procedures, rules, and regulations."
-                  value={attachmentUrl ? getFileName(attachmentUrl) : ""}
-                  readOnly
-                  className={attachmentUrl ? "upload-success" : ""}
-                />
+                <div
+                  className={`attachment-file-name${attachmentUrl ? " upload-success" : ""}`}
+                  title={attachmentFileName || undefined}
+                  aria-label={
+                    attachmentFileName || "No pricing and policy document uploaded"
+                  }
+                >
+                  {attachmentUrl ? (
+                    <>
+                      <span className="attachment-file-stem">
+                        {attachmentFileStem}
+                      </span>
+                      <span className="attachment-file-extension">
+                        {attachmentFileExtension}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="attachment-file-placeholder">
+                      Upload documents containing pricing, policies, procedures,
+                      rules, and regulations.
+                    </span>
+                  )}
+                </div>
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -439,8 +474,16 @@ const Settings = () => {
                       The current document will be replaced with this file. This
                       action cannot be undone.
                     </span>
-                    <strong className="confirm-file-name">
-                      {confirmData?.file?.name}
+                    <strong
+                      className="confirm-file-name settings-confirm-file-name"
+                      title={newUploadFileName || undefined}
+                    >
+                      <span className="confirm-file-stem">
+                        {newUploadFileStem}
+                      </span>
+                      <span className="confirm-file-extension">
+                        {newUploadFileExtension}
+                      </span>
                     </strong>
                   </>
                 )}

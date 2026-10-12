@@ -1,11 +1,15 @@
 import express from "express";
 const router = express.Router();
+
+const normalizeUnitType = (unitType) => {
+  const value = String(unitType || "").trim();
+  return ["", "-", "n/a", "na"].includes(value.toLowerCase()) ? "" : value;
+};
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Batch from "../models/Batch.js";
-import ClientRequest from "../models/ClientRequest.js"; 
+import ClientRequest from "../models/ClientRequest.js";
 import Settings from "../models/Settings.js";
-
 
 router.get("/clients", async (req, res) => {
   try {
@@ -44,7 +48,7 @@ router.get("/stats", async (req, res) => {
         23,
         59,
         59,
-        999
+        999,
       );
     }
 
@@ -86,12 +90,12 @@ router.get("/stats", async (req, res) => {
 
     expiredBatches.forEach((b) => {
       const daysPast = Math.floor(
-        (now - new Date(b.expirationDate)) / 86400000
+        (now - new Date(b.expirationDate)) / 86400000,
       );
       console.log(
         `   • ${b.itemName} | ${b.itemCode} | exp: ${new Date(
-          b.expirationDate
-        ).toISOString()} | past ${daysPast}d | qty: ${b.quantity} | ${b.status}`
+          b.expirationDate,
+        ).toISOString()} | past ${daysPast}d | qty: ${b.quantity} | ${b.status}`,
       );
     });
 
@@ -105,35 +109,35 @@ router.get("/stats", async (req, res) => {
 
     // ---- LOW STOCK ----
     const lowStockSupplies = await Product.aggregate([
-  { $match: { isKit: false } },
-  {
-    $lookup: {
-      from: "batches",
-      let: { currentItemCode: "$itemCode" },
-      pipeline: [
-        {
-          $match: {
-            $expr: { $eq: ["$itemCode", "$$currentItemCode"] },
-            status: { $in: ["stored"] },
-          },
+      { $match: { isKit: false } },
+      {
+        $lookup: {
+          from: "batches",
+          let: { currentItemCode: "$itemCode" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$itemCode", "$$currentItemCode"] },
+                status: { $in: ["stored"] },
+              },
+            },
+          ],
+          as: "productBatches",
         },
-      ],
-      as: "productBatches",
-    },
-  },
-  {
-    $project: {
-      name: 1,
-      itemCode: 1,
-      reorderLevel: 1,
-      totalQuantity: { $sum: "$productBatches.quantity" },
-    },
-  },
-  { $match: { totalQuantity: { $gt: 0 } } },
-  { $match: { $expr: { $lte: ["$totalQuantity", "$reorderLevel"] } } },
-  { $sort: { totalQuantity: 1 } },
-  { $limit: 5 },
-]);
+      },
+      {
+        $project: {
+          name: 1,
+          itemCode: 1,
+          reorderLevel: 1,
+          totalQuantity: { $sum: "$productBatches.quantity" },
+        },
+      },
+      { $match: { totalQuantity: { $gt: 0 } } },
+      { $match: { $expr: { $lte: ["$totalQuantity", "$reorderLevel"] } } },
+      { $sort: { totalQuantity: 1 } },
+      { $limit: 5 },
+    ]);
 
     const outgoingToday = await Order.countDocuments({
       status: { $regex: /^TO SHIP$/i },
@@ -162,12 +166,12 @@ router.get("/stats", async (req, res) => {
   }
 });
 
-
 router.get("/chart-data", async (req, res) => {
   try {
     const { day, month, year, client } = req.query;
-    let matchQuery = { status: { $regex: /^delivered$/i } };
-
+    
+    const baseQuery = {};
+    
     if (year) {
       const y = parseInt(year);
       let start, end;
@@ -182,34 +186,140 @@ router.get("/chart-data", async (req, res) => {
         start = new Date(y, 0, 1);
         end = new Date(y, 11, 31, 23, 59, 59);
       }
-      matchQuery.updatedAt = { $gte: start, $lte: end };
+      baseQuery.updatedAt = { $gte: start, $lte: end };
     }
 
     if (client) {
-      matchQuery.name = client;
+      baseQuery.name = client;
     }
 
-    const data = await Order.aggregate([
-      { $match: matchQuery },
-      { $unwind: "$items" },
-      {
-        $group: {
-          _id: "$items.name",
-          totalDelivered: { $sum: "$items.quantity" }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          name: "$_id",
-          value: "$totalDelivered"
-        }
-      },
-      { $sort: { value: -1 } },
-      { $limit: 8 }
+    const aggregateData = async (statusRegex) => {
+      return await Order.aggregate([
+        { $match: { ...baseQuery, status: { $regex: statusRegex } } },
+        { $unwind: "$items" },
+        {
+          $group: {
+            _id: "$items.name",
+            totalQuantity: { $sum: "$items.quantity" },
+            unitType: { $first: "$items.unitType" },
+            itemCode: { $first: "$items.itemCode" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            name: "$_id",
+            value: "$totalQuantity",
+            unitType: 1,
+            itemCode: 1,
+          },
+        },
+        { $sort: { value: -1 } },
+        { $limit: 8 },
+      ]);
+    };
+
+    const [deliveredData, toShipData] = await Promise.all([
+      aggregateData(/^delivered$/i),
+      aggregateData(/^TO SHIP$/i),
     ]);
 
-    res.json(data);
+    const allItemCodes = [
+      ...new Set([
+        ...deliveredData.map((item) => item.itemCode),
+        ...toShipData.map((item) => item.itemCode),
+      ].filter(Boolean)),
+    ];
+
+    const [products, batches] = allItemCodes.length
+      ? await Promise.all([
+          Product.find({ itemCode: { $in: allItemCodes } })
+            .select("itemCode unitType")
+            .lean(),
+          Batch.find({ itemCode: { $in: allItemCodes } })
+            .select("itemCode unitType")
+            .sort({ createdAt: -1 })
+            .lean(),
+        ])
+      : [[], []];
+
+    const productUnitTypes = new Map(
+      products.map((product) => [
+        String(product.itemCode),
+        normalizeUnitType(product.unitType),
+      ]),
+    );
+    const batchUnitTypes = new Map();
+    batches.forEach((batch) => {
+      const unitType = normalizeUnitType(batch.unitType);
+      const itemCode = String(batch.itemCode);
+      if (unitType && !batchUnitTypes.has(itemCode)) {
+        batchUnitTypes.set(itemCode, unitType);
+      }
+    });
+
+    const resolveUnitType = (item) => {
+      return (
+        normalizeUnitType(item.unitType) ||
+        productUnitTypes.get(String(item.itemCode)) ||
+        batchUnitTypes.get(String(item.itemCode)) ||
+        "N/A"
+      );
+    };
+
+    const delivered = deliveredData.map((item) => ({
+      name: item.name,
+      value: item.value,
+      unitType: resolveUnitType(item),
+    }));
+
+    const toShip = toShipData.map((item) => ({
+      name: item.name,
+      value: item.value,
+      unitType: resolveUnitType(item),
+    }));
+
+    res.json({
+      delivered,
+      toShip,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router.post('/items', async (req, res) => {
+  try {
+    const doc = await Item.create(req.body);
+    res.json(doc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/items/:id', async (req, res) => {
+  try {
+    const doc = await Item.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    });
+    res.json(doc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/items/:id', async (req, res) => {
+  try {
+    await Item.findByIdAndDelete(req.params.id);
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/items', async (req, res) => {
+  try {
+    const items = await Item.find().lean();
+    res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

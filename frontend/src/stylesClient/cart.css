@@ -306,6 +306,7 @@
 }
 
 .item-image-wrap {
+  position: relative;
   width: 90px;
   height: 90px;
   display: flex;
@@ -315,6 +316,26 @@
   border-radius: var(--border-radius);
   background: var(--light-grey);
   border: 1px solid #f0f0f0;
+}
+
+.item-unit-badge {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  z-index: 1;
+  max-width: calc(100% - 10px);
+  padding: 3px 6px;
+  overflow: hidden;
+  border: 1px solid rgba(212, 175, 55, 0.36);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #765d12;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(24, 32, 48, 0.12);
 }
 
 .item-image {
@@ -334,6 +355,14 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.item-unitCategory-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
 }
 
 .item-name {
@@ -370,8 +399,9 @@
   align-items: center;
   gap: 4px;
   width: fit-content;
-  margin: 7px 0 0;
-  padding: 5px 11px;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px 8px;
   border-radius: 5px;
   background: linear-gradient(
     135deg,
@@ -379,10 +409,44 @@
     rgba(212, 175, 55, 0.07)
   );
   color: #9a7612;
-  font-size: 0.78rem;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.15px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-order-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-light);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.item-order-control select {
+  min-width: 100px;
+  max-width: 150px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--white);
+  color: var(--dark);
+  font: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20d%3D%22M6%209L1.5%204.5L2.91%203.09L6%206.17L9.09%203.09L10.5%204.5L6%209Z%22%20fill%3D%22black%22/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+.item-order-control select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .item-qty {
@@ -396,6 +460,36 @@
   border: 1px solid var(--border);
   border-radius: var(--border-radius);
   box-sizing: border-box;
+}
+
+.item-quantity-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.item-quantity-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.item-quantity-label {
+  color: var(--text-light);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.item-package-total {
+  color: #9a7612;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  margin-top: 2px;
 }
 
 .item-qty button {
@@ -585,13 +679,13 @@
 .stock-modal-header h2 {
   font-size: 20px;
   font-weight: 700;
-  color: #1F2937;
+  color: #1f2937;
   margin: 0;
 }
 
 .stock-modal-description {
   font-size: 14px;
-  color: #4B5563;
+  color: #4b5563;
   line-height: 1.5;
   margin: 0;
   text-transform: none;
@@ -599,8 +693,8 @@
 }
 
 .stock-modal-list {
-  background: #F9FAFB;
-  border: 1px solid #E5E7EB;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 12px 16px;
   max-height: 180px;
@@ -615,7 +709,7 @@
   justify-content: space-between;
   align-items: center;
   padding-bottom: 8px;
-  border-bottom: 1px solid #F3F4F6;
+  border-bottom: 1px solid #f3f4f6;
 }
 
 .stock-modal-item:last-child {
@@ -626,12 +720,12 @@
 .stock-item-name {
   font-size: 14px;
   font-weight: 600;
-  color: #1F2937;
+  color: #1f2937;
 }
 
 .stock-item-category {
   font-size: 12px;
-  color: #6B7280;
+  color: #6b7280;
 }
 
 .stock-modal-actions {
@@ -652,21 +746,21 @@
 }
 
 .stock-modal-actions .cancel-btn {
-  background: #F3F4F6;
-  color: #4B5563;
+  background: #f3f4f6;
+  color: #4b5563;
 }
 
 .stock-modal-actions .cancel-btn:hover {
-  background: #E5E7EB;
+  background: #e5e7eb;
 }
 
 .stock-modal-actions .proceed-btn {
-  background: var(--gold, #D4AF37);
+  background: var(--gold, #d4af37);
   color: #ffffff;
 }
 
 .stock-modal-actions .proceed-btn:hover {
-  background: #C9AE5D;
+  background: #c9ae5d;
 }
 
 .cart-loading {
@@ -1022,6 +1116,10 @@
     gap: 4px;
   }
 
+  .item-unitCategory-row {
+    display: none;
+  }
+
   .item-name {
     font-size: 13px;
     line-height: 1.3;
@@ -1045,11 +1143,16 @@
   .item-qty {
     grid-column: 2 / 5;
     grid-row: 2;
-    justify-self: end;
     height: 30px;
     gap: 3px;
     padding: 3px 5px;
     border-radius: 5px;
+  }
+
+  .item-quantity-group {
+    grid-column: 2 / 5;
+    grid-row: 2;
+    justify-self: end;
   }
 
   .item-qty button {

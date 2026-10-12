@@ -13,12 +13,21 @@ import {
 } from "react-icons/fa";
 import axios from "axios";
 import "../styles/InformationLayout.css";
+import "../styles/Modals.css";
 import "../styles/capsules.css";
 import "../styles/ConfirmModal.css";
+import "../styles/formValidation.css";
 import { Toaster, toast } from "react-hot-toast";
 import logo from "../assets/Premiumed logo.png";
 import EmptyState from "../components/EmptyState";
 import { generateSupplyFilteredReport } from "../utils/pdf/SupplierInfoReportEngine";
+import {
+  COUNTRY_CODES,
+  FIELD_MAX_LENGTHS,
+  formatFieldInput,
+  formatInternationalPhone,
+} from "../utils/fieldFormatting";
+import { validateField, validateFields } from "../utils/formValidation";
 
 const BACKEND_URL =
   import.meta.env.VITE_API_URL ||
@@ -26,6 +35,66 @@ const BACKEND_URL =
 const API_URL = `${BACKEND_URL}/api/suppliers`;
 const BATCH_API = `${BACKEND_URL}/api/putaway/all`;
 const ITEMS_API = `${BACKEND_URL}/api/products`;
+const SUPPLIER_VALIDATION_FIELDS = [
+  "name",
+  "contact",
+  "phone",
+  "email",
+  "tinNumber",
+  "address",
+  "location",
+  "role",
+  "status",
+  "notes",
+];
+const SUPPLIER_VALIDATION_OPTIONS = {
+  name: { required: true, label: "Supplier Name" },
+  contact: { required: true, label: "Full Name" },
+  phone: { required: true, label: "Phone Number" },
+  email: { required: true, label: "Email" },
+  tinNumber: { required: true, label: "TIN Number" },
+  address: { required: true, label: "Address" },
+  location: { required: true, label: "Location" },
+  role: { required: true, label: "Role" },
+  status: { required: true, label: "Status" },
+  notes: { required: true, label: "Notes" },
+};
+
+const getSupplierPhoneParts = (phone = "") => {
+  const normalizedPhone = String(phone).trim();
+  const country = [...COUNTRY_CODES]
+    .sort(
+      (a, b) =>
+        b.code.replace(/\D/g, "").length - a.code.replace(/\D/g, "").length,
+    )
+    .find((item) => normalizedPhone.startsWith(item.code));
+  const countryCode = country?.code || "+63";
+  const digits = normalizedPhone.replace(/\D/g, "");
+  const countryDigits = countryCode.replace(/\D/g, "");
+  const localDigits =
+    country && digits.startsWith(countryDigits)
+      ? digits.slice(countryDigits.length)
+      : digits;
+
+  return {
+    countryCode,
+    phone: formatFieldInput("mobile", localDigits),
+  };
+};
+
+const getBatchUnitType = (batch, items) => {
+  if (batch.unitType) return batch.unitType;
+
+  const itemCode =
+    batch.itemCode?.itemCode || batch.itemCode?._id || batch.itemCode;
+  const item = items.find(
+    (product) =>
+      String(product.itemCode || product._id) === String(itemCode) ||
+      product.name === batch.itemName,
+  );
+
+  return item?.unitType || "N/A";
+};
 
 const SuppliersInformation = () => {
   const [activeTab, setActiveTab] = useState("purchases");
@@ -59,7 +128,7 @@ const SuppliersInformation = () => {
 
   const initialSupplier = {
     name: "",
-    role: "",
+    role: "Supplier",
     contact: "",
     phone: "",
     email: "",
@@ -71,22 +140,44 @@ const SuppliersInformation = () => {
   };
 
   const handlePrintSuppliers = () => {
-    const columns = ["Name", "Address", "Tin Number"];
-
-    const tableData = suppliersData.map((s) => [
-      s.name,
-      s.address,
-      s.tinNumber,
+    const columns = [
+      "Supplier ID",
+      "Supplier Name",
+      "Contact Person",
+      "Status",
+      "Address",
+      "Phone",
+      "Email",
+    ];
+    const tableData = suppliersData.map((supplier) => [
+      (supplier.id || supplier._id || "N/A").toString().slice(-7),
+      supplier.name || "N/A",
+      supplier.contactPerson || supplier.contact || "N/A",
+      supplier.status || "N/A",
+      supplier.address || "N/A",
+      supplier.phone || "N/A",
+      supplier.email || "N/A",
     ]);
 
-    generateReport({
+    generateSupplyFilteredReport({
       title: "Suppliers Report",
-      companyName: "Premiumed Enterprises",
+      sectionTitle: "Suppliers List",
+      companyName: "PREMIUMED ENTERPRISES",
+      companyAddress:
+        "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
+      ceo: "ROSE ANN P. ORTIZ - Prop",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
+      landlineNum: "(044) 812-2280",
       columns,
       data: tableData,
+      reportType: "suppliers",
       filename: "Suppliers-Report.pdf",
       logo,
     });
+
+    toast.success(
+      `Generated Supplier Information Report with ${tableData.length} records`,
+    );
   };
 
   // New function for filtered printing
@@ -157,7 +248,7 @@ const SuppliersInformation = () => {
         companyAddress:
           "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
         ceo: "ROSE ANN P. ORTIZ - Prop",
-        vatReg: "VAT REG. TIN: 000-000-000",
+        vatReg: "VAT REG. TIN: 275-357-338-00000",
         landlineNum: "(044) 812-2280",
         columns,
         data: dataToPrint,
@@ -258,6 +349,7 @@ const SuppliersInformation = () => {
       columns = [
         "Batch Number",
         "Item Name",
+        "Unit Type",
         "Supplier Name",
         "Status",
         "Location",
@@ -269,6 +361,7 @@ const SuppliersInformation = () => {
       dataToPrint = filteredBatches.map((batch) => [
         batch.batchCode || "N/A",
         batch.itemName || "N/A",
+        getBatchUnitType(batch, itemsData),
         batch.supplier?.name || batch.supplierName || "N/A",
         batch.status || "Pending",
         batch.storageLocation || "N/A",
@@ -306,7 +399,7 @@ const SuppliersInformation = () => {
         companyAddress:
           "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
         ceo: "ROSE ANN P. ORTIZ - Prop",
-        vatReg: "VAT REG. TIN: 000-000-000",
+        vatReg: "VAT REG. TIN: 275-357-338-00000",
         landlineNum: "(044) 812-2280",
         columns,
         data: dataToPrint,
@@ -339,7 +432,27 @@ const SuppliersInformation = () => {
   };
 
   const [newSupplier, setNewSupplier] = useState(initialSupplier);
+  const [supplierPhoneCountryCode, setSupplierPhoneCountryCode] =
+    useState("+63");
   const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [supplierErrors, setSupplierErrors] = useState({});
+  const [supplierTouched, setSupplierTouched] = useState({});
+
+  const validateSupplierForm = (supplier) => {
+    const nextErrors = validateFields(
+      supplier,
+      SUPPLIER_VALIDATION_FIELDS,
+      SUPPLIER_VALIDATION_OPTIONS,
+    );
+    setSupplierTouched(
+      SUPPLIER_VALIDATION_FIELDS.reduce((touched, field) => {
+        touched[field] = true;
+        return touched;
+      }, {}),
+    );
+    setSupplierErrors(nextErrors);
+    return Object.values(nextErrors).every((fieldError) => !fieldError);
+  };
 
   useEffect(() => {
     fetchSuppliers();
@@ -504,9 +617,26 @@ const SuppliersInformation = () => {
 
   const handleSaveSupplier = async () => {
     const dataToSave = isEditing ? selectedSupplier : newSupplier;
-    if (!dataToSave.name || !dataToSave.contact) {
-      return toast.error("Please fill in Supplier Name and Contact Person.");
-    }
+    if (!validateSupplierForm(dataToSave)) return;
+    const formattedPhone = formatFieldInput("mobile", dataToSave.phone || "");
+    const formattedEmail = formatFieldInput("email", dataToSave.email || "");
+
+    const formattedSupplier = {
+      ...dataToSave,
+      name: formatFieldInput(
+        "dialysisCenterName",
+        dataToSave.name || "",
+      ).trim(),
+      contact: formatFieldInput("ownerName", dataToSave.contact || "").trim(),
+      phone: formattedPhone
+        ? formatInternationalPhone(supplierPhoneCountryCode, formattedPhone)
+        : "",
+      email: formattedEmail,
+      address: formatFieldInput("address", dataToSave.address || "").trim(),
+      location: formatFieldInput("address", dataToSave.location || "").trim(),
+      tinNumber: formatFieldInput("tinNumber", dataToSave.tinNumber || ""),
+    };
+
     try {
       const actorHeaders = {
         "X-Username": localStorage.getItem("username") || "",
@@ -517,12 +647,12 @@ const SuppliersInformation = () => {
       if (isEditing) {
         await axios.put(
           `${API_URL}/${selectedSupplier.id || selectedSupplier._id}`,
-          selectedSupplier,
+          formattedSupplier,
           { headers: actorHeaders },
         );
         toast.success("Supplier updated successfully!");
       } else {
-        await axios.post(API_URL, newSupplier, { headers: actorHeaders });
+        await axios.post(API_URL, formattedSupplier, { headers: actorHeaders });
         toast.success("New supplier added!");
       }
       fetchSuppliers();
@@ -583,19 +713,96 @@ const SuppliersInformation = () => {
   const closeModal = () => {
     setActiveModal(null);
     setNewSupplier(initialSupplier);
+    setSupplierPhoneCountryCode("+63");
     setSelectedSupplier(null);
     setIsEditing(false);
+    setSupplierErrors({});
+    setSupplierTouched({});
   };
 
   const handleInputChange = (e) => {
-    const { name, value } = e.target;
+    const { name } = e.target;
+    let { value } = e.target;
+    if (name === "phone") {
+      value = formatFieldInput("mobile", value);
+    } else if (name === "email") {
+      value = formatFieldInput("email", value);
+    } else if (name === "tinNumber") {
+      value = formatFieldInput("tinNumber", value);
+    } else if (name === "name") {
+      value = formatFieldInput("dialysisCenterName", value);
+    } else if (name === "contact") {
+      value = formatFieldInput("ownerName", value);
+    } else if (name === "address" || name === "location") {
+      value = formatFieldInput("address", value);
+    }
     setNewSupplier((prev) => ({ ...prev, [name]: value }));
+    setSupplierTouched((prev) => ({ ...prev, [name]: true }));
+    setSupplierErrors((prev) => ({
+      ...prev,
+      [name]: SUPPLIER_VALIDATION_FIELDS.includes(name)
+        ? validateField(name, value, SUPPLIER_VALIDATION_OPTIONS[name])
+        : "",
+    }));
   };
 
   const handleEditChange = (e) => {
-    const { name, value } = e.target;
+    const { name } = e.target;
+    let { value } = e.target;
+    if (name === "tinNumber") {
+      value = formatFieldInput("tinNumber", value);
+    } else if (name === "phone") {
+      value = formatFieldInput("mobile", value);
+    } else if (name === "email") {
+      value = formatFieldInput("email", value);
+    } else if (name === "name") {
+      value = formatFieldInput("dialysisCenterName", value);
+    } else if (name === "contact") {
+      value = formatFieldInput("ownerName", value);
+    } else if (name === "address" || name === "location") {
+      value = formatFieldInput("address", value);
+    }
     setSelectedSupplier((prev) => ({ ...prev, [name]: value }));
+    setSupplierTouched((prev) => ({ ...prev, [name]: true }));
+    setSupplierErrors((prev) => ({
+      ...prev,
+      [name]: SUPPLIER_VALIDATION_FIELDS.includes(name)
+        ? validateField(name, value, SUPPLIER_VALIDATION_OPTIONS[name])
+        : "",
+    }));
   };
+
+  const handleSupplierBlur = (name, value) => {
+    setSupplierTouched((prev) => ({ ...prev, [name]: true }));
+    setSupplierErrors((prev) => ({
+      ...prev,
+      [name]: validateField(name, value, SUPPLIER_VALIDATION_OPTIONS[name]),
+    }));
+  };
+
+  const startEditingSupplier = () => {
+    const { countryCode, phone } = getSupplierPhoneParts(
+      selectedSupplier.phone || "",
+    );
+    setSupplierPhoneCountryCode(countryCode);
+    setSelectedSupplier((prev) => ({ ...prev, phone }));
+    setSupplierErrors({});
+    setSupplierTouched({});
+    setIsEditing(true);
+  };
+
+  const filteredSuppliers = suppliersData
+    .filter((supplier) => {
+      const matchesSearch = supplier.name
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+      const matchesFilter =
+        statusFilter === "All" || supplier.status === statusFilter;
+      return matchesSearch && matchesFilter;
+    })
+    .sort(
+      (a, b) => Number(b.status === "Active") - Number(a.status === "Active"),
+    );
 
   return (
     <>
@@ -636,7 +843,13 @@ const SuppliersInformation = () => {
             <>
               <button
                 className="add-supplier-btn"
-                onClick={() => setActiveModal("add-supplier")}
+                onClick={() => {
+                  setSupplierErrors({});
+                  setSupplierTouched({});
+                  setNewSupplier(initialSupplier);
+                  setIsEditing(false);
+                  setActiveModal("add-supplier");
+                }}
               >
                 <FaPlusCircle className="add-supplier-icon" /> ADD NEW SUPPLIER
               </button>
@@ -705,58 +918,45 @@ const SuppliersInformation = () => {
               </thead>
               <tbody>
                 {activeTab === "suppliers" ? (
-                  suppliersData.filter((s) => {
-                    const matchesSearch = s.name
-                      .toLowerCase()
-                      .includes(searchTerm.toLowerCase());
-                    const matchesFilter =
-                      statusFilter === "All" || s.status === statusFilter;
-                    return matchesSearch && matchesFilter;
-                  }).length > 0 ? (
-                    suppliersData
-                      .filter((s) => {
-                        const matchesSearch = s.name
-                          .toLowerCase()
-                          .includes(searchTerm.toLowerCase());
-                        const matchesFilter =
-                          statusFilter === "All" || s.status === statusFilter;
-                        return matchesSearch && matchesFilter;
-                      })
-                      .map((item) => (
-                        <tr key={item._id || item.id}>
-                          <td>{(item.id || item._id).toString().slice(-7)}</td>
-                          <td className="font-bold">{item.name}</td>
-                          <td>{item.contactPerson || item.contact}</td>
-                          <td>
-                            <span
-                              className={`status-capsule status-${item.status.replace(/\s+/g, "-").toLowerCase()}`}
-                            >
-                              {item.status}
-                            </span>
-                          </td>
-                          <td className="action-buttons">
-                            <button
-                              className="view-profile-btn"
-                              onClick={() => {
-                                setSelectedSupplier(item);
-                                setActiveModal("supplier");
-                              }}
-                            >
-                              VIEW
-                            </button>
-                            <button
-                              className={`deact-btn ${
-                                item.status !== "Active" ? "activate-mode" : ""
-                              }`}
-                              onClick={() => openStatusConfirmation(item)}
-                            >
-                              {item.status === "Active"
-                                ? "Deactivate"
-                                : "Activate"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                  filteredSuppliers.length > 0 ? (
+                    filteredSuppliers.map((item) => (
+                      <tr key={item._id || item.id}>
+                        <td>{(item.id || item._id).toString().slice(-7)}</td>
+                        <td className="font-bold">{item.name}</td>
+                        <td>{item.contactPerson || item.contact}</td>
+                        <td>
+                          <span
+                            className={`status-capsule status-${item.status.replace(/\s+/g, "-").toLowerCase()}`}
+                          >
+                            {item.status}
+                          </span>
+                        </td>
+                        <td className="action-buttons">
+                          <button
+                            className="view-profile-btn"
+                            onClick={() => {
+                              setSelectedSupplier(item);
+                              setSupplierErrors({});
+                              setSupplierTouched({});
+                              setIsEditing(false);
+                              setActiveModal("supplier");
+                            }}
+                          >
+                            VIEW
+                          </button>
+                          <button
+                            className={`deact-btn ${
+                              item.status !== "Active" ? "activate-mode" : ""
+                            }`}
+                            onClick={() => openStatusConfirmation(item)}
+                          >
+                            {item.status === "Active"
+                              ? "Deactivate"
+                              : "Activate"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
                   ) : (
                     <tr>
                       <td colSpan={5} className="empty-order-cell">
@@ -1159,8 +1359,8 @@ const SuppliersInformation = () => {
                     value={selectedBatch.itemName}
                   />
                   <DetailItem
-                    label="Status"
-                    value={selectedBatch.status || "Pending"}
+                    label="Unit Type"
+                    value={getBatchUnitType(selectedBatch, itemsData)}
                   />
                   <DetailItem
                     label="Location"
@@ -1175,6 +1375,16 @@ const SuppliersInformation = () => {
                     }
                   />
                   <DetailItem label="Quantity" value={selectedBatch.quantity} />
+
+                  <DetailItem
+                    label="Status"
+                    value={
+                      selectedBatch.status
+                        ? selectedBatch.status.charAt(0).toUpperCase() +
+                          selectedBatch.status.slice(1)
+                        : "Pending"
+                    }
+                  />
                   <div className="detail-group full title">
                     <h4>Supplier Source</h4>
                   </div>
@@ -1210,62 +1420,130 @@ const SuppliersInformation = () => {
                     name="name"
                     value={newSupplier.name}
                     onChange={handleInputChange}
+                    onBlur={(e) => handleSupplierBlur("name", e.target.value)}
+                    error={supplierTouched.name && supplierErrors.name}
                   />
                   <InputItem
                     label="Role"
                     name="role"
                     value={newSupplier.role}
-                    onChange={handleInputChange}
+                    readOnly
                   />
 
-                  <div className="detail-group full title">
-                    <h4>Contact & Location</h4>
-                  </div>
-                  <InputItem
-                    label="Contact Person"
-                    name="contact"
-                    value={newSupplier.contact}
-                    onChange={handleInputChange}
-                  />
-                  <InputItem
-                    label="Phone"
-                    name="phone"
-                    value={newSupplier.phone}
-                    onChange={handleInputChange}
-                  />
-                  <InputItem
-                    label="Email"
-                    name="email"
-                    value={newSupplier.email}
-                    onChange={handleInputChange}
-                  />
                   <InputItem
                     label="Address"
                     name="address"
                     value={newSupplier.address}
                     onChange={handleInputChange}
-                  />
-                  <InputItem
-                    label="Location"
-                    name="location"
-                    value={newSupplier.location}
-                    onChange={handleInputChange}
+                    onBlur={(e) =>
+                      handleSupplierBlur("address", e.target.value)
+                    }
+                    error={supplierTouched.address && supplierErrors.address}
                   />
 
-                  <div className="detail-group full title">
-                    <h4>Status & Tin Number</h4>
-                  </div>
-                  <InputItem
-                    label="Status"
-                    name="status"
-                    value={newSupplier.status}
-                    onChange={handleInputChange}
-                  />
                   <InputItem
                     label="Tin Number"
                     name="tinNumber"
                     value={newSupplier.tinNumber}
                     onChange={handleInputChange}
+                    placeholder="xxx-xxx-xxx-xxxxx"
+                    inputMode="numeric"
+                    maxLength={FIELD_MAX_LENGTHS.tinNumber}
+                    onBlur={(e) =>
+                      handleSupplierBlur("tinNumber", e.target.value)
+                    }
+                    error={
+                      supplierTouched.tinNumber && supplierErrors.tinNumber
+                    }
+                  />
+
+                  <div className="detail-group full title">
+                    <h4>Contact Person</h4>
+                  </div>
+                  <InputItem
+                    label="Full Name"
+                    name="contact"
+                    value={newSupplier.contact}
+                    onChange={handleInputChange}
+                    onBlur={(e) =>
+                      handleSupplierBlur("contact", e.target.value)
+                    }
+                    error={supplierTouched.contact && supplierErrors.contact}
+                  />
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="new-supplier-phone">
+                      Phone
+                    </label>
+                    <div className="supplier-phone-input">
+                      <select
+                        aria-label="Phone country code"
+                        className="field-box supplier-phone-country-code"
+                        value={supplierPhoneCountryCode}
+                        onChange={(e) =>
+                          setSupplierPhoneCountryCode(e.target.value)
+                        }
+                      >
+                        {COUNTRY_CODES.map((country) => (
+                          <option key={country.code} value={country.code}>
+                            {country.flag} {country.code}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        id="new-supplier-phone"
+                        type="tel"
+                        name="phone"
+                        className={`field-box supplier-phone-number ${supplierErrors.phone ? "input-error" : ""}`}
+                        placeholder="xxx xxx xxxx"
+                        value={newSupplier.phone}
+                        onChange={handleInputChange}
+                        onBlur={(e) =>
+                          handleSupplierBlur("phone", e.target.value)
+                        }
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        maxLength={FIELD_MAX_LENGTHS.mobile}
+                      />
+                    </div>
+                    {supplierTouched.phone && supplierErrors.phone && (
+                      <div className="inline-error-message">
+                        {supplierErrors.phone}
+                      </div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="new-supplier-email">
+                      Email
+                    </label>
+                    <input
+                      id="new-supplier-email"
+                      type="email"
+                      name="email"
+                      className={`field-box ${supplierErrors.email ? "input-error" : ""}`}
+                      placeholder="example@gmail.com"
+                      value={newSupplier.email}
+                      onChange={handleInputChange}
+                      onBlur={(e) =>
+                        handleSupplierBlur("email", e.target.value)
+                      }
+                      autoComplete="email"
+                      maxLength={FIELD_MAX_LENGTHS.email}
+                    />
+                    {supplierTouched.email && supplierErrors.email && (
+                      <div className="inline-error-message">
+                        {supplierErrors.email}
+                      </div>
+                    )}
+                  </div>
+                  <InputItem
+                    label="Location"
+                    name="location"
+                    value={newSupplier.location}
+                    onChange={handleInputChange}
+                    onBlur={(e) =>
+                      handleSupplierBlur("location", e.target.value)
+                    }
+                    error={supplierTouched.location && supplierErrors.location}
                   />
 
                   <div className="detail-group full title">
@@ -1277,6 +1555,8 @@ const SuppliersInformation = () => {
                     className="supplierNote"
                     value={newSupplier.notes}
                     onChange={handleInputChange}
+                    onBlur={(e) => handleSupplierBlur("notes", e.target.value)}
+                    error={supplierTouched.notes && supplierErrors.notes}
                     fullWidth
                   />
                 </div>
@@ -1318,6 +1598,8 @@ const SuppliersInformation = () => {
                       name="name"
                       value={selectedSupplier.name}
                       onChange={handleEditChange}
+                      onBlur={(e) => handleSupplierBlur("name", e.target.value)}
+                      error={supplierTouched.name && supplierErrors.name}
                     />
                   ) : (
                     <DetailItem
@@ -1331,21 +1613,46 @@ const SuppliersInformation = () => {
                         label="Role"
                         name="role"
                         value={selectedSupplier.role}
-                        onChange={handleEditChange}
+                        readOnly
                       />
                       <InputItem
-                        label="Address"
-                        name="address"
-                        value={selectedSupplier.address}
+                        label="Location"
+                        name="location"
+                        value={selectedSupplier.location}
                         onChange={handleEditChange}
+                        onBlur={(e) =>
+                          handleSupplierBlur("location", e.target.value)
+                        }
+                        error={
+                          supplierTouched.location && supplierErrors.location
+                        }
+                      />
+                      <InputItem
+                        label="TIN Number"
+                        name="tinNumber"
+                        value={selectedSupplier.tinNumber}
+                        onChange={handleEditChange}
+                        placeholder="xxx-xxx-xxx-xxxxx"
+                        inputMode="numeric"
+                        maxLength={FIELD_MAX_LENGTHS.tinNumber}
+                        onBlur={(e) =>
+                          handleSupplierBlur("tinNumber", e.target.value)
+                        }
+                        error={
+                          supplierTouched.tinNumber && supplierErrors.tinNumber
+                        }
                       />
                     </>
                   ) : (
                     <>
                       <DetailItem label="Role" value={selectedSupplier.role} />
                       <DetailItem
-                        label="Address"
-                        value={selectedSupplier.address}
+                        label="Location"
+                        value={selectedSupplier.location}
+                      />
+                      <DetailItem
+                        label="TIN Number"
+                        value={selectedSupplier.tinNumber}
                       />
                     </>
                   )}
@@ -1355,34 +1662,88 @@ const SuppliersInformation = () => {
                   {isEditing ? (
                     <>
                       <InputItem
-                        label="Name"
+                        label="Full Name"
                         name="contact"
                         value={selectedSupplier.contact}
                         onChange={handleEditChange}
+                        onBlur={(e) =>
+                          handleSupplierBlur("contact", e.target.value)
+                        }
+                        error={
+                          supplierTouched.contact && supplierErrors.contact
+                        }
                       />
-                      <InputItem
-                        label="Phone"
-                        name="phone"
-                        value={selectedSupplier.phone}
-                        onChange={handleEditChange}
-                      />
+                      <div className="field-group">
+                        <label
+                          className="field-label"
+                          htmlFor="edit-supplier-phone"
+                        >
+                          Phone
+                        </label>
+                        <div className="supplier-phone-input">
+                          <select
+                            aria-label="Phone country code"
+                            className="field-box supplier-phone-country-code"
+                            value={supplierPhoneCountryCode}
+                            onChange={(e) =>
+                              setSupplierPhoneCountryCode(e.target.value)
+                            }
+                          >
+                            {COUNTRY_CODES.map((country) => (
+                              <option key={country.code} value={country.code}>
+                                {country.flag} {country.code}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            id="edit-supplier-phone"
+                            type="tel"
+                            name="phone"
+                            className={`field-box supplier-phone-number ${supplierErrors.phone ? "input-error" : ""}`}
+                            placeholder="xxx xxx xxxx"
+                            value={selectedSupplier.phone || ""}
+                            onChange={handleEditChange}
+                            onBlur={(e) =>
+                              handleSupplierBlur("phone", e.target.value)
+                            }
+                            inputMode="numeric"
+                            autoComplete="tel-national"
+                            maxLength={FIELD_MAX_LENGTHS.mobile}
+                          />
+                        </div>
+                        {supplierTouched.phone && supplierErrors.phone && (
+                          <div className="inline-error-message">
+                            {supplierErrors.phone}
+                          </div>
+                        )}
+                      </div>
                       <InputItem
                         label="Email"
                         name="email"
                         value={selectedSupplier.email}
                         onChange={handleEditChange}
+                        onBlur={(e) =>
+                          handleSupplierBlur("email", e.target.value)
+                        }
+                        error={supplierTouched.email && supplierErrors.email}
                       />
                       <InputItem
-                        label="Location"
-                        name="location"
-                        value={selectedSupplier.location}
+                        label="Address"
+                        name="address"
+                        value={selectedSupplier.address}
                         onChange={handleEditChange}
+                        onBlur={(e) =>
+                          handleSupplierBlur("address", e.target.value)
+                        }
+                        error={
+                          supplierTouched.address && supplierErrors.address
+                        }
                       />
                     </>
                   ) : (
                     <>
                       <DetailItem
-                        label="Contact Person"
+                        label="Full Name"
                         value={selectedSupplier.contact}
                       />
                       <DetailItem
@@ -1394,11 +1755,12 @@ const SuppliersInformation = () => {
                         value={selectedSupplier.email}
                       />
                       <DetailItem
-                        label="Location"
-                        value={selectedSupplier.location}
+                        label="Address"
+                        value={selectedSupplier.address}
                       />
                     </>
                   )}
+
                   <div className="detail-group full title">
                     <h4>Notes</h4>
                   </div>
@@ -1409,6 +1771,10 @@ const SuppliersInformation = () => {
                       className="supplierNote"
                       value={selectedSupplier.notes}
                       onChange={handleEditChange}
+                      onBlur={(e) =>
+                        handleSupplierBlur("notes", e.target.value)
+                      }
+                      error={supplierTouched.notes && supplierErrors.notes}
                       fullWidth
                     />
                   ) : (
@@ -1431,7 +1797,7 @@ const SuppliersInformation = () => {
                   ) : (
                     <button
                       className="view-profile-btn"
-                      onClick={() => setIsEditing(true)}
+                      onClick={startEditingSupplier}
                     >
                       <FaEdit /> EDIT PROFILE
                     </button>
@@ -1446,16 +1812,34 @@ const SuppliersInformation = () => {
   );
 };
 
-const InputItem = ({ label, name, value, onChange, fullWidth }) => (
+const InputItem = ({
+  label,
+  name,
+  value,
+  onChange,
+  onBlur,
+  error,
+  fullWidth,
+  placeholder,
+  inputMode,
+  maxLength,
+  readOnly,
+}) => (
   <div className={`field-group ${fullWidth ? "full-width" : ""}`}>
     <label className="field-label">{label}</label>
     <input
       type="text"
       name={name}
-      className="field-box"
+      className={`field-box ${error ? "input-error" : ""}`}
       value={value}
       onChange={onChange}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      inputMode={inputMode}
+      maxLength={maxLength}
+      readOnly={readOnly}
     />
+    {error && <div className="inline-error-message">{error}</div>}
   </div>
 );
 

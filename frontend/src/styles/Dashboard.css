@@ -342,7 +342,7 @@
   border-radius: 8px;
   display: grid;
   gap: 5px;
-  z-index: 1000;
+  z-index: 999;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   box-sizing: border-box;
 }
@@ -496,17 +496,16 @@
   word-break: break-word;
 }
 
-.excel-table th:first-child,
+/* .excel-table th:first-child,
 .excel-table td:first-child {
   width: 75%;
-}
+} */
 
 .excel-table th:last-child,
 .excel-table td:last-child {
-  width: 25%;
+  width: 20%;
   text-align: center;
 }
-
 .excel-table th {
   background: var(--gold);
   color: white;

@@ -6,6 +6,7 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
 import createActivityLog from "../utils/createActivityLogs.js";
 import {
   sendEmailWithRetry,
@@ -88,7 +89,15 @@ router.post("/login", async (req, res) => {
       description: `${user.role} "${user.username}" logged in successfully.`,
     });
 
-    const token = "dummy-token";
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        username: user.username,
+        role: user.role,
+      },
+      process.env.JWT_SECRET || "your-secret-key",
+      { expiresIn: "24h" },
+    );
     res.json({ token, role: user.role, username: user.username });
   } catch (err) {
     console.error("Login Error:", err);

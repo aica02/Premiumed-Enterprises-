@@ -37,17 +37,13 @@ export default function OrderTrans() {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const hasDepositSlipSent = (order) => {
-    return (
-      order?.paymentSlip &&
-      order?.paymentStatus === "COMPLETED"
-    );
+    return order?.paymentSlip && order?.paymentStatus === "COMPLETED";
   };
 
   const hasDepositSlipRejected = (order) => {
     if (!order) return false;
     return (
-      order.paymentStatus === "REJECTED" ||
-      order.paymentRejectedAt != null
+      order.paymentStatus === "REJECTED" || order.paymentRejectedAt != null
     );
   };
 
@@ -724,21 +720,54 @@ export default function OrderTrans() {
             <div className="receipt-divider" />
 
             <div className="receipt-section">
-              <h4>ITEMS</h4>
-              {selectedOrder.items?.map((item, index) => (
-                <div key={index} className="receipt-item">
-                  <div className="item-top">
-                    <span className="item-name">{item.name}</span>
+              <h4>Order Supplies</h4>
+              {selectedOrder.items?.map((item, index) => {
+                const isBox = item.orderMode === "box";
+                const unitType = item.unitType || "N/A";
+                const packageLabel =
+                  String(unitType).trim().toLowerCase() === "box"
+                    ? "Case"
+                    : "Box";
+                const orderLabel = isBox ? packageLabel : unitType;
+                const orderCount = isBox
+                  ? Number(item.boxes) || 0
+                  : item.quantity;
+                const pluralizeLabel = (label) => {
+                  const text = String(label);
+                  const lastCharacter = text.trimEnd().slice(-1).toLowerCase();
+                  if (!lastCharacter || lastCharacter === "s") return text;
+                  return `${text}${lastCharacter === "e" ? "s" : "es"}`;
+                };
+                const pluralOrderLabel =
+                  Number(orderCount) > 1
+                    ? pluralizeLabel(orderLabel)
+                    : orderLabel;
+                const orderCountLabel = pluralOrderLabel;
+                const unitCountLabel =
+                  Number(item.quantity) > 1
+                    ? pluralizeLabel(unitType)
+                    : unitType;
+
+                return (
+                  <div key={index} className="receipt-item">
+                    <div className="item-top">
+                      <span className="item-name">{item.name}</span>
+                    </div>
+                    <div className="item-bottom">
+                      {/* <span>{item.description || item.category || "N/A"}</span> */}
+                      <span>
+                        Ordered by {orderLabel}: {orderCount} {orderCountLabel}
+                        {isBox && Number(item.quantityPerBox) > 0 && (
+                          <>
+                            {" "}
+                            ({item.quantity} {unitCountLabel})
+                          </>
+                        )}
+                      </span>
+                    </div>
                   </div>
-                  <div className="item-bottom">
-                    <span>
-                      {item.description ||
-                        item.category + " - " + (item.unitType || "N/A")}
-                    </span>
-                    <span>Qty: {item.quantity}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="receipt-divider" />

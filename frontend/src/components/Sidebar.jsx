@@ -1,9 +1,15 @@
 import "../styles/Sidebar.css";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
-  MdDashboard, MdInventory, MdReceiptLong, MdPeople, 
-  MdManageAccounts, MdSettings, MdMenu, MdWarehouse,
-  MdHistory
+  MdDashboard,
+  MdInventory,
+  MdReceiptLong,
+  MdPeople,
+  MdManageAccounts,
+  MdSettings,
+  MdMenu,
+  MdWarehouse,
+  MdHistory,
 } from "react-icons/md";
 import { FaCrown, FaDollyFlatbed } from "react-icons/fa";
 import { useState } from "react";
@@ -16,20 +22,44 @@ const Sidebar = () => {
 
   const menuItems = [
     { name: "DASHBOARD", path: "/admin", icon: <MdDashboard /> },
-    { name: "ORDERS (P.0.)", path: "/admin/clientsOrderPage", icon: <FaDollyFlatbed /> },
-    { name: "INVENTORY MANAGEMENT", path: "/admin/inventory", icon: <MdInventory /> },
-    { name: "WAREHOUSE MAP", path: "/admin/warehouseMapPage", icon: <MdWarehouse /> },
-    { name: "CLIENTS INFORMATION", path: "/admin/clientsInformationPage", icon: <MdReceiptLong /> },
-    { name: "SUPPLIERS INFORMATION", path: "/admin/suppliersInformationPage", icon: <MdPeople /> },
-    { name: "USERS ACCESS CONTROL", path: "/admin/usersAccessControlPage", icon: <MdManageAccounts /> },
-    { name: "ACTIVITY LOG", path: "/admin/activityLogs", icon: <MdHistory /> },
-    { name: "SETTINGS", path: "/admin/settingsPage", icon: <MdSettings /> }
+    {
+      name: "ORDERS (P.0.)",
+      path: "/admin/clientsOrderPage",
+      icon: <FaDollyFlatbed />,
+    },
+    {
+      name: "INVENTORY MANAGEMENT",
+      path: "/admin/inventory",
+      icon: <MdInventory />,
+    },
+    {
+      name: "WAREHOUSE MAP",
+      path: "/admin/warehouseMapPage",
+      icon: <MdWarehouse />,
+    },
+    {
+      name: "CLIENTS INFORMATION",
+      path: "/admin/clientsInformationPage",
+      icon: <MdReceiptLong />,
+    },
+    {
+      name: "SUPPLIERS INFORMATION",
+      path: "/admin/suppliersInformationPage",
+      icon: <MdPeople />,
+    },
+    {
+      name: "USERS ACCESS CONTROL",
+      path: "/admin/usersAccessControlPage",
+      icon: <MdManageAccounts />,
+    },
+    { name: "ACTIVITY LOGS", path: "/admin/activityLogs", icon: <MdHistory /> },
+    { name: "SETTINGS", path: "/admin/settingsPage", icon: <MdSettings /> },
   ];
 
-const handleNavigation = (path) => {
-  navigate(path); 
-  setIsOpen(false);
-};
+  const handleNavigation = (path) => {
+    navigate(path);
+    setIsOpen(false);
+  };
 
   return (
     <>
@@ -39,7 +69,7 @@ const handleNavigation = (path) => {
 
       <aside className={`sidebar ${isOpen ? "open" : ""}`}>
         <div className="logo">
-          <img src={logo} alt="logo" className="logo-img"/>
+          <img src={logo} alt="logo" className="logo-img" />
         </div>
         <nav className="menu">
           {menuItems.map((item) => (
@@ -62,7 +92,9 @@ const handleNavigation = (path) => {
         </nav>
       </aside>
 
-      {isOpen && <div className="backdrop" onClick={() => setIsOpen(false)}></div>}
+      {isOpen && (
+        <div className="backdrop" onClick={() => setIsOpen(false)}></div>
+      )}
     </>
   );
 };

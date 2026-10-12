@@ -6,16 +6,31 @@ const rackSlots = {
   3: "ABCDEFGHI",
   4: "ABCDEF",
   5: "ABCD",
-  6: "ABCDEFGHIJKL",
-  7: "ABCDEFGHI",
-  8: "ABCDEFGHIJKLMNO",
-  9: "ABCDEF",
-  10: "ABCDEFGHIJKL",
+  6: "ABCDEF",
 };
 
 const rackIds = Object.entries(rackSlots).flatMap(([rackNumber, slots]) =>
   [...slots].map((slot) => `R${rackNumber}-${slot}`),
 );
+
+const palletSlots = {
+  1: "ABCD",
+  2: "ABCD",
+  3: "ABCD",
+  4: "ABCD",
+  5: "ABCD",
+};
+
+const palletIds = Object.entries(palletSlots).flatMap(([palletNumber, slots]) =>
+  [...slots].map((slot) => `P${palletNumber}-${slot}`),
+);
+
+const locationIds = [
+  ...Object.keys(rackSlots).map((rackNumber) => `R${rackNumber}`),
+  ...rackIds,
+  ...Object.keys(palletSlots).map((palletNumber) => `P${palletNumber}`),
+  ...palletIds,
+];
 
 const batchSchema = new mongoose.Schema(
   {
@@ -25,11 +40,13 @@ const batchSchema = new mongoose.Schema(
     batchCode: { type: String, unique: true, sparse: true },
     expirationDate: { type: Date, required: true },
     disposedDate: { type: Date },
+    box: { type: Number, required: true, min: 0 },
     quantity: { type: Number, required: true, min: 0 },
+    unitType: { type: String, trim: true },
     storageLocation: {
       type: String,
       required: true,
-      enum: rackIds,
+      enum: locationIds,
     },
     status: {
       type: String,
@@ -113,5 +130,4 @@ batchSchema.pre("save", async function (next) {
     this.batchCode = `BATCH-${dateStr}-${random}`;
   }
 });
-
 export default mongoose.model("Batch", batchSchema);

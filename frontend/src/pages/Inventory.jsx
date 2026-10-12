@@ -309,56 +309,68 @@ const Inventory = () => {
     );
 
     const columns =
-      type === "disposed"
-        ? ["Item Name", "Expiration Date", "Category", "Quantity", "Price"]
-        : [
-            "Item Name",
-            "Expiration Date",
-            "Category",
-            "QTY",
-            "FEFO Status",
-            "Stock Status",
-            "Location",
-            "Price",
-          ];
+  type === "disposed"
+    ? [
+        "Supply Name",
+        "Unit Type",
+        "Category",
+        "Qty",
+        "Location",
+        "Expiration Date",
+        "FEFO Status",
+        "Price",
+      ]
+    : [
+        "Supply Name",
+        "Unit Type",
+        "Category",
+        "Qty",
+        "Location",
+        "Expiration Date",
+        "FEFO Status",
+        "Stock Status",
+      ];
 
     const tableData = uniqueRows.map(({ item, batch }) => {
       const expiration = batch.expirationDate
         ? new Date(batch.expirationDate).toLocaleDateString()
         : "N/A";
 
+      const unitType = batch.unitType || item.unitType || "N/A";
+      const fefo = getFefoStatus(batch.expirationDate);
+
+    if (type === "disposed") {
       const price = Number(item.price || 0);
-      if (type === "disposed") {
-        return [
+
+      return [
           item.name,
-          expiration,
+          unitType,
           item.category,
           batch.quantity,
-          `${price.toLocaleString("en-PH", {
+          batch.storageLocation || "N/A",
+          expiration,
+          fefo.label,
+          price.toLocaleString("en-PH", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
-          })}`,
+          }),
         ];
       }
 
-      const fefo = getFefoStatus(batch.expirationDate);
-      const stock =
-        batch.status === "disposed" || batch.status === "for disposal"
-          ? { label: "Disposed" }
-          : getStockStatus(batch.quantity, item.reorderLevel);
-      return [
-        item.name,
-        expiration,
-        item.category,
-        batch.quantity,
-        fefo.label,
-        stock.label,
-        batch.storageLocation,
-        `${price.toLocaleString("en-PH", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        })}`,
-      ];
+    // FULL INVENTORY
+    const stock = getStockStatus(batch.quantity, item.reorderLevel);
+
+    return [
+      item.name,
+      unitType,
+      item.category,
+      batch.quantity,
+      batch.storageLocation || "N/A",
+      expiration,
+      fefo.label,
+      stock.label,
+    ];
+
     });
 
     const totalInventoryValue = uniqueRows.reduce(
@@ -378,7 +390,7 @@ const Inventory = () => {
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       columns,
       data: tableData,
@@ -702,8 +714,8 @@ const Inventory = () => {
                     <h4>Supply Information</h4>
                   </div>
                   <DetailItem
-                    label="Barcode"
-                    value={selectedBatch.item?.barcode}
+                    label="BOX"
+                    value={selectedBatch.batch?.box || "N/A"}
                   />
                   <DetailItem
                     label="Item Name"
@@ -717,21 +729,28 @@ const Inventory = () => {
                     label="Batch Code"
                     value={selectedBatch.batch.batchCode}
                   />
-                  <DetailItem
-                    label="Status"
-                    value={selectedBatch.batch.status || "N/A"}
-                  />
+
                   <DetailItem
                     label="Category"
                     value={selectedBatch.item?.category}
                   />
                   <DetailItem
+                    label="Unit Type"
+                    value={
+                      selectedBatch.batch.unitType ||
+                      selectedBatch.item?.unitType ||
+                      "N/A"
+                    }
+                  />
+
+                  <DetailItem
                     label="Quantity"
                     value={selectedBatch.batch.quantity}
                   />
+
                   <DetailItem
-                    label="Unit Type"
-                    value={selectedBatch.batch.unitType || "N/A"}
+                    label="Status"
+                    value={selectedBatch.batch.status || "N/A"}
                   />
 
                   <div className="detail-group full title">
@@ -779,7 +798,7 @@ const Inventory = () => {
                         ? new Date(
                             selectedBatch.batch.disposedDate,
                           ).toLocaleDateString()
-                        : "N/A"
+                        : "Not disposed yet"
                     }
                   />
                 </div>

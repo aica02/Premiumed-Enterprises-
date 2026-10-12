@@ -40,6 +40,8 @@ router.put(
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
+      const previousProfileImagePublicId = user.profileImagePublicId;
+      let replacementProfileImagePublicId = null;
 
       if (updateData.email) {
         const existingUser = await User.findOne({ 
@@ -55,14 +57,6 @@ router.put(
 
       if (req.file) {
         try {
-          if (user.profileImagePublicId) {
-            try {
-              await deleteFromCloudinary(user.profileImagePublicId);
-            } catch (deleteError) {
-              console.error("Error deleting old image:", deleteError);
-            }
-          }
-
           const result = await uploadToCloudinary(req.file.buffer, {
             folder: "profile",
             public_id: `profile_${username}`,
@@ -71,9 +65,13 @@ router.put(
               { quality: "auto" }
             ]
           });
+          if (!result?.secure_url || !result.public_id) {
+            throw new Error("Cloudinary did not return a profile image URL and ID.");
+          }
 
           updateData.profileImage = result.secure_url;
           updateData.profileImagePublicId = result.public_id;
+          replacementProfileImagePublicId = result.public_id;
         } catch (uploadError) {
           console.error("Error uploading image:", uploadError);
           return res.status(500).json({ 
@@ -90,6 +88,18 @@ router.put(
         { $set: updateData },
         { new: true, runValidators: true }
       ).select("-password");
+
+      if (
+        replacementProfileImagePublicId &&
+        previousProfileImagePublicId &&
+        previousProfileImagePublicId !== replacementProfileImagePublicId
+      ) {
+        try {
+          await deleteFromCloudinary(previousProfileImagePublicId);
+        } catch (deleteError) {
+          console.error("Error deleting old profile image:", deleteError);
+        }
+      }
 
       res.status(200).json({
         message: "Profile updated successfully",

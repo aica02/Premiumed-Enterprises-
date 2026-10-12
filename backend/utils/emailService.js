@@ -105,7 +105,7 @@ export const sendOrderStatusUpdate = async (orderData, clientEmail, newStatus) =
           let itemDetails = `
           <div style="margin-bottom: 15px; padding: 15px; background-color: #f8f8f8; border-left: 3px solid #d4af37;">
             <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5;">
-              <strong>${index + 1}. ${itemName}</strong> (${itemCode})
+              <strong>${index + 1}. ${itemName}</strong>
             </p>
 
             <p style="margin: 5px 0; font-size: 14px; line-height: 1.5;">
@@ -603,20 +603,109 @@ export const getDepositSlipRejectedEmail = ({ username, orderId, actionUrl }) =>
   return {
     subject: `Deposit Slip Rejected - Order #${orderId}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-        <h2 style="color: #b8251e;">Deposit Slip Rejected</h2>
-        <p>Hello ${username || "Customer"},</p>
-        <p>Your submitted deposit slip for order <strong>#${orderId}</strong> was verified and could not be accepted.</p>
-        
-        <div style="background-color: #fff9e6; border: 1px solid #ffe58f; padding: 15px; border-radius: 4px; margin: 20px 0;">
-          <strong>Important:</strong> Your payment status has been reset to <strong>PENDING</strong>. Please re-upload a valid deposit slip to complete your transaction.
-        </div>
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Deposit Slip Rejected - Premiumed Enterprises</title>
+        </head>
 
-        
+        <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
+          <div style="max-width: 600px; margin: 30px auto; background-color: #ffffff; border: 1px solid #dddddd;">
+            <div style="background-color: #000000; padding: 25px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; letter-spacing: 1px;">
+                PREMIUMED ENTERPRISES
+              </h1>
 
-        <p style="color: #666666; font-size: 13px;">If you have any questions, please contact our support team.</p>
-      </div>
-    `,
+              <div style="width: 60px; height: 3px; background-color: #d4af37; margin: 12px auto 0;"></div>
+            </div>
+
+            <div style="padding: 35px;">
+              <h2 style="margin-top: 0; margin-bottom: 25px; color: #b8251e; font-size: 22px;">
+                Deposit Slip Rejected
+              </h2>
+
+              <p style="font-size: 15px; line-height: 1.6;">
+                Hello ${username || "Customer"},
+              </p>
+
+              <p style="font-size: 15px; line-height: 1.6;">
+                Your submitted deposit slip for order
+                <strong>#${orderId}</strong>
+                was verified and could not be accepted.
+              </p>
+
+              <!-- ORDER INFORMATION -->
+              <div style="margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #222222;">
+                  Order Information
+                </h3>
+
+                <p style="margin: 8px 0; font-size: 14px;">
+                  <strong>Order Number:</strong>
+                  #${orderId}
+                </p>
+
+                <p style="margin: 8px 0; font-size: 14px;">
+                  <strong>Payment Status:</strong>
+                  <span style="color: #b8251e; font-weight: bold;">
+                    PENDING
+                  </span>
+                </p>
+              </div>
+
+              <div style="margin: 25px 0; padding: 20px; background-color: #fff8e1; border: 1px solid #e6d28a;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.6;">
+                  <strong>Important:</strong>
+                  Your payment status has been reset to
+                  <strong>PENDING</strong>.
+                  Please re-upload a valid deposit slip to complete your transaction.
+                </p>
+              </div>
+
+              <!-- ACTION BUTTON -->
+              <div style="margin: 30px 0; text-align: center;">
+                <a
+                  href="${actionUrl || '#'}"
+                  style="
+                    display: inline-block;
+                    padding: 14px 28px;
+                    background-color: #000000;
+                    color: #ffffff;
+                    text-decoration: none;
+                    font-size: 14px;
+                    font-weight: bold;
+                    border-radius: 4px;
+                  "
+                >
+                  Re-upload Deposit Slip
+                </a>
+              </div>
+
+              <p style="font-size: 13px; color: #777777; line-height: 1.5;">
+                If you have any questions, please contact our support team.
+              </p>
+
+              <p style="font-size: 13px; color: #777777; line-height: 1.5;">
+                This is an automated message from the Premiumed Enterprises system.
+              </p>
+            </div>
+
+            <!-- FOOTER -->
+            <div style="padding: 20px; background-color: #f5f5f5; text-align: center; border-top: 1px solid #dddddd;">
+              <p style="margin: 0; font-size: 13px; color: #555555;">
+                <strong>Premiumed Enterprises</strong>
+              </p>
+
+              <p style="margin: 5px 0 0; font-size: 12px; color: #888888;">
+                &copy; ${new Date().getFullYear()} Premiumed Enterprises
+              </p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `.trim(),
   };
 };
 
@@ -650,16 +739,16 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
       landlineNum: "(044) 812-2280",
       totalPrice: orderData.total || total,
       deliveryAddress: orderData.shippingAddress || orderData.address || "N/A",
-      columns: ["#", "Item", "Qty", "Price", "Subtotal"],
+      columns: ["QTY", "Unit", "Articles", "Price", "Subtotal"],
       data: orderData.items.map((item, index) => {
         const price = Number(item.price) || 0;
         const quantity = Number(item.quantity) || 0;
         const itemSubtotal = price * quantity;
 
         return [
-          index + 1,
+          `${quantity}`,
+          item.unit,
           item.name,
-          `${quantity} Pcs.`,
           `${price.toFixed(2)}`,
           `${itemSubtotal.toFixed(2)}`,
         ];

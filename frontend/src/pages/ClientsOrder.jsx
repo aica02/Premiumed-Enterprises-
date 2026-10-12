@@ -29,12 +29,6 @@ const ClientsOrder = () => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [partialQuantities, setPartialQuantities] = useState({});
-  const [isPartialMode, setIsPartialMode] = useState(false);
-
-  const [showInvalidPartialModal, setShowInvalidPartialModal] = useState(false);
-  const [invalidPartialItem, setInvalidPartialItem] = useState("");
-
   const [isEditingDate, setIsEditingDate] = useState(false);
   const [editedDate, setEditedDate] = useState("");
   const [editReason, setEditReason] = useState("");
@@ -56,11 +50,6 @@ const ClientsOrder = () => {
   });
   const [clients, setClients] = useState([]);
 
-  const [isStockSufficient, setIsStockSufficient] = useState(true);
-  const [insufficientItems, setInsufficientItems] = useState([]);
-  const [checkingStock, setCheckingStock] = useState(false);
-  const [productStockLevels, setProductStockLevels] = useState({});
-
   const isOrderUrgent = (dateStr, threshold) => {
     if (!dateStr) return false;
     const cleanDate = dateStr.includes(":")
@@ -73,115 +62,6 @@ const ClientsOrder = () => {
     const diffTime = deliveryDate - today;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays <= threshold;
-  };
-
-  const checkStockAvailability = async (order) => {
-    if (order.status !== "PENDING") {
-      setIsStockSufficient(true);
-      setInsufficientItems([]);
-      setProductStockLevels({});
-      return;
-    }
-
-    setCheckingStock(true);
-    try {
-      const response = await axios.post(
-        `${BACKEND_URL}/api/orders/check-stock`,
-        {
-          items: order.items.map((item) => ({
-            itemCode: item.itemCode,
-            quantity: item.quantity,
-          })),
-        },
-      );
-
-      const insufficient = response.data.insufficientItems || [];
-      setInsufficientItems(insufficient);
-      const sufficient = insufficient.length === 0;
-      setIsStockSufficient(sufficient);
-
-      const stockLevels = {};
-      response.data.stockLevels?.forEach((item) => {
-        stockLevels[item.itemCode] = item.available;
-      });
-      setProductStockLevels(stockLevels);
-
-      if (!sufficient) {
-        showInsufficientStockToast(insufficient);
-      }
-
-      return insufficient;
-    } catch (error) {
-      console.error("Error checking stock:", error);
-      setIsStockSufficient(true);
-      setInsufficientItems([]);
-      setProductStockLevels({});
-      return [];
-    } finally {
-      setCheckingStock(false);
-    }
-  };
-
-  const showInsufficientStockToast = (items) => {
-    toast(
-      <div>
-        {items.length > 0 ? (
-          items.map((item, index) => (
-            <div
-              key={item.itemCode || index}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-              }}
-            >
-              <IoIosInformationCircleOutline
-                style={{
-                  color: "red",
-                  fontSize: "40px",
-                  flexShrink: 0,
-                }}
-              />
-              <div>
-                <div style={{ marginBottom: "5px" }}>
-                  <strong>
-                    Insufficient Stock for{" "}
-                    {item.productName || "Unknown Product"}
-                  </strong>
-                </div>
-                <div>Available: {item.available ?? 0} pcs</div>
-                <div style={{ marginTop: "5px", fontWeight: "600" }}>
-                  Partial delivery is recommended.
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-            }}
-          >
-            <IoIosInformationCircleOutline
-              style={{
-                color: "red",
-                fontSize: "40px",
-                flexShrink: 0,
-              }}
-            />
-            <div>
-              <div>There is not enough stock to approve this order.</div>
-              <div style={{ marginTop: "5px", fontWeight: "600" }}>
-                Partial delivery is recommended.
-              </div>
-            </div>
-          </div>
-        )}
-      </div>,
-      { duration: 8000 },
-    );
   };
 
   const fetchOrders = async () => {
@@ -315,40 +195,19 @@ const ClientsOrder = () => {
   const handleViewOrder = async (order) => {
     setSelectedOrder(order);
     setActiveModal("order");
-    setIsPartialMode(false);
-
-    const initialQuantities = {};
-    order.items.forEach((item) => {
-      initialQuantities[item.productId] = 0;
-    });
-    setPartialQuantities(initialQuantities);
     setIsEditingDate(false);
     setEditReason("");
 
     const existingDate = order.notes?.split(": ")[1] || "";
     setEditedDate(existingDate);
-
-    setIsStockSufficient(true);
-    setInsufficientItems([]);
-    setProductStockLevels({});
-
-    await checkStockAvailability(order);
   };
 
   const handleCloseModal = () => {
     setActiveModal(null);
-    setIsStockSufficient(true);
-    setInsufficientItems([]);
-    setIsPartialMode(false);
-    setProductStockLevels({});
   };
+
   //approve ni admin
   const updateOrderStatus = async (orderId, newStatus) => {
-    if (!isStockSufficient) {
-      showInsufficientStockToast(insufficientItems);
-      return;
-    }
-
     const toastId = toast.loading(`Processing...`);
     try {
       const response = await axios.patch(
@@ -373,141 +232,7 @@ const ClientsOrder = () => {
       handleCloseModal();
       fetchOrders();
     } catch (err) {
-      if (err.response?.status === 409) {
-        const data = err.response.data || {};
-        const insufficientItems = Array.isArray(data.insufficientItems)
-          ? data.insufficientItems
-          : [];
-
-        showInsufficientStockToast(insufficientItems);
-        return;
-      }
-
       toast.error(err.response?.data?.message || "Update failed", {
-        id: toastId,
-      });
-    }
-  };
-
-  const handlePartialInputChange = (productId, value, maxQty, itemCode) => {
-    if (value === "") {
-      setPartialQuantities((prev) => ({
-        ...prev,
-        [productId]: "",
-      }));
-      return;
-    }
-
-    const val = Number(value);
-
-    if (!Number.isFinite(val) || !Number.isInteger(val)) {
-      return;
-    }
-
-    if (val < 0) {
-      toast.error("Quantity cannot be negative");
-      return;
-    }
-
-    const availableStock = productStockLevels[itemCode] || 0;
-    if (val > availableStock) {
-      toast.error(`Only ${availableStock} pcs available in stock`);
-      return;
-    }
-
-    if (val > maxQty) {
-      toast.error(`Maximum ordered quantity is ${maxQty}`);
-      return;
-    }
-
-    setPartialQuantities((prev) => ({
-      ...prev,
-      [productId]: val,
-    }));
-  };
-
-  const handlePartialDeliverySubmit = async () => {
-    const invalidItem = selectedOrder.items.find((item) => {
-      const quantity = partialQuantities[item.productId];
-
-      return (
-        quantity === "" ||
-        quantity === undefined ||
-        !Number.isFinite(Number(quantity)) ||
-        !Number.isInteger(Number(quantity))
-      );
-    });
-
-    if (invalidItem) {
-      setInvalidPartialItem(invalidItem.name);
-      setShowInvalidPartialModal(true);
-      return;
-    }
-
-    const itemsWithQuantities = selectedOrder.items.map((item) => {
-      const deliveredQty =
-        partialQuantities[item.productId] === ""
-          ? 0
-          : Number(partialQuantities[item.productId] ?? 0);
-
-      const availableStock = productStockLevels[item.itemCode] || 0;
-
-      if (deliveredQty > availableStock) {
-        toast.error(
-          `Not enough stock for ${item.name}. Available: ${availableStock} pcs`,
-        );
-        return null;
-      }
-
-      return {
-        productId: item.productId,
-        itemCode: item.itemCode,
-        name: item.name,
-        category: item.category,
-        price: item.price,
-        image: item.image,
-        deliveredQty: deliveredQty,
-        originalQty: item.quantity,
-      };
-    });
-
-    if (itemsWithQuantities.includes(null)) {
-      return;
-    }
-
-    const hasAnyDelivery = itemsWithQuantities.some(
-      (item) => item.deliveredQty > 0,
-    );
-
-    if (!hasAnyDelivery) {
-      toast.error("Please set at least one item quantity to deliver");
-      return;
-    }
-
-    const toastId = toast.loading("Processing Partial...");
-
-    try {
-      const response = await axios.patch(
-        `${BACKEND_URL}/api/orders/${selectedOrder.orderId}/partial`,
-        { items: itemsWithQuantities },
-        {
-          headers: {
-            "X-Username": localStorage.getItem("username") || "",
-            "X-User-Id": localStorage.getItem("userId") || "",
-            "X-Role": localStorage.getItem("role") || "Admin",
-          },
-        },
-      );
-
-      if (response.data.success) {
-        toast.success(`Order split successfully!`, { id: toastId });
-        handleCloseModal();
-        setPartialQuantities({});
-        fetchOrders();
-      }
-    } catch (err) {
-      console.error("Partial delivery error:", err);
-      toast.error(err.response?.data?.message || "Partial delivery failed", {
         id: toastId,
       });
     }
@@ -572,71 +297,16 @@ const ClientsOrder = () => {
   };
 
   const getApproveButtonDisabledState = () => {
-    if (checkingStock) return true;
-    if (isLocked) return true;
-    if (selectedOrder?.status === "PENDING" && !isStockSufficient) return true;
-    if (selectedOrder?.status === "CANCELLED") return true;
-    return false;
-  };
-
-  const getPartialButtonDisabledState = () => {
     if (isLocked) return true;
     if (selectedOrder?.status === "CANCELLED") return true;
     return false;
-  };
-
-  const getApproveButtonDisabledReason = () => {
-    if (checkingStock) return "Checking stock availability...";
-    if (isLocked) return "Order is locked";
-    if (selectedOrder?.status === "PENDING" && !isStockSufficient)
-      return "Insufficient stock";
-    return "";
-  };
-
-  const handlePrintPOS = () => {
-    const columns = [
-      "Client",
-      "Address",
-      "Status",
-      "Requested Delivery",
-      "Item Name",
-      "Ordered",
-      "Available For Shipment",
-      "Backorder Balance",
-    ];
-    const tableData = [];
-    filteredOrders.forEach((order) => {
-      const deliveryDate = order.requestedDeliveryDate || "N/A";
-      order.items.forEach((item) => {
-        tableData.push([
-          order.name,
-          order.shippingAddress,
-          order.status,
-          deliveryDate,
-          item.name,
-          `${item.quantity} pcs`,
-          item.quantity,
-          "Full Delivery",
-        ]);
-      });
-    });
-    generateReport({
-      title: "Client Orders Report",
-      sectionTitle: "Client Orders List",
-      companyName: "Premiumed Enterprises",
-      companyAddress: "Matungao, Bulakan, Bulacan",
-      columns,
-      data: tableData,
-      filename: "Client-Orders-Report.pdf",
-      logo,
-    });
   };
 
   const handlePrintOrder = (order) => {
-    const columns = ["QTY", "Unit", "Articles", "Price"];
+    const columns = ["QTY", "Unit Type", "Supplies", "Price"];
     const tableData = order.items.map((item) => [
       item.quantity,
-      item.unit,
+      item.unitType || item.unit || "N/A",
       item.name,
       `${Number(item.price).toFixed(2)}`,
     ]);
@@ -647,7 +317,7 @@ const ClientsOrder = () => {
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
       orderBy: order.name,
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       totalPrice: order.total,
       deliveryAddress: order.shippingAddress,
@@ -660,13 +330,20 @@ const ClientsOrder = () => {
   };
 
   const handlePrintOR = (selectedOrder) => {
-    const columns = ["QTY", "Unit", "Articles", "Price"];
-    const tableData = selectedOrder.items.map((item) => [
-      item.quantity,
-      item.unit,
-      item.name,
-      `${Number(item.price).toFixed(2)}`,
-    ]);
+    const columns = ["QTY", "Unit Type", "Supplies", "Price", "Subtotal"];
+    const tableData = selectedOrder.items.map((item) => {
+      const quantity = Number(item.quantity);
+      const price = Number(item.price);
+      const subtotal = quantity * price;
+
+      return [
+        quantity,
+        item.unitType || item.unit || "N/A",
+        item.name,
+        price.toFixed(2),
+        subtotal.toFixed(2),
+      ];
+    });
     generateOrderReceipt({
       title: `${selectedOrder.orderId}`,
       companyName: "PREMIUMED ENTERPRISES",
@@ -674,7 +351,7 @@ const ClientsOrder = () => {
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
       deliveredTo: selectedOrder.name,
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       totalPrice: selectedOrder.total,
       deliveryAddress: selectedOrder.shippingAddress,
@@ -799,7 +476,7 @@ const ClientsOrder = () => {
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       totalPrice: totalPrice,
       columns: columns,
@@ -1239,7 +916,8 @@ const ClientsOrder = () => {
                             </div>
 
                             {!isEditingDate &&
-                              (selectedOrder.status === "PENDING" || selectedOrder.status === "PARTIAL" ||
+                              (selectedOrder.status === "PENDING" ||
+                                selectedOrder.status === "PARTIAL" ||
                                 selectedOrder.status === "APPROVED") && (
                                 <FaPen
                                   className={`edit-date-icon ${
@@ -1268,61 +946,17 @@ const ClientsOrder = () => {
                         <tr>
                           <th>Supply Name</th>
                           <th>Ordered</th>
-                          <th>Available for Shipment</th>
-                          <th>Backorder Balance</th>
                           <th>Unit Price</th>
-                          <th>Stock Available</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedOrder.items.map((item, index) => {
-                          const inputQty = isPartialMode
-                            ? (partialQuantities[item.productId] ?? 0)
-                            : item.quantity;
-
-                          const numericInputQty =
-                            inputQty === "" ? 0 : Number(inputQty);
-                          const balance = item.quantity - numericInputQty;
-                          const availableStock =
-                            productStockLevels[item.itemCode] ?? 0;
-
-                          return (
-                            <tr key={index}>
-                              <td>{item.name}</td>
-                              <td>{item.quantity} pcs</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  className={`partial-input-field ${isPartialMode ? "editable" : "locked"}`}
-                                  value={inputQty}
-                                  disabled={!isPartialMode}
-                                  onChange={(e) =>
-                                    handlePartialInputChange(
-                                      item.productId,
-                                      e.target.value,
-                                      item.quantity,
-                                      item.itemCode,
-                                    )
-                                  }
-                                  style={{
-                                    ...(isPartialMode &&
-                                      availableStock < item.quantity && {
-                                        borderColor: "#ff6b6b",
-                                        backgroundColor: "#fff5f5",
-                                      }),
-                                  }}
-                                />
-                              </td>
-                              <td>
-                                {balance > 0
-                                  ? `${balance} pcs`
-                                  : "Full Delivery"}
-                              </td>
-                              <td> ₱{Number(item.price || 0).toFixed(2)} </td>
-                              <td>{availableStock} pcs</td>
-                            </tr>
-                          );
-                        })}
+                        {selectedOrder.items.map((item, index) => (
+                          <tr key={index}>
+                            <td>{item.name}</td>
+                            <td>{item.quantity} pcs</td>
+                            <td> ₱{Number(item.price || 0).toFixed(2)} </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -1342,87 +976,19 @@ const ClientsOrder = () => {
                   >
                     <FaPrint className="print-icon" /> PRINT ORDER RECEIPT
                   </button>
-                ) : !isPartialMode ? (
-                  <>
-                    <button
-                      className="btn-approve"
-                      onClick={() =>
-                        updateOrderStatus(selectedOrder.orderId, "APPROVED")
-                      }
-                      disabled={getApproveButtonDisabledState()}
-                      style={
-                        getApproveButtonDisabledState() ? disabledStyle : {}
-                      }
-                      title={getApproveButtonDisabledReason()}
-                    >
-                      APPROVE
-                    </button>
-
-                    {/* <button
-                      className="btn-partial"
-                      onClick={() => setIsPartialMode(true)}
-                      disabled={getPartialButtonDisabledState()}
-                      style={
-                        getPartialButtonDisabledState() ? disabledStyle : {}
-                      }
-                    >
-                      PARTIAL
-                    </button> */}
-                  </>
                 ) : (
-                  <>
-                    <button
-                      className="btn-cancel"
-                      onClick={() => {
-                        setIsPartialMode(false);
-                        const resetQuantities = {};
-                        selectedOrder.items.forEach((item) => {
-                          resetQuantities[item.productId] = 0;
-                        });
-                        setPartialQuantities(resetQuantities);
-                      }}
-                    >
-                      CANCEL
-                    </button>
-                    <button
-                      className="btn-confirm-partial"
-                      onClick={handlePartialDeliverySubmit}
-                    >
-                      CONFIRM PARTIAL
-                    </button>
-                  </>
+                  <button
+                    className="btn-approve"
+                    onClick={() =>
+                      updateOrderStatus(selectedOrder.orderId, "APPROVED")
+                    }
+                    disabled={getApproveButtonDisabledState()}
+                    style={getApproveButtonDisabledState() ? disabledStyle : {}}
+                  >
+                    APPROVE
+                  </button>
                 )}
               </div>
-            </div>
-          </div>
-        )}
-
-        {showInvalidPartialModal && (
-          <div
-            className="cart-modal-overlay"
-            onClick={() => setShowInvalidPartialModal(false)}
-          >
-            <div
-              className="cart-confirm-modal"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="cart-modal-icon warning-icon">!</div>
-
-              <h3>Invalid Quantity</h3>
-
-              <p>
-                Please enter a quantity greater than <strong>0</strong> for{" "}
-                <strong>{invalidPartialItem}</strong> before confirming the
-                partial delivery.
-              </p>
-
-              <button
-                type="button"
-                className="cart-modal-ok"
-                onClick={() => setShowInvalidPartialModal(false)}
-              >
-                Okay
-              </button>
             </div>
           </div>
         )}

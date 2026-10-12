@@ -28,6 +28,8 @@ const productSchema = new mongoose.Schema(
     },
     unitType: { type: String, required: true },
     totalQuantity: { type: Number, default: 0, min: 0 },
+    totalBoxes: { type: Number, default: 0, min: 0 },
+    quantityPerBox: { type: Number, default: 0, min: 0 },
     reorderLevel: { type: Number, required: true, min: 0 },
     supplierName: { type: String, required: true },
     itemImage: { type: String, default: null },
@@ -61,5 +63,4 @@ productSchema.pre("save", async function () {
     this.itemCode = `PRMED-${shortCat}-${series}`;
   }
 });
-
 export default mongoose.model("Product", productSchema);

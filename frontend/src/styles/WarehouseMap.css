@@ -70,7 +70,6 @@
   border: 2px solid #5d4037;
   border-radius: 3px;
 }
-
 .warehouse-label {
   white-space: pre-line;
   text-align: center;
@@ -82,6 +81,23 @@
   padding: 2px 6px;
   border-radius: 4px;
 }
+.warehouse-pallet {
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  cursor: pointer;
+  background: #bfbfbf;
+  color: var(--dark-gray);
+  transition: all 0.3s ease;
+
+  border-radius: 3px 0 3px 0;
+  corner-shape: bevel;
+  border-left: 3px solid #0004;
+  border-bottom: 3px solid #0008;
+  z-index: 2;
+}
 
 .warehouse-container .rack {
   font-size: 10px;
@@ -92,39 +108,33 @@
   background: #bfbfbf;
   color: var(--dark-gray);
   transition: all 0.3s ease;
-}
 
-.warehouse-container .rack.R1,
-.warehouse-container .rack.R2,
-.warehouse-container .rack.R6,
-.warehouse-container .rack.R7,
-.warehouse-container .rack.R8,
-.warehouse-container .rack.R9,
-.warehouse-container .rack.R3,
-.warehouse-container .rack.R4,
-.warehouse-container .rack.R5 {
   border-radius: 5px 0 5px 0;
   corner-shape: bevel;
   border-left: 5px solid #0004;
   border-bottom: 5px solid #0008;
 }
 
-.warehouse-container .rack.good {
+.warehouse-container .rack.good,
+.warehouse-container .warehouse-pallet.good {
   background: #3bb143;
   color: white;
 }
 
-.warehouse-container .rack.lowStock {
+.warehouse-container .rack.lowStock,
+.warehouse-container .warehouse-pallet.lowStock {
   background: #ed7117;
   color: white;
 }
 
-.warehouse-container .rack.nearExpiry {
+.warehouse-container .rack.nearExpiry,
+.warehouse-container .warehouse-pallet.nearExpiry {
   background: #c21a09;
   color: white;
 }
 
-.warehouse-container .rack.no-items {
+.warehouse-container .rack.no-items,
+.warehouse-container .warehouse-pallet.no-items {
   background: #bfbfbf;
   color: var(--dark-gray);
 }

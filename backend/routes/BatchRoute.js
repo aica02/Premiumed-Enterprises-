@@ -68,7 +68,7 @@ router.post("/deduct", async (req, res) => {
 });
 router.get("/", async (req, res) => {
   try {
-    const pendingBatches = await Batch.find({ status: "PENDING" })
+    const pendingBatches = await Batch.find({ status: "pending" })
       .populate({
         path: "product",
         options: { strictPopulate: false }, // This ignores the schema error

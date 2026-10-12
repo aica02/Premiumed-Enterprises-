@@ -163,10 +163,14 @@ export default function OrderSummary() {
         itemCode: item.itemCode,
         name: item.name,
         category: item.category || "Medical Supply",
+        unitType: item.unitType || "Piece",
         quantity: requestedQty,
         deliveredQty,
         price: Number(item.price) || 0,
         image: item.itemImage || item.image || "",
+        orderMode: item.orderMode === "box" ? "box" : "piece",
+        boxes: item.orderMode === "box" ? Number(item.boxes) || 0 : 0,
+        quantityPerBox: Number(item.quantityPerBox) || 0,
       };
     });
 
@@ -318,17 +322,33 @@ export default function OrderSummary() {
           <div className="os-card">
             <h3 className="os-section-title">MEDICAL SUPPLIES</h3>
             <div className="os-items">
-              {items.map((item, index) => (
-                <div key={item._id || index} className="os-item-row">
-                  <div className="os-item-info">
-                    <p className="os-item-name">{item.name}</p>
-                    <span className="os-item-category">
-                      {item.category + " - " + (item.unitType || "N/A")}
-                    </span>
+              {items.map((item, index) => {
+                const isBox = item.orderMode === "box";
+                return (
+                  <div key={item._id || index} className="os-item-row">
+                    <div className="os-item-info">
+                      <p className="os-item-name">{item.name}</p>
+                      <span className="os-item-category">
+                        {item.category + " - " + (item.unitType || "N/A")}
+                      </span>
+                    </div>
+                    <div className="os-item-qty">
+                      {isBox ? (
+                        <>
+                          {item.boxes} box{item.boxes !== 1 ? "es" : ""}
+                          {item.quantityPerBox > 0 && (
+                            <span className="os-item-qty-detail">
+                              ({item.quantity} pcs)
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>{item.quantity} Pcs.</>
+                      )}
+                    </div>
                   </div>
-                  <div className="os-item-qty">{item.quantity} Pcs.</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -391,13 +411,14 @@ export default function OrderSummary() {
                 className="confirm-modal-icon"
                 style={{ color: "#e0a800" }}
               >
-                <FaTriangleExclamation/>
+                <FaTriangleExclamation />
               </div>
-              
+
               <h3 className="confirm-modal-title">Insufficient Stock</h3>
 
               <p className="confirm-modal-message">
-                The requested item quantity exceeds available stock. Would you like to confirm partial delivery for the unavailable items?
+                The requested item quantity exceeds available stock. Would you
+                like to confirm partial delivery for the unavailable items?
               </p>
 
               <div className="confirm-modal-details">
@@ -406,7 +427,6 @@ export default function OrderSummary() {
                     <span className="confirm-modal-detail-label">
                       {it.productName || it.name || it.itemCode}
                     </span>
-                    
                   </div>
                 ))}
               </div>

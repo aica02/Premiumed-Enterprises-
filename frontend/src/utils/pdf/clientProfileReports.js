@@ -31,28 +31,42 @@ export const generateClientProfilePDF = ({
     doc.setFillColor(212, 175, 55);
     doc.rect(0, headerHeight + 10, pageWidth, 2, "F");
 
-    // Company name
+    // company logo
+    if (logo) {
+      doc.addImage(
+        logo,
+        "PNG",
+        paddingX,
+        20,
+        70,
+        70,
+        "Premiumed-Logo",
+        "FAST"
+      );
+    }
+
+    // ================= COMPANY NAME =================
     doc.setFont("helvetica", "bold");
     doc.setTextColor(212, 175, 55);
     doc.setFontSize(15);
-    doc.text(companyName, paddingX, 31, {align: "left" });
+    doc.text(companyName, paddingX + 85, 31, { align: "left" });
 
-    // Company address
+    // ================= COMPANY ADDRESS =================
     doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    doc.text(companyAddress, paddingX, 46,{align: "left" });
+    doc.text(companyAddress, paddingX + 85, 46, { align: "left" });
 
-    // CEO
+    // ================= CEO =================
     doc.setFontSize(11);
-    doc.text(ceo, paddingX, 62,{align: "left" });
+    doc.text(ceo, paddingX + 85, 62, { align: "left" });
 
-    // VAT Registration
+    // ================= VAT =================
     doc.setFontSize(10);
-    doc.text(vatReg, paddingX, 76,{align: "left" });
+    doc.text(vatReg, paddingX + 85, 76, { align: "left" });
 
-    // Landline
-    doc.text(landlineNum, paddingX, 90, {align: "left" });
+    // ================= LANDLINE =================
+    doc.text(landlineNum, paddingX + 85, 90, { align: "left" });
   };
 
   // ================= WATERMARK =================
@@ -104,13 +118,13 @@ export const generateClientProfilePDF = ({
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(212, 175, 55);
-  doc.text("Date:", pageWidth - 140, sectionY);
+  doc.text("Date:", pageWidth - 133, sectionY);
 
   //date value
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
-  doc.setTextColor(0,0,0);
-  doc.text(formattedDate, pageWidth - 102, sectionY);
+  doc.setTextColor(0, 0, 0);
+  doc.text(formattedDate, pageWidth - 95, sectionY);
 
   // ================= FACILITY INFO =================
   drawSection("Facility Information");
@@ -199,28 +213,42 @@ export const generateClientDirectoryReport = ({
     doc.setFillColor(212, 175, 55);
     doc.rect(0, headerHeight + 10, pageWidth, 2, "F");
 
-    // Company name
+    // company logo
+    if (logo) {
+      doc.addImage(
+        logo,
+        "PNG",
+        paddingX,
+        20,
+        70,
+        70,
+        "Premiumed-Logo",
+        "FAST"
+      );
+    }
+
+    // ================= COMPANY NAME =================
     doc.setFont("helvetica", "bold");
     doc.setTextColor(212, 175, 55);
     doc.setFontSize(15);
-    doc.text(companyName, paddingX, 31, {align: "left" });
+    doc.text(companyName, paddingX + 85, 31, { align: "left" });
 
-    // Company address
+    // ================= COMPANY ADDRESS =================
     doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(11);
-    doc.text(companyAddress, paddingX, 46,{align: "left" });
+    doc.text(companyAddress, paddingX + 85, 46, { align: "left" });
 
-    // CEO
+    // ================= CEO =================
     doc.setFontSize(11);
-    doc.text(ceo, paddingX, 62,{align: "left" });
+    doc.text(ceo, paddingX + 85, 62, { align: "left" });
 
-    // VAT Registration
+    // ================= VAT =================
     doc.setFontSize(10);
-    doc.text(vatReg, paddingX, 76,{align: "left" });
+    doc.text(vatReg, paddingX + 85, 76, { align: "left" });
 
-    // Landline
-    doc.text(landlineNum, paddingX, 90, {align: "left" });
+    // ================= LANDLINE =================
+    doc.text(landlineNum, paddingX + 85, 90, { align: "left" });
   };
 
   const drawWatermark = () => {
@@ -250,13 +278,13 @@ export const generateClientDirectoryReport = ({
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(212, 175, 55);
-  doc.text("Date:", pageWidth - 140, sectionY);
+  doc.text("Date:", pageWidth - 133, sectionY);
 
   //date value
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
-  doc.setTextColor(0,0,0);
-  doc.text(formattedDate, pageWidth - 102, sectionY);
+  doc.setTextColor(0, 0, 0);
+  doc.text(formattedDate, pageWidth - 95, sectionY);
 
   // gold divider line
   doc.setDrawColor(212, 175, 55);

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { LuPhilippinePeso } from "react-icons/lu";
 import {
   MdKeyboardArrowDown,
   MdKeyboardArrowUp,
+  MdAutorenew,
   MdOutlineExitToApp,
 } from "react-icons/md";
 import { FaSearch, FaShoppingCart } from "react-icons/fa";
@@ -15,10 +15,7 @@ import { BACKEND_URL } from "../config";
 import { Toaster, toast } from "react-hot-toast";
 import cartService from "./CartService";
 import EmptyState from "../components/EmptyState";
-
 import { CATEGORIES } from "../components/Categories";
-
-/* ================= SUB-COMPONENTS ================= */
 
 function FilterSidebar({ selectedCategories, onCategoryChange }) {
   return (
@@ -58,21 +55,64 @@ function ProductCard({ product, onClick }) {
   );
 }
 
-const isUserLoggedIn = () => {
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
-  return user && user.username && user.username !== "guest" && user.token;
-};
-
 function ProductModal({ product, onClose }) {
-  const [quantity, setQuantity] = useState(1);
+  const [mode, setMode] = useState("piece"); // "piece" | "box"
+  const [pieces, setPieces] = useState(1);
+  const [boxes, setBoxes] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
-  const [showInvalidQuantityModal, setShowInvalidQuantityModal] =
-    useState(false);
+  const [showInvalid, setShowInvalid] = useState(false);
   const navigate = useNavigate();
 
   if (!product) return null;
 
-  const addToCartLogic = async (qty, shouldNavigate = false) => {
+  const quantityPerBox = Number(product.quantityPerBox) || 0;
+  const hasBoxOption = quantityPerBox > 0;
+  const unitType = product.unitType || "Piece";
+  const orderByLabel =
+    String(unitType).trim().toLowerCase() === "box" ? "Case" : "Box";
+
+  // Mode toggle only if the product actually has quantityPerBox
+  useEffect(() => {
+    if (!hasBoxOption) setMode("piece");
+  }, [hasBoxOption]);
+
+  const effectiveQuantity = mode === "box" ? boxes * quantityPerBox : pieces;
+
+  const validate = () => {
+    if (mode === "piece") {
+      const q = Number(pieces);
+      if (!pieces || isNaN(q) || q <= 0 || !Number.isInteger(q)) {
+        setShowInvalid(true);
+        return false;
+      }
+    } else {
+      const b = Number(boxes);
+      if (!boxes || isNaN(b) || b <= 0 || !Number.isInteger(b)) {
+        setShowInvalid(true);
+        return false;
+      }
+      if (quantityPerBox <= 0) {
+        setShowInvalid(true);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const buildCartProduct = () => ({
+    itemCode: product.itemCode,
+    name: product.name,
+    quantity: effectiveQuantity,
+    unitType: product.unitType || "N/A",
+    itemImage: product.itemImage || product.image || "",
+    category: product.category || "",
+    price: Number(product.price) || 0,
+    orderMode: mode,
+    boxes: mode === "box" ? boxes : 0,
+    quantityPerBox: quantityPerBox,
+  });
+
+  const addToCartLogic = async (shouldNavigate = false) => {
     if (!product._id || !product.name || !product.price) {
       toast.error("Error: Product information is incomplete.");
       return;
@@ -85,49 +125,41 @@ function ProductModal({ product, onClose }) {
       const isLoggedIn =
         username && username !== "guest" && username !== "null" && token;
 
-      // Create a clean product object for cart
-      const cartProduct = {
-        itemCode: product.itemCode,
-        name: product.name,
-        quantity: qty,
-        unitType: product.unitType || "N/A",
-        itemImage: product.itemImage || product.image || "",
-        category: product.category || "",
-        price: Number(product.price) || 0,
-      };
+      const cartProduct = buildCartProduct();
 
       if (isLoggedIn) {
-        await cartService.addToCart(cartProduct, qty);
+        await cartService.addToCart(cartProduct, effectiveQuantity);
         toast.success("Successfully Added to Cart!");
-
-        if (!shouldNavigate) {
-          onClose();
-        } else {
-          navigate("/cart");
-        }
+        if (!shouldNavigate) onClose();
+        else navigate("/cart");
       } else {
         const existingCart = JSON.parse(
           sessionStorage.getItem("cartItems") || "[]",
         );
         const existingIndex = existingCart.findIndex(
-          (item) => item.itemCode === product._id,
+          (item) => item.itemCode === cartProduct.itemCode,
         );
 
         if (existingIndex > -1) {
-          existingCart[existingIndex].quantity += qty;
-          existingCart[existingIndex].price = Number(product.price) || 0;
+          const existing = existingCart[existingIndex];
+
+          if (existing.orderMode !== mode) {
+            // mode switched 
+            existingCart[existingIndex] = cartProduct;
+          } else if (mode === "box") {
+            existing.boxes = (existing.boxes || 0) + boxes;
+            existing.quantity = existing.boxes * quantityPerBox;
+          } else {
+            existing.quantity = (existing.quantity || 0) + pieces;
+          }
         } else {
           existingCart.push(cartProduct);
         }
 
         sessionStorage.setItem("cartItems", JSON.stringify(existingCart));
         toast.success("Successfully Added to Cart!");
-
-        if (!shouldNavigate) {
-          onClose();
-        } else {
-          navigate("/cart");
-        }
+        if (!shouldNavigate) onClose();
+        else navigate("/cart");
       }
     } catch (error) {
       console.error("Add to cart error:", error);
@@ -146,23 +178,12 @@ function ProductModal({ product, onClose }) {
       return;
     }
     setIsAdding(true);
-
     try {
-      const checkoutProduct = {
-        itemCode: product.itemCode,
-        name: product.name,
-        quantity: quantity,
-        unitType: product.unitType || "N/A",
-        itemImage: product.itemImage || product.image || "",
-        category: product.category || "",
-        price: Number(product.price) || 0,
-      };
-
+      const checkoutProduct = buildCartProduct();
       sessionStorage.setItem(
         "checkoutItems",
         JSON.stringify([checkoutProduct]),
       );
-
       onClose();
       navigate("/OrderSummary");
     } catch (error) {
@@ -171,17 +192,6 @@ function ProductModal({ product, onClose }) {
     } finally {
       setIsAdding(false);
     }
-  };
-
-  const validateQuantity = () => {
-    const qty = Number(quantity);
-
-    if (!quantity || isNaN(qty) || qty <= 0 || !Number.isInteger(qty)) {
-      setShowInvalidQuantityModal(true);
-      return false;
-    }
-
-    return true;
   };
 
   return (
@@ -203,62 +213,126 @@ function ProductModal({ product, onClose }) {
               alt={product.name}
               className="modal-product-image"
             />
+            <span className="product-unit-badge">
+              {product.unitType || "N/A"}
+            </span>
+            {mode === "box" && (
+              <span className="case-quantity-badge">
+                {quantityPerBox} {unitType}s / {orderByLabel}
+              </span>
+            )}
           </div>
 
           <div className="modal-details">
-            <div className="modal-controls-wrapper">
-              <div className="modal-quantity-row">
-                <span className="modal-qty-label">Unit Type:</span>
-                <div className="modal-qty-labelx">
-                  {product.unitType || "N/A"}
+            <div className="modal-controls-wrapper product-order-controls">
+              {hasBoxOption && (
+                <div className="modal-quantity-row product-order-row">
+                  <span className="modal-qty-label">Order by:</span>
+                  <div className="product-order-toggle">
+                    <button
+                      type="button"
+                      onClick={() => setMode("piece")}
+                      className={`product-order-option${mode === "piece" ? " is-selected" : ""}`}
+                      aria-pressed={mode === "piece"}
+                    >
+                      {unitType}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMode("box")}
+                      className={`product-order-option${mode === "box" ? " is-selected" : ""}`}
+                      aria-pressed={mode === "box"}
+                    >
+                      {orderByLabel}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <div className="modal-quantity-row">
-                <span className="modal-qty-label">Quantity</span>
-                <div className="modal-qty-selector">
-                  <button
-                    onClick={() => {
-                      setQuantity((prev) =>
-                        prev === "" ? "" : Math.max(0, prev - 1),
-                      );
-                    }}
-                  >
-                    <FiMinusCircle />
-                  </button>
-                  <input
-                    type="number"
-                    value={quantity}
-                    min="0"
-                    onChange={(e) => {
-                      const value = e.target.value;
-
-                      if (value === "") {
-                        setQuantity("");
-                      } else {
-                        setQuantity(Number(value));
+              {mode === "piece" ? (
+                <div className="modal-quantity-row product-quantity-row">
+                  <span className="modal-qty-label">{unitType}</span>
+                  <div className="modal-qty-selector">
+                    <button
+                      type="button"
+                      aria-label="Decrease quantity"
+                      onClick={() =>
+                        setPieces((prev) =>
+                          prev === "" ? "" : Math.max(0, prev - 1),
+                        )
                       }
-                    }}
-                    className="qty-input"
-                  />
-                  <button
-                    onClick={() => {
-                      setQuantity((prev) => (prev === "" ? 1 : prev + 1));
-                    }}
-                  >
-                    <FaRegSquarePlus />
-                  </button>
+                    >
+                      <FiMinusCircle />
+                    </button>
+                    <input
+                      type="number"
+                      value={pieces}
+                      min="0"
+                      step="1"
+                      aria-label={unitType}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setPieces(v === "" ? "" : Number(v));
+                      }}
+                      className="qty-input"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Increase quantity"
+                      onClick={() =>
+                        setPieces((prev) => (prev === "" ? 1 : prev + 1))
+                      }
+                    >
+                      <FaRegSquarePlus />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="modal-quantity-row product-quantity-row">
+                  <span className="modal-qty-label">{orderByLabel}</span>
+                  <div className="modal-qty-selector">
+                    <button
+                      type="button"
+                      aria-label="Decrease cases"
+                      onClick={() =>
+                        setBoxes((prev) =>
+                          prev === "" ? "" : Math.max(0, prev - 1),
+                        )
+                      }
+                    >
+                      <FiMinusCircle />
+                    </button>
+                    <input
+                      type="number"
+                      value={boxes}
+                      min="0"
+                      step="1"
+                      aria-label="Number of cases"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setBoxes(v === "" ? "" : Number(v));
+                      }}
+                      className="qty-input"
+                    />
+                    <button
+                      type="button"
+                      aria-label="Increase cases"
+                      onClick={() =>
+                        setBoxes((prev) => (prev === "" ? 1 : prev + 1))
+                      }
+                    >
+                      <FaRegSquarePlus />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="modal-actions">
               <button
                 className="modal-add-to-cart-btn"
                 onClick={() => {
-                  if (validateQuantity()) {
-                    addToCartLogic(quantity);
-                  }
+                  if (validate()) addToCartLogic();
                 }}
                 disabled={isAdding}
               >
@@ -267,9 +341,7 @@ function ProductModal({ product, onClose }) {
               <button
                 className="buy-now-btn"
                 onClick={() => {
-                  if (validateQuantity()) {
-                    buyNow();
-                  }
+                  if (validate()) buyNow();
                 }}
                 disabled={isAdding}
               >
@@ -280,25 +352,19 @@ function ProductModal({ product, onClose }) {
         </div>
       </div>
 
-      {showInvalidQuantityModal && (
+      {showInvalid && (
         <div
           className="invalid-quantity-overlay"
-          onClick={() => setShowInvalidQuantityModal(false)}
+          onClick={() => setShowInvalid(false)}
         >
           <div
             className="invalid-quantity-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="invalid-quantity-icon">!</div>
-
             <h3>Invalid Quantity</h3>
-
             <p>Please enter a valid quantity greater than 0.</p>
-
-            <button
-              type="button"
-              onClick={() => setShowInvalidQuantityModal(false)}
-            >
+            <button type="button" onClick={() => setShowInvalid(false)}>
               Okay
             </button>
           </div>
@@ -344,16 +410,12 @@ function MobileFilters({ selectedCategories, onCategoryChange }) {
   );
 }
 
-/* ================= MAIN STOREFRONT CONTENT ================= */
-
 function LandingPageContent() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedCategories, setSelectedCategories] = useState([]);
-  const [minPrice, setMinPrice] = useState("");
-  const [maxPrice, setMaxPrice] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -398,10 +460,6 @@ function LandingPageContent() {
         <FilterSidebar
           selectedCategories={selectedCategories}
           onCategoryChange={handleCategoryChange}
-          minPrice={minPrice}
-          maxPrice={maxPrice}
-          setMinPrice={setMinPrice}
-          setMaxPrice={setMaxPrice}
         />
 
         <div className="main-product-grid">
@@ -424,7 +482,13 @@ function LandingPageContent() {
           <main className="main-client">
             <div className="product-grid">
               {loading ? (
-                <div>Loading items...</div>
+                <div className="landing-empty-state-wrap" aria-live="polite">
+                  <EmptyState
+                    icon={<MdAutorenew className="landing-loading-spinner" />}
+                    title="Loading products"
+                    message="Please wait while we load the available products."
+                  />
+                </div>
               ) : filteredProducts.length > 0 ? (
                 filteredProducts.map((p) => (
                   <ProductCard

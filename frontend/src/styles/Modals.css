@@ -159,6 +159,26 @@
   align-items: center;
   text-transform: none;
 }
+
+.supplier-phone-input {
+  display: flex;
+  gap: 6px;
+}
+
+.supplier-phone-input .supplier-phone-country-code {
+  flex: 0 0 96px;
+  width: 96px;
+  padding: 0 15px 0 10px;
+  cursor: pointer;
+}
+
+.supplier-phone-input .supplier-phone-number {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .supplierNote .field-box {
   display: block;
   line-height: 1.4;
@@ -491,10 +511,13 @@
 }
 
 .btn-cancel {
-  background-color: #666;
+  background-color: #b3b3b3;
   color: white;
   padding: 10px 20px;
   border-radius: 5px;
+}
+.btn-cancel:hover {
+  background-color: #898787;
 }
 .partial-input-field {
   width: 70px;
@@ -550,7 +573,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 999;
   animation: fadeIn 0.3s ease;
 }
 

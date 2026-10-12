@@ -41,7 +41,6 @@
   line-height: 1.5;
 }
 
-
 .main {
   padding: 30px 150px;
   font-family: var(--font-body);
@@ -82,8 +81,8 @@
 
 .btn-cancel-order {
   flex: 1;
-  background-color: #333;
-  color: #fff;
+  background-color: #b3b3b3;
+  color: white;
   border: none;
   padding: 12px;
   border-radius: 10px;
@@ -94,7 +93,7 @@
 }
 
 .btn-cancel-order:hover {
-  opacity: 0.9;
+  background-color: #898787;
 }
 
 .confirm-cancel-actions {
@@ -295,7 +294,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: 999;
   padding: 20px;
 }
 
@@ -590,6 +589,7 @@
   font-size: 12px;
   color: #777;
   margin-top: 4px;
+  text-transform: none;
 }
 
 .receipt-total {

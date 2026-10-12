@@ -21,6 +21,21 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   (window.location.hostname === "localhost" ? "http://localhost:5000" : "");
 
+const mergeChartData = ({ delivered = [], toShip = [] } = {}) => {
+  const merged = new Map();
+
+  [...delivered, ...toShip].forEach((item) => {
+    const existing = merged.get(item.name);
+    if (existing) {
+      existing.value += item.value;
+    } else {
+      merged.set(item.name, { ...item });
+    }
+  });
+
+  return Array.from(merged.values()).sort((a, b) => b.value - a.value);
+};
+
 const InventoryChart = () => {
   const [chartData, setChartData] = useState([]);
   const [clients, setClients] = useState([]);
@@ -115,7 +130,7 @@ const InventoryChart = () => {
           `${API_BASE_URL}/api/dashboard/chart-data?${params.toString()}`,
         );
 
-        setChartData(res.data);
+        setChartData(mergeChartData(res.data));
       } catch (err) {
         console.error("Error fetching chart data", err);
       }
@@ -149,7 +164,7 @@ const InventoryChart = () => {
         `${API_BASE_URL}/api/dashboard/chart-data?${params.toString()}`,
       );
 
-      setExcelData(res.data);
+      setExcelData(mergeChartData(res.data));
       setShowExcel(true);
     } catch (err) {
       console.error("Error fetching Excel data", err);
@@ -202,6 +217,7 @@ const InventoryChart = () => {
 
     const formattedData = excelData.map((item) => ({
       supplyName: item.name || "Unnamed Supply",
+      unitType: item.unitType || "N/A",
       quantity: Number(item.value) || 0,
     }));
 
@@ -241,19 +257,12 @@ const InventoryChart = () => {
 
     const worksheet = workbook.addWorksheet("Inventory Trend Report");
 
-    worksheet.columns = [
-      { width: 16 },
-      { width: 27 },
-      { width: 8 },
-      { width: 8 },
-      { width: 18 },
-    ];
+    worksheet.columns = [{ width: 34 }, { width: 20 }, { width: 14 }];
 
-    worksheet.mergeCells("A1:E1");
-    worksheet.mergeCells("A2:E2");
-    worksheet.mergeCells("A4:E4");
-    worksheet.mergeCells("A5:E5");
-    worksheet.mergeCells("A7:D7");
+    worksheet.mergeCells("A1:C1");
+    worksheet.mergeCells("A2:C2");
+    worksheet.mergeCells("A4:C4");
+    worksheet.mergeCells("A5:C5");
 
     worksheet.getCell("A1").value = "PREMIUMED ENTERPRISES";
     worksheet.getCell("A2").value = "Inventory Trend Report";
@@ -262,25 +271,25 @@ const InventoryChart = () => {
     worksheet.getCell("A5").value = `Date: ${dateFilter}`;
 
     worksheet.getCell("A7").value = "Supply Name";
-    worksheet.getCell("E7").value = "Quantity";
+    worksheet.getCell("B7").value = "Unit Type";
+    worksheet.getCell("C7").value = "Quantity";
 
     formattedData.forEach((item, index) => {
       const rowNumber = 8 + index;
 
-      worksheet.mergeCells(`A${rowNumber}:D${rowNumber}`);
-
       worksheet.getCell(`A${rowNumber}`).value = item.supplyName;
-      worksheet.getCell(`E${rowNumber}`).value = item.quantity;
+      worksheet.getCell(`B${rowNumber}`).value = item.unitType;
+      worksheet.getCell(`C${rowNumber}`).value = item.quantity;
 
       worksheet.getRow(rowNumber).height = 26;
     });
 
     const totalRow = 8 + formattedData.length + 1;
 
-    worksheet.mergeCells(`A${totalRow}:D${totalRow}`);
+    worksheet.mergeCells(`A${totalRow}:B${totalRow}`);
 
     worksheet.getCell(`A${totalRow}`).value = "TOTAL INVENTORY:";
-    worksheet.getCell(`E${totalRow}`).value = totalQuantity;
+    worksheet.getCell(`C${totalRow}`).value = totalQuantity;
 
     worksheet.getRow(1).height = 45;
     worksheet.getRow(2).height = 28;
@@ -383,20 +392,38 @@ const InventoryChart = () => {
       vertical: "middle",
     };
 
-    worksheet.getCell("E7").fill = {
+    worksheet.getCell("B7").fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: darkBlue },
     };
 
-    worksheet.getCell("E7").font = {
+    worksheet.getCell("B7").font = {
       name: "Arial",
       size: 11,
       bold: true,
       color: { argb: white },
     };
 
-    worksheet.getCell("E7").alignment = {
+    worksheet.getCell("B7").alignment = {
+      horizontal: "center",
+      vertical: "middle",
+    };
+
+    worksheet.getCell("C7").fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: darkBlue },
+    };
+
+    worksheet.getCell("C7").font = {
+      name: "Arial",
+      size: 11,
+      bold: true,
+      color: { argb: white },
+    };
+
+    worksheet.getCell("C7").alignment = {
       horizontal: "center",
       vertical: "middle",
     };
@@ -405,7 +432,8 @@ const InventoryChart = () => {
       const rowNumber = 8 + index;
 
       const supplyCell = worksheet.getCell(`A${rowNumber}`);
-      const quantityCell = worksheet.getCell(`E${rowNumber}`);
+      const unitTypeCell = worksheet.getCell(`B${rowNumber}`);
+      const quantityCell = worksheet.getCell(`C${rowNumber}`);
 
       supplyCell.font = {
         name: "Arial",
@@ -415,6 +443,18 @@ const InventoryChart = () => {
 
       supplyCell.alignment = {
         horizontal: "left",
+        vertical: "middle",
+        wrapText: true,
+      };
+
+      unitTypeCell.font = {
+        name: "Arial",
+        size: 10,
+        color: { argb: black },
+      };
+
+      unitTypeCell.alignment = {
+        horizontal: "center",
         vertical: "middle",
         wrapText: true,
       };
@@ -433,10 +473,17 @@ const InventoryChart = () => {
       quantityCell.numFmt = "#,##0";
 
       supplyCell.border = thinBorder;
+      unitTypeCell.border = thinBorder;
       quantityCell.border = thinBorder;
 
       if (index % 2 === 0) {
         supplyCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: lightBlue },
+        };
+
+        unitTypeCell.fill = {
           type: "pattern",
           pattern: "solid",
           fgColor: { argb: lightBlue },
@@ -470,35 +517,33 @@ const InventoryChart = () => {
 
     worksheet.getCell(`A${totalRow}`).border = thinBorder;
 
-    worksheet.getCell(`E${totalRow}`).fill = {
+    worksheet.getCell(`C${totalRow}`).fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: darkBlue },
     };
 
-    worksheet.getCell(`E${totalRow}`).font = {
+    worksheet.getCell(`C${totalRow}`).font = {
       name: "Arial",
       size: 11,
       bold: true,
       color: { argb: white },
     };
 
-    worksheet.getCell(`E${totalRow}`).alignment = {
+    worksheet.getCell(`C${totalRow}`).alignment = {
       horizontal: "center",
       vertical: "middle",
     };
 
-    worksheet.getCell(`E${totalRow}`).numFmt = "#,##0";
-    worksheet.getCell(`E${totalRow}`).border = thinBorder;
+    worksheet.getCell(`C${totalRow}`).numFmt = "#,##0";
+    worksheet.getCell(`C${totalRow}`).border = thinBorder;
 
     for (let row = 7; row <= totalRow; row++) {
-      for (let col = 1; col <= 5; col++) {
+      for (let col = 1; col <= 3; col++) {
         const cell = worksheet.getCell(row, col);
 
         if (row >= 8 && row < totalRow) {
-          if (col === 1 || col === 5) {
-            cell.border = thinBorder;
-          }
+          cell.border = thinBorder;
         }
       }
     }
@@ -815,6 +860,7 @@ const InventoryChart = () => {
                 <thead>
                   <tr>
                     <th>Supply Name</th>
+                    <th>Unit Type</th>
                     <th>Quantity</th>
                   </tr>
                 </thead>
@@ -824,12 +870,13 @@ const InventoryChart = () => {
                     excelData.map((row, index) => (
                       <tr key={index}>
                         <td>{row.name}</td>
+                        <td>{row.unitType || "N/A"}</td>
                         <td>{row.value}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="2">No inventory data available.</td>
+                      <td colSpan="3">No inventory data available.</td>
                     </tr>
                   )}
                 </tbody>

@@ -8,6 +8,23 @@
   text-align: left;
 }
 
+.activity-logs-loading {
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.activity-logs-loading-spinner {
+  animation: activity-logs-loading-spin 1s linear infinite;
+}
+
+@keyframes activity-logs-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* for filters */
 .activity-filters {
   display: flex;

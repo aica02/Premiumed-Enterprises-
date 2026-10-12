@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "../styles/Header.css";
 import "../styles/Modals.css";
 import "../styles/ConfirmModal.css";
@@ -10,8 +10,9 @@ import {
   FaCheck,
   FaExclamationCircle,
 } from "react-icons/fa";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { toast } from "react-hot-toast";
 import {
   validatePassword,
   getPasswordStrength,
@@ -27,6 +28,9 @@ const BACKEND_URL =
 
 const Header = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const notificationRef = useRef(null);
+  const accountRef = useRef(null);
 
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -34,6 +38,14 @@ const Header = () => {
   const [showCheckEmailModal, setShowCheckEmailModal] = useState(false);
 
   const [activeMenu, setActiveMenu] = useState(null);
+  const [previousLocationKey, setPreviousLocationKey] = useState(location.key);
+
+  if (previousLocationKey !== location.key) {
+    setPreviousLocationKey(location.key);
+    setActiveMenu(null);
+  }
+
+  const visibleMenu = activeMenu;
 
   const [resetEmail, setResetEmail] = useState("");
   const [resetMessage, setResetMessage] = useState("");
@@ -62,8 +74,22 @@ const Header = () => {
   });
 
   const toggleMenu = (menu) => {
-    setActiveMenu((prev) => (prev === menu ? null : menu));
+    setActiveMenu(visibleMenu === menu ? null : menu);
   };
+
+  useEffect(() => {
+    if (!visibleMenu) return;
+
+    const menuRef = visibleMenu === "notif" ? notificationRef : accountRef;
+    const handlePointerDown = (event) => {
+      if (!menuRef.current?.contains(event.target)) {
+        setActiveMenu(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [visibleMenu]);
 
   const toggleVisibility = (field) => {
     setShowPasswords((prev) => ({
@@ -128,17 +154,17 @@ const Header = () => {
       !passwords.newPassword ||
       !passwords.confirmPassword
     ) {
-      return alert("Please fill in all fields.");
+      return toast.error("Please fill in all fields.");
     }
 
     if (passwords.newPassword !== passwords.confirmPassword) {
-      return alert("New passwords do not match.");
+      return toast.error("New passwords do not match.");
     }
 
     const validation = validatePassword(passwords.newPassword);
 
     if (!validation.isValid) {
-      return alert(
+      return toast.error(
         `Password validation failed:\n${validation.errors.join("\n")}`,
       );
     }
@@ -153,7 +179,7 @@ const Header = () => {
         },
       );
 
-      alert(response.data.message || "Password changed successfully!");
+      toast.success(response.data.message || "Password changed successfully!");
 
       setShowPasswordModal(false);
 
@@ -173,15 +199,15 @@ const Header = () => {
       console.error("Change Password Error:", err);
 
       if (err.response?.data?.details) {
-        alert(
+        toast.error(
           `Password validation failed:\n${err.response.data.details.join(
             "\n",
           )}`,
         );
       } else if (err.response?.data?.error) {
-        alert(err.response.data.error);
+        toast.error(err.response.data.error);
       } else {
-        alert("Failed to change password. Please try again.");
+        toast.error("Failed to change password. Please try again.");
       }
     }
   };
@@ -310,15 +336,20 @@ const Header = () => {
 
         <div className="right">
           <NotificationBell
+            containerRef={notificationRef}
             userName={username}
-            isOpen={activeMenu === "notif"}
+            isOpen={visibleMenu === "notif"}
             onToggle={() => toggleMenu("notif")}
             fetchUrl={`${BACKEND_URL}/api/notifications`}
             markReadUrl={`${BACKEND_URL}/api/notifications`}
             markAllReadUrl={`${BACKEND_URL}/api/notifications/read-all`}
           />
 
-          <div className="admin-nav-icon-wrapper" title="Profile">
+          <div
+            ref={accountRef}
+            className="admin-nav-icon-wrapper"
+            title="Profile"
+          >
             <span className="role-tag">{username?.toUpperCase()}</span>
 
             <div className="account-wrapper">
@@ -327,7 +358,7 @@ const Header = () => {
                 onClick={() => toggleMenu("account")}
               />
 
-              {activeMenu === "account" && (
+              {visibleMenu === "account" && (
                 <div className="account-dropdown">
                   <div
                     className="dropdown-item"

@@ -12,12 +12,12 @@ const BACKEND_URL =
   (window.location.hostname === "localhost" ? "http://localhost:5000" : "");
 
 const WarehouseMap = () => {
-  const { tables, labels, lines, racks } = warehouseMapLayout;
+  const { tables, pallets, labels, lines, racks } = warehouseMapLayout;
 
   const [items, setItems] = useState([]);
   const [activeTab, setActiveTab] = useState("nearExpiry");
   const [selectedRack, setSelectedRack] = useState(null);
-  const [selectedRackDetails, setSelectedRackDetails] = useState(null);
+  const [selectedLocationDetails, setSelectedLocationDetails] = useState(null);
 
   const NEAR_EXPIRY_DAYS = 30;
 
@@ -56,20 +56,20 @@ const WarehouseMap = () => {
     return { label: "Safe", className: "safe" };
   };
 
-  const openRackModal = (rackId) => {
-    const rackItems = items
+  const openLocationModal = (locationId, locationType) => {
+    const locationItems = items
       .map((item) => ({
         item,
         batches: (item.batches || []).filter(
           (batch) =>
-            batch.storageLocation === rackId &&
+            batch.storageLocation === locationId &&
             batch.status !== "disposed" &&
             Number(batch.quantity) > 0,
         ),
       }))
       .filter(({ batches }) => batches.length > 0);
 
-    setSelectedRackDetails({ rackId, items: rackItems });
+    setSelectedLocationDetails({ locationId, locationType, items: locationItems });
   };
 
   const nearExpiryData = useMemo(() => {
@@ -200,6 +200,83 @@ const WarehouseMap = () => {
     return "good";
   };
 
+  const getLocationTooltip = (locationId, locationType) => {
+    const locationItems = items.filter((item) =>
+      (item.batches || []).some(
+        (batch) =>
+          batch.storageLocation === locationId &&
+          batch.status !== "disposed" &&
+          Number(batch.quantity) > 0,
+      ),
+    );
+    const itemNames =
+      locationItems.length > 0
+        ? locationItems.map((item) => item.name).join(", ")
+        : "None";
+    const totalQuantity = locationItems.reduce(
+      (total, item) =>
+        total +
+        (item.batches || [])
+          .filter(
+            (batch) =>
+              batch.storageLocation === locationId &&
+              batch.status !== "disposed" &&
+              Number(batch.quantity) > 0,
+          )
+          .reduce(
+            (itemTotal, batch) => itemTotal + (Number(batch.quantity) || 0),
+            0,
+          ),
+      0,
+    );
+
+    const statusLabels = {
+      nearExpiry: "Near Expiry / Expired",
+      lowStock: "Low Stock",
+      good: "Good Stock",
+      "no-items": "Empty",
+    };
+    const batchStatuses = new Set();
+
+    items.forEach((item) => {
+      const locationBatches = (item.batches || []).filter(
+        (batch) =>
+          batch.storageLocation === locationId &&
+          batch.status !== "disposed",
+      );
+      if (locationBatches.length === 0) return;
+
+      const totalSupplyQuantity = (item.batches || [])
+        .filter((batch) => batch.status !== "disposed")
+        .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
+      const reorderLevel = Number(item.reorderLevel) || 50;
+
+      if (totalSupplyQuantity > 0 && totalSupplyQuantity <= reorderLevel) {
+        batchStatuses.add("lowStock");
+      } else if (totalSupplyQuantity > reorderLevel) {
+        batchStatuses.add("good");
+      }
+
+      locationBatches.forEach((batch) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const expirationDate = new Date(batch.expirationDate);
+        expirationDate.setHours(0, 0, 0, 0);
+        const daysLeft = Math.ceil(
+          (expirationDate - today) / (1000 * 60 * 60 * 24),
+        );
+        if (daysLeft <= NEAR_EXPIRY_DAYS) batchStatuses.add("nearExpiry");
+      });
+    });
+
+    const statuses =
+      batchStatuses.size > 0
+        ? [...batchStatuses].map((status) => statusLabels[status]).join(", ")
+        : "Empty";
+
+    return `${locationType} ID: ${locationId}\nStatuses: ${statuses}\nSupply: ${itemNames}\nTotal Quantity: ${totalQuantity}`;
+  };
+
   return (
     <div className="warehouse-container">
       <Toaster position="top-center" />
@@ -222,6 +299,36 @@ const WarehouseMap = () => {
                 }}
               />
             ))}
+            {pallets.map((pallet) => {
+              const dynamicStatus = computeDynamicStatus(pallet.id, items);
+              const tooltipText = getLocationTooltip(pallet.id, "Pallet");
+
+              return (
+                <div
+                  key={pallet.id}
+                  className={`warehouse-pallet ${dynamicStatus}`}
+                  title={tooltipText}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`View batches stored at pallet ${pallet.id}`}
+                  onClick={() => openLocationModal(pallet.id, "Pallet")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openLocationModal(pallet.id, "Pallet");
+                    }
+                  }}
+                  style={{
+                    top: pallet.top,
+                    left: pallet.left,
+                    width: pallet.width,
+                    height: pallet.height,
+                  }}
+                >
+                  <span className="rack-label">{pallet.id}</span>
+                </div>
+              );
+            })}
 
             {labels.map((label) => (
               <div
@@ -256,103 +363,7 @@ const WarehouseMap = () => {
             {racks.map((rack) => {
               const isSelected = selectedRack && selectedRack === rack.id;
               const dynamicStatus = computeDynamicStatus(rack.id, items);
-              const rackItems = items.filter((item) =>
-                (item.batches || []).some(
-                  (batch) =>
-                    batch.storageLocation === rack.id &&
-                    batch.status !== "disposed" &&
-                    Number(batch.quantity) > 0,
-                ),
-              );
-              const itemNames =
-                rackItems.length > 0
-                  ? rackItems.map((item) => item.name).join(", ")
-                  : "None";
-              const rackTotalQuantity = rackItems.reduce(
-                (total, item) =>
-                  total +
-                  (item.batches || [])
-                    .filter(
-                      (batch) =>
-                        batch.storageLocation === rack.id &&
-                        batch.status !== "disposed" &&
-                        Number(batch.quantity) > 0,
-                    )
-                    .reduce(
-                      (itemTotal, batch) =>
-                        itemTotal + (Number(batch.quantity) || 0),
-                      0,
-                    ),
-                0,
-              );
-
-              const statusLabels = {
-                nearExpiry: "Near Expiry / Expired",
-                lowStock: "Low Stock",
-                good: "Good Stock",
-                "no-items": "Empty",
-              };
-
-              const batchStatuses = new Set();
-
-              items.forEach((item) => {
-                const rackBatches = (item.batches || []).filter(
-                  (batch) =>
-                    batch.storageLocation === rack.id &&
-                    batch.status !== "disposed",
-                );
-
-                if (rackBatches.length === 0) return;
-
-                // Calculate the TOTAL quantity of this supply
-                // from all of its non-disposed batches
-                const totalSupplyQuantity = (item.batches || [])
-                  .filter((batch) => batch.status !== "disposed")
-                  .reduce(
-                    (total, batch) => total + (Number(batch.quantity) || 0),
-                    0,
-                  );
-
-                const reorderLevel = Number(item.reorderLevel) || 50;
-
-                // LOW STOCK / GOOD STOCK
-                // Based on the total quantity of ALL batches of the supply
-                if (
-                  totalSupplyQuantity > 0 &&
-                  totalSupplyQuantity <= reorderLevel
-                ) {
-                  batchStatuses.add("lowStock");
-                } else if (totalSupplyQuantity > reorderLevel) {
-                  batchStatuses.add("good");
-                }
-
-                // NEAR EXPIRY / EXPIRED
-                // Based only on batches that are inside this rack
-                rackBatches.forEach((batch) => {
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
-
-                  const expDate = new Date(batch.expirationDate);
-                  expDate.setHours(0, 0, 0, 0);
-
-                  const daysLeft = Math.ceil(
-                    (expDate - today) / (1000 * 60 * 60 * 24),
-                  );
-
-                  if (daysLeft <= NEAR_EXPIRY_DAYS) {
-                    batchStatuses.add("nearExpiry");
-                  }
-                });
-              });
-
-              const tooltipStatuses =
-                batchStatuses.size > 0
-                  ? [...batchStatuses]
-                      .map((status) => statusLabels[status])
-                      .join(", ")
-                  : "Empty";
-
-              const tooltipText = `Rack ID: ${rack.id}\nStatuses: ${tooltipStatuses}\nSupply: ${itemNames}\nTotal Quantity: ${rackTotalQuantity}`;
+              const tooltipText = getLocationTooltip(rack.id, "Rack");
 
               return (
                 <div
@@ -360,11 +371,11 @@ const WarehouseMap = () => {
                   key={rack.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => openRackModal(rack.id)}
+                  onClick={() => openLocationModal(rack.id, "Rack")}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      openRackModal(rack.id);
+                      openLocationModal(rack.id, "Rack");
                     }
                   }}
                   className={`rack ${rack.className || ""} ${
@@ -503,12 +514,12 @@ const WarehouseMap = () => {
         </div>
       </div>
 
-      {selectedRackDetails && (
+      {selectedLocationDetails && (
         <div
           className="inventory-modal-overlay"
           onClick={(event) => {
             if (event.target === event.currentTarget) {
-              setSelectedRackDetails(null);
+              setSelectedLocationDetails(null);
             }
           }}
         >
@@ -516,14 +527,14 @@ const WarehouseMap = () => {
             <div className="batch-modal-header">
               <div>
                 <h3>
-                  {selectedRackDetails.items.length > 0
-                    ? selectedRackDetails.items
+                  {selectedLocationDetails.items.length > 0
+                    ? selectedLocationDetails.items
                         .map(({ item }) => item.name)
                         .join(", ")
-                    : `Rack ${selectedRackDetails.rackId}`}
+                    : `${selectedLocationDetails.locationType} ${selectedLocationDetails.locationId}`}
                 </h3>
                 <p className="warehouse-rack-modal-subtitle">
-                  {selectedRackDetails.items
+                  {selectedLocationDetails.items
                     .map(({ item }) => item.category)
                     .filter(Boolean)
                     .filter(
@@ -535,12 +546,12 @@ const WarehouseMap = () => {
               </div>
               <FaTimes
                 className="batch-close-icon"
-                onClick={() => setSelectedRackDetails(null)}
+                onClick={() => setSelectedLocationDetails(null)}
               />
             </div>
             <div className="batch-modal-body">
               {/* {(() => {
-                const rackQuantity = selectedRackDetails.items.reduce(
+                const rackQuantity = selectedLocationDetails.items.reduce(
                   (total, { batches }) =>
                     total +
                     batches.reduce(
@@ -586,7 +597,7 @@ const WarehouseMap = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedRackDetails.items.flatMap(({ item, batches }) =>
+                    {selectedLocationDetails.items.flatMap(({ item, batches }) =>
                       batches.map((batch) => {
                         const fefo = getFefoStatus(batch.expirationDate);
                         const quantityStock = getStockStatus(

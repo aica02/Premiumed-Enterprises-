@@ -1,16 +1,42 @@
 import React, { useState, useEffect } from "react";
-import { FaSearch, FaPlusCircle, FaTimes, FaKey } from "react-icons/fa";
+import {
+  FaSearch,
+  FaPlusCircle,
+  FaTimes,
+  FaKey,
+  FaUserCheck,
+  FaUserTimes,
+} from "react-icons/fa";
 import { IoPersonCircle } from "react-icons/io5";
 import axios from "axios";
 import "../styles/UserAccessControl.css";
 import "../styles/Modals.css";
+import "../styles/ConfirmModal.css";
 import "../styles/capsules.css";
+import "../styles/formValidation.css";
 import { Toaster, toast } from "react-hot-toast";
 import EmptyState from "../components/EmptyState";
+import {
+  COUNTRY_CODES,
+  FIELD_MAX_LENGTHS,
+  formatFieldInput,
+  formatInternationalPhone,
+} from "../utils/fieldFormatting";
+import { validateField, validateFields } from "../utils/formValidation";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (window.location.hostname === "localhost" ? "http://localhost:5000" : "");
+const EMPLOYEE_VALIDATION_FIELDS = [
+  "fullName",
+  "address",
+  "phoneNumber",
+  "email",
+  "role",
+];
+const EMPLOYEE_VALIDATION_OPTIONS = {
+  address: { required: true, label: "Address" },
+};
 
 const UsersAccessControl = () => {
   const [activeModal, setActiveModal] = useState(null);
@@ -20,12 +46,16 @@ const UsersAccessControl = () => {
   const [roleFilter, setRoleFilter] = useState("All");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmModal, setConfirmModal] = useState(null);
 
   const initialForm = {
     fullName: "",
     address: "",
     phoneNumber: "",
+    phoneCountryCode: "+63",
     email: "",
     role: "",
     username: "",
@@ -37,6 +67,42 @@ const UsersAccessControl = () => {
     status: "Active",
   };
   const [formData, setFormData] = useState(initialForm);
+
+  const validateEmployeeForm = () => {
+    const nextErrors = validateFields(
+      formData,
+      EMPLOYEE_VALIDATION_FIELDS,
+      EMPLOYEE_VALIDATION_OPTIONS,
+    );
+    setTouchedFields(
+      EMPLOYEE_VALIDATION_FIELDS.reduce((touched, field) => {
+        touched[field] = true;
+        return touched;
+      }, {}),
+    );
+    setFieldErrors(nextErrors);
+    return Object.values(nextErrors).every((fieldError) => !fieldError);
+  };
+
+  const handleEmployeeFieldChange = (name, inputValue) => {
+    const formatName =
+      name === "phoneNumber" ? "mobile" : name === "fullName" ? "ownerName" : name;
+    const value = formatFieldInput(formatName, inputValue);
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    setTouchedFields((prev) => ({ ...prev, [name]: true }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      [name]: validateField(name, value, EMPLOYEE_VALIDATION_OPTIONS[name]),
+    }));
+  };
+
+  const handleEmployeeFieldBlur = (name, value) => {
+    setTouchedFields((prev) => ({ ...prev, [name]: true }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      [name]: validateField(name, value, EMPLOYEE_VALIDATION_OPTIONS[name]),
+    }));
+  };
 
   const handleGeneratePassword = () => {
     const charset =
@@ -104,80 +170,101 @@ const UsersAccessControl = () => {
     }
   };
 
-const handleSaveEmployee = async () => {
-  const requiredFields = ["fullName", "role", "email"];
-  const missingFields = requiredFields.filter(
-    (field) => !formData[field]?.trim(),
-  );
+  const handleSaveEmployee = async () => {
+    if (!validateEmployeeForm()) return;
+    const email = formatFieldInput("email", formData.email).trim();
+    const phoneNumber = formData.phoneNumber.trim();
+    const phoneNumberWithCountryCode = phoneNumber
+      ? formatInternationalPhone(formData.phoneCountryCode || "+63", phoneNumber)
+      : "";
 
-  if (missingFields.length > 0) {
-    const errorMsg = `Missing required fields: ${missingFields.join(", ")}`;
-    setError(errorMsg);
-    toast.error(errorMsg);
-    return;
-  }
+    setIsSaving(true);
+    setError(null);
 
-  setIsSaving(true);
-  setError(null);
+    try {
+      const roleMap = {
+        admin: "Admin",
+        staff: "Staff",
+        driver: "Driver",
+        user: "User",
+      };
 
-  try {
-    const roleMap = {
-      admin: "Admin",
-      staff: "Staff",
-      driver: "Driver",
-      user: "User",
-    };
+      const fd = new FormData();
+      fd.append("fullName", formData.fullName.trim());
+      fd.append("email", email);
+      fd.append("role", roleMap[formData.role?.toLowerCase()] || formData.role);
+      fd.append("phoneNumber", phoneNumberWithCountryCode);
+      fd.append("address", formData.address || "");
+      fd.append("status", formData.status || "Active");
 
-    const fd = new FormData();
-    fd.append("fullName", formData.fullName.trim());
-    fd.append("email", formData.email.trim());
-    fd.append("role", roleMap[formData.role?.toLowerCase()] || formData.role);
-    fd.append("phoneNumber", formData.phoneNumber || "");
-    fd.append("address", formData.address || "");
-    fd.append("status", formData.status || "Active");
+      if (formData.profileImageFile) {
+        fd.append("profileImage", formData.profileImageFile);
+      }
 
-    if (formData.profileImageFile) {
-      fd.append("profileImage", formData.profileImageFile); 
+      const response = await axios.post(
+        `${API_URL}/api/usersAccessControlPage`,
+        fd,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+
+      const { user: createdUser, emailSent } = response.data;
+
+      setFormData({ ...initialForm });
+      setActiveModal(null);
+
+      toast.success(
+        emailSent
+          ? "Employee created! Credentials sent to email."
+          : "Employee created, but the email could not be sent.",
+      );
+
+      fetchEmployees();
+    } catch (error) {
+      const errorMsg =
+        error.response?.data?.error ||
+        error.message ||
+        "Failed to save employee";
+      setError(errorMsg);
+      toast.error(errorMsg);
+    } finally {
+      setIsSaving(false);
     }
-
-    const response = await axios.post(
-      `${API_URL}/api/usersAccessControlPage`,
-      fd,
-      { headers: { "Content-Type": "multipart/form-data" } },
-    );
-
-    const { user: createdUser, emailSent } = response.data;
-
-    setFormData({ ...initialForm });
-    setActiveModal(null);
-
-    toast.success(
-      emailSent
-        ? "Employee created! Credentials sent to email."
-        : "Employee created, but the email could not be sent."
-    );
-
-    fetchEmployees();
-  } catch (error) {
-    const errorMsg =
-      error.response?.data?.error ||
-      error.message ||
-      "Failed to save employee";
-    setError(errorMsg);
-    toast.error(errorMsg);
-  } finally {
-    setIsSaving(false);
-  }
-};
+  };
   const handleUpdateProfile = async () => {
+    if (!validateEmployeeForm()) return;
     setIsSaving(true);
     try {
+      const phoneDigits = (formData.phoneNumber || "").replace(/\D/g, "");
+      const countryDigits = (formData.phoneCountryCode || "+63").replace(
+        /\D/g,
+        "",
+      );
+      const localPhoneDigits = phoneDigits.startsWith(countryDigits)
+        ? phoneDigits.slice(countryDigits.length)
+        : phoneDigits;
+      const formattedPhone = formatFieldInput("mobile", localPhoneDigits);
+      const formattedEmail = formatFieldInput("email", formData.email || "");
+      const formattedFullName = (formData.fullName || "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      const formattedAddress = (formData.address || "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+
       const formDataToSend = new FormData();
 
-      formDataToSend.append("fullName", formData.fullName || "");
-      formDataToSend.append("email", formData.email || "");
-      formDataToSend.append("phoneNumber", formData.phoneNumber || "");
-      formDataToSend.append("address", formData.address || "");
+      formDataToSend.append("fullName", formattedFullName);
+      formDataToSend.append("email", formattedEmail);
+      formDataToSend.append(
+        "phoneNumber",
+        formattedPhone
+          ? formatInternationalPhone(
+              formData.phoneCountryCode || "+63",
+              formattedPhone,
+            )
+          : "",
+      );
+      formDataToSend.append("address", formattedAddress);
       formDataToSend.append("role", formData.role || "");
 
       if (formData.profileImageFile) {
@@ -198,6 +285,9 @@ const handleSaveEmployee = async () => {
       const updatedUser = response.data;
       setFormData({
         ...updatedUser,
+        phoneCountryCode:
+          updatedUser.phoneCountryCode || formData.phoneCountryCode || "+63",
+        phoneNumber: updatedUser.phoneNumber || "",
         profileImage: updatedUser.profileImage || formData.profileImage,
         profileImageFile: null,
       });
@@ -240,12 +330,36 @@ const handleSaveEmployee = async () => {
     }
   };
 
+  const openStatusConfirmation = (employee) => {
+    const action = employee.status === "Active" ? "deactivate" : "activate";
+
+    setConfirmModal({ employee, action });
+  };
+
+  const closeStatusConfirmation = () => {
+    setConfirmModal(null);
+  };
+
+  const handleConfirmedStatusChange = async () => {
+    if (!confirmModal?.employee) return;
+
+    const { employee } = confirmModal;
+    closeStatusConfirmation();
+
+    await handleDeactivate(employee._id, employee.status);
+  };
+
   const openViewProfile = (emp) => {
     setFormData({
       ...emp,
+      phoneCountryCode: emp.phoneCountryCode || "+63",
+      phoneNumber: emp.phoneNumber || "",
       profileImage: emp.profileImage || "",
       profileImageFile: null,
     });
+    setFieldErrors({});
+    setTouchedFields({});
+    setError(null);
     setIsEditing(false);
     setActiveModal("viewProfile");
   };
@@ -254,6 +368,8 @@ const handleSaveEmployee = async () => {
     setActiveModal(null);
     setFormData(initialForm);
     setError(null);
+    setFieldErrors({});
+    setTouchedFields({});
     setIsEditing(false);
   };
 
@@ -261,20 +377,52 @@ const handleSaveEmployee = async () => {
     if (isEditing) {
       handleUpdateProfile();
     } else {
+      if (activeModal === "viewProfile") {
+        const storedPhone = (formData.phoneNumber || "").trim();
+        const country = [...COUNTRY_CODES]
+          .sort(
+            (a, b) =>
+              b.code.replace(/\D/g, "").length -
+              a.code.replace(/\D/g, "").length,
+          )
+          .find((item) => storedPhone.startsWith(item.code));
+        const countryCode = country?.code || formData.phoneCountryCode || "+63";
+        const phoneDigits = storedPhone.replace(/\D/g, "");
+        const countryDigits = countryCode.replace(/\D/g, "");
+        const localPhoneDigits =
+          country && phoneDigits.startsWith(countryDigits)
+            ? phoneDigits.slice(countryDigits.length)
+            : phoneDigits;
+
+        setFormData({
+          ...formData,
+          phoneCountryCode: countryCode,
+          phoneNumber: formatFieldInput("mobile", localPhoneDigits),
+        });
+      }
+      setFieldErrors({});
+      setTouchedFields({});
       setIsEditing(true);
     }
   };
 
-  const filteredEmployees = employees.filter((emp) => {
-    const matchesSearch = emp.fullName
-      ?.toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === "All" || emp.status === statusFilter;
-    const matchesRole = roleFilter === "All" || emp.role === roleFilter;
-    const notUserRole = emp.role !== "User";
+  const filteredEmployees = employees
+    .filter((emp) => {
+      const matchesSearch = emp.fullName
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase());
+      const matchesStatus =
+        statusFilter === "All" || emp.status === statusFilter;
+      const matchesRole = roleFilter === "All" || emp.role === roleFilter;
+      const notUserRole = emp.role !== "User";
 
-    return matchesSearch && matchesStatus && matchesRole && notUserRole;
-  });
+      return matchesSearch && matchesStatus && matchesRole && notUserRole;
+    })
+    .sort(
+      (a, b) =>
+        Number((b.status || "Active") === "Active") -
+        Number((a.status || "Active") === "Active"),
+    );
 
   const uniqueRoles = [
     "All",
@@ -303,6 +451,9 @@ const handleSaveEmployee = async () => {
             className="add-employee-btn"
             onClick={() => {
               setFormData(initialForm);
+              setFieldErrors({});
+              setTouchedFields({});
+              setError(null);
               setIsEditing(false);
               setActiveModal("addEmployee");
             }}
@@ -377,16 +528,7 @@ const handleSaveEmployee = async () => {
                         </button>
                         <button
                           className={`deact-btn ${emp.status !== "Active" ? "activate-mode" : ""}`}
-                          onClick={() => {
-                            const action =
-                              emp.status === "Active"
-                                ? "deactivate"
-                                : "activate";
-                            const confirmMessage = `Are you sure you want to ${action} this employee?`;
-                            if (window.confirm(confirmMessage)) {
-                              handleDeactivate(emp._id, emp.status);
-                            }
-                          }}
+                          onClick={() => openStatusConfirmation(emp)}
                         >
                           {emp.status === "Active" ? "Deactivate" : "Activate"}
                         </button>
@@ -437,6 +579,79 @@ const handleSaveEmployee = async () => {
             </table>
           </div>
         </div>
+
+        {confirmModal && (
+          <div className="confirm-modal-overlay">
+            <div className="confirm-modal-card">
+              <div
+                className="confirm-modal-icon"
+                style={{
+                  color:
+                    confirmModal.action === "deactivate"
+                      ? "#ff3131"
+                      : "#22a06b",
+                }}
+              >
+                {confirmModal.action === "deactivate" ? (
+                  <FaUserTimes />
+                ) : (
+                  <FaUserCheck />
+                )}
+              </div>
+
+              <h3 className="confirm-modal-title">
+                {confirmModal.action === "deactivate"
+                  ? "Deactivate Employee?"
+                  : "Activate Employee?"}
+              </h3>
+
+              <p className="confirm-modal-message">
+                {confirmModal.action === "deactivate" ? (
+                  <>
+                    The account of{" "}
+                    <strong>{confirmModal.employee.fullName}</strong> will be
+                    deactivated and they will no longer be able to access the
+                    system.
+                  </>
+                ) : (
+                  <>
+                    The account of{" "}
+                    <strong>{confirmModal.employee.fullName}</strong> will be
+                    activated and they will regain access to the system.
+                  </>
+                )}
+              </p>
+
+              <div className="confirm-modal-footer">
+                <button
+                  className="confirm-modal-btn confirm-modal-btn-cancel"
+                  onClick={closeStatusConfirmation}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="confirm-modal-btn confirm-modal-btn-confirm"
+                  onClick={handleConfirmedStatusChange}
+                  style={{
+                    background:
+                      confirmModal.action === "activate"
+                        ? "#22a06b"
+                        : "#ff3131",
+                    borderColor:
+                      confirmModal.action === "activate"
+                        ? "#22a06b"
+                        : "#ff3131",
+                  }}
+                >
+                  {confirmModal.action === "deactivate"
+                    ? "Deactivate"
+                    : "Activate"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* MODAL SECTION */}
         {(activeModal === "addEmployee" || activeModal === "viewProfile") && (
@@ -529,44 +744,142 @@ const handleSaveEmployee = async () => {
                     type="text"
                     placeholder="Full Name *"
                     value={formData.fullName || ""}
+                    className={fieldErrors.fullName ? "input-error" : ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, fullName: e.target.value })
+                      handleEmployeeFieldChange("fullName", e.target.value)
+                    }
+                    onBlur={(e) =>
+                      handleEmployeeFieldBlur("fullName", e.target.value)
                     }
                     disabled={!isEditing && activeModal === "viewProfile"}
                   />
+                  {touchedFields.fullName && fieldErrors.fullName && (
+                    <div className="inline-error-message">
+                      {fieldErrors.fullName}
+                    </div>
+                  )}
                   <input
                     type="text"
                     placeholder="Address"
                     value={formData.address || ""}
+                    className={fieldErrors.address ? "input-error" : ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, address: e.target.value })
+                      handleEmployeeFieldChange("address", e.target.value)
+                    }
+                    onBlur={(e) =>
+                      handleEmployeeFieldBlur("address", e.target.value)
                     }
                     disabled={!isEditing && activeModal === "viewProfile"}
                   />
-                  <input
-                    type="text"
-                    placeholder="Phone Number"
-                    value={formData.phoneNumber || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, phoneNumber: e.target.value })
-                    }
-                    disabled={!isEditing && activeModal === "viewProfile"}
-                  />
+                  {touchedFields.address && fieldErrors.address && (
+                    <div className="inline-error-message">
+                      {fieldErrors.address}
+                    </div>
+                  )}
+                  {activeModal === "addEmployee" || isEditing ? (
+                    <div className="employee-phone-field">
+                      <div className="employee-phone-input">
+                        <select
+                          aria-label="Mobile country code"
+                          className="employee-phone-country-code"
+                          value={formData.phoneCountryCode || "+63"}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              phoneCountryCode: e.target.value,
+                            })
+                          }
+                        >
+                          {COUNTRY_CODES.map((country) => (
+                            <option key={country.code} value={country.code}>
+                              {country.flag} {country.code}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          id="employee-phone-number"
+                          className={`employee-phone-input ${fieldErrors.phoneNumber ? "input-error" : ""}`}
+                          type="tel"
+                          placeholder="xxx xxx xxxx"
+                          value={formData.phoneNumber || ""}
+                          onChange={(e) =>
+                            handleEmployeeFieldChange(
+                              "phoneNumber",
+                              e.target.value,
+                            )
+                          }
+                          onBlur={(e) =>
+                            handleEmployeeFieldBlur(
+                              "phoneNumber",
+                              e.target.value,
+                            )
+                          }
+                          inputMode="numeric"
+                          autoComplete="tel-national"
+                          maxLength={FIELD_MAX_LENGTHS.mobile}
+                          required={activeModal === "addEmployee"}
+                        />
+                      </div>
+                      {touchedFields.phoneNumber &&
+                        fieldErrors.phoneNumber && (
+                          <div className="inline-error-message">
+                            {fieldErrors.phoneNumber}
+                          </div>
+                        )}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Phone Number"
+                      value={formData.phoneNumber || ""}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          phoneNumber: formatFieldInput("mobile", e.target.value),
+                        })
+                      }
+                      disabled={!isEditing && activeModal === "viewProfile"}
+                    />
+                  )}
                   <input
                     type="email"
-                    placeholder="Email"
+                    placeholder={
+                      activeModal === "addEmployee"
+                        ? "example@gmail.com"
+                        : "Email"
+                    }
                     value={formData.email || ""}
+                    className={fieldErrors.email ? "input-error" : ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
+                      handleEmployeeFieldChange("email", e.target.value)
+                    }
+                    onBlur={(e) =>
+                      handleEmployeeFieldBlur("email", e.target.value)
+                    }
+                    autoComplete={
+                      activeModal === "addEmployee" ? "email" : undefined
+                    }
+                    maxLength={
+                      activeModal === "addEmployee"
+                        ? FIELD_MAX_LENGTHS.email
+                        : undefined
                     }
                     disabled={!isEditing && activeModal === "viewProfile"}
                   />
+                  {touchedFields.email && fieldErrors.email && (
+                    <div className="inline-error-message">
+                      {fieldErrors.email}
+                    </div>
+                  )}
 
                   <select
-                    className="role-selection"
+                    className={`role-selection ${fieldErrors.role ? "input-error" : ""}`}
                     value={formData.role || ""}
                     onChange={(e) =>
-                      setFormData({ ...formData, role: e.target.value })
+                      handleEmployeeFieldChange("role", e.target.value)
+                    }
+                    onBlur={(e) =>
+                      handleEmployeeFieldBlur("role", e.target.value)
                     }
                     disabled={!isEditing && activeModal === "viewProfile"}
                   >
@@ -575,6 +888,11 @@ const handleSaveEmployee = async () => {
                     <option value="Staff">Staff</option>
                     <option value="Driver">Driver</option>
                   </select>
+                  {touchedFields.role && fieldErrors.role && (
+                    <div className="inline-error-message">
+                      {fieldErrors.role}
+                    </div>
+                  )}
 
                   {formData._id && formData.employeeId && (
                     <div className="employee-form">

@@ -30,6 +30,7 @@ const ClientsInformation = () => {
   const [clients, setClients] = useState([]);
   const [requests, setRequests] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
 
   const [confirmModal, setConfirmModal] = useState(null);
 
@@ -59,6 +60,16 @@ const ClientsInformation = () => {
     (c) =>
       c.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.email?.toLowerCase().includes(searchTerm.toLowerCase()),
+  );
+
+  const visibleClients = filteredClients.filter(
+    (client) =>
+      client.role === "User" &&
+      (statusFilter === "All" || client.status === statusFilter),
+  ).sort(
+    (a, b) =>
+      Number((b.status || "Active") === "Active") -
+      Number((a.status || "Active") === "Active"),
   );
 
   const filteredRequests = requests.filter(
@@ -280,7 +291,7 @@ const ClientsInformation = () => {
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       columns: columns,
       data: data,
@@ -337,6 +348,19 @@ const ClientsInformation = () => {
         </div>
 
         <div className="info-card clients-table">
+          {activeTab === "information" && (
+            <div className="filters-select-container">
+              <select
+                className="filter-select"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="All">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          )}
           <div className="clients-table-wrapper">
             <table className="info-table">
               <thead className="fixed-table-row">
@@ -352,66 +376,70 @@ const ClientsInformation = () => {
               </thead>
               <tbody>
                 {activeTab === "information" ? (
-                  filteredClients.filter((client) => client.role === "User")
-                    .length > 0 ? (
-                    filteredClients
-                      .filter((client) => client.role === "User")
-                      .map((client) => (
-                        <tr key={client._id}>
-                          <td className="font-bold">{client.fullName}</td>
-                          <td>{client.email.toLowerCase()}</td>
-                          <td>{client.phoneNumber || "N/A"}</td>
-                          <td>
-                            <span
-                              className={`status-capsule status-${client.status.toLowerCase()}`}
-                            >
-                              {client.status}
-                            </span>
-                          </td>
-                          <td className="action-buttons clients-info">
-                            <button
-                              className="view-profile-btn"
-                              onClick={() =>
-                                setActiveModal({
-                                  type: "viewClient",
-                                  data: client,
-                                })
-                              }
-                            >
-                              VIEW
-                            </button>
-                            <button
-                              className={`deact-btn ${
-                                client.status !== "Active"
-                                  ? "activate-mode"
-                                  : ""
-                              }`}
-                              onClick={() => openStatusConfirmation(client)}
-                            >
-                              {client.status === "Active"
-                                ? "Deactivate"
-                                : "Activate"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                  visibleClients.length > 0 ? (
+                    visibleClients.map((client) => (
+                      <tr key={client._id}>
+                        <td className="font-bold">{client.fullName}</td>
+                        <td>{client.email.toLowerCase()}</td>
+                        <td>{client.phoneNumber || "N/A"}</td>
+                        <td>
+                          <span
+                            className={`status-capsule status-${client.status.toLowerCase()}`}
+                          >
+                            {client.status}
+                          </span>
+                        </td>
+                        <td className="action-buttons clients-info">
+                          <button
+                            className="view-profile-btn"
+                            onClick={() =>
+                              setActiveModal({
+                                type: "viewClient",
+                                data: client,
+                              })
+                            }
+                          >
+                            VIEW
+                          </button>
+                          <button
+                            className={`deact-btn ${
+                              client.status !== "Active" ? "activate-mode" : ""
+                            }`}
+                            onClick={() => openStatusConfirmation(client)}
+                          >
+                            {client.status === "Active"
+                              ? "Deactivate"
+                              : "Activate"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
                   ) : (
                     <tr>
                       <td colSpan={5} className="empty-order-cell">
                         <EmptyState
                           title={
-                            searchTerm
+                            searchTerm || statusFilter !== "All"
                               ? "No matching clients"
                               : "No clients yet"
                           }
                           message={
-                            searchTerm
-                              ? "We couldn't find any client accounts that match your current search."
+                            searchTerm || statusFilter !== "All"
+                              ? "We couldn't find any client accounts that match your current search or filters."
                               : "Client accounts will appear here once they are added to the system."
                           }
-                          buttonText={searchTerm ? "Clear Search" : undefined}
+                          buttonText={
+                            searchTerm || statusFilter !== "All"
+                              ? "Clear Search & Filters"
+                              : undefined
+                          }
                           onButtonClick={
-                            searchTerm ? () => setSearchTerm("") : undefined
+                            searchTerm || statusFilter !== "All"
+                              ? () => {
+                                  setSearchTerm("");
+                                  setStatusFilter("All");
+                                }
+                              : undefined
                           }
                         />
                       </td>
@@ -647,10 +675,7 @@ const ClientProfileModal = ({ client, onClose }) => {
               label="Year Established"
               value={client.yearEstablished}
             />
-            <DetailItem
-              label="Registration No."
-              value={client.registrationNumber}
-            />
+            <DetailItem label="TIN Number" value={client.registrationNumber} />
             <DetailItem label="No. of Machines" value={client.machines} />
             <DetailItem label="Mobile No." value={client.phoneNumber} />
             <DetailItem label="Landline" value={client.landline} />
@@ -741,10 +766,7 @@ const RequestDetailsModal = ({ request, onClose, onRequestApproval }) => {
               label="Year Established"
               value={request.yearEstablished}
             />
-            <DetailItem
-              label="Registration No."
-              value={request.registrationNumber}
-            />
+            <DetailItem label="TIN Number" value={request.registrationNumber} />
             <DetailItem label="No. of Machines" value={request.machines} />
             <DetailItem label="Mobile No." value={request.mobile} />
             <DetailItem label="Landline" value={request.landline} />
