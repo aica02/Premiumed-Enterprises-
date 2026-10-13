@@ -123,33 +123,30 @@ app.use((req, res, next) => {
   const headers = req.headers || {};
 
   const candidateUserId = pickFirst(
+    req.user?.userId,
+    headers["x-user-id"],
+    headers["X-User-Id"],
     body.userId,
     body._id,
     body.user?.id,
     body.user?._id,
     query.userId,
     query.user?.id,
-    headers["x-user-id"],
-    headers["X-User-Id"],
-    req.user?.userId,
   );
 
   const candidateUsername = pickFirst(
+    req.user?.username,
+    headers["x-username"],
+    headers["X-Username"],
     body.username,
     body.user?.username,
     query.username,
-    headers["x-username"],
-    headers["X-Username"],
-    req.user?.username,
   );
 
   const candidateRole = pickFirst(
-    body.role,
-    body.user?.role,
-    query.role,
+    req.user?.role,
     headers["x-role"],
     headers["X-Role"],
-    req.user?.role,
   );
 
   req.actor = {

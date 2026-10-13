@@ -5,6 +5,7 @@ import "../styles/ActivityLogs.css";
 import { FaPlusCircle, FaPrint, FaSearch, FaTimes } from "react-icons/fa";
 import { MdAutorenew } from "react-icons/md";
 import { generateActivityReport } from "../utils/pdf/ActivityLogReport";
+import logReportPrinted from "../utils/logReportPrinted";
 import { Toaster, toast } from "react-hot-toast";
 import EmptyState from "../components/EmptyState";
 
@@ -154,6 +155,7 @@ const ActivityLogs = () => {
       data: rows,
       filename: `Activity-Log-Report-${Date.now()}.pdf`,
     });
+    void logReportPrinted("Activity Log", "Activity Logs");
     toast.success(
       `Activity Log Report generated successfully with ${rows.length} record${
         rows.length !== 1 ? "s" : ""

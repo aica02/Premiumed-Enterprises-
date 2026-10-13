@@ -961,7 +961,11 @@ router.patch("/batch/:batchCode/dispose", async (req, res) => {
   const actor = {
     userId: userId || req.actor?.userId || null,
     username: username || req.actor?.username || "Unknown",
-    role: role || req.actor?.role || "Unknown",
+    role: role && role !== "Unknown"
+      ? role
+      : req.actor?.role && req.actor.role !== "Unknown"
+        ? req.actor.role
+        : "Staff",
   };
 
   try {

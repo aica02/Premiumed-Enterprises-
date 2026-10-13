@@ -1,5 +1,6 @@
 import express from "express";
 import Batch from "../models/Batch.js";
+import createActivityLog from "../utils/createActivityLogs.js";
 const router = express.Router();
 
 router.patch("/:id/complete", async (req, res) => {
@@ -121,6 +122,17 @@ router.put("/disposeBatch", async (req, res) => {
     if (!updatedBatch) {
       return res.status(404).json({ message: "Batch code not found" });
     }
+
+    const actor = req.actor || {};
+    await createActivityLog({
+      userId: actor.userId || null,
+      username:
+        actor.username && actor.username !== "Unknown" ? actor.username : "Admin",
+      role: actor.role && actor.role !== "Unknown" ? actor.role : "Admin",
+      action: "Mark batch for disposal",
+      module: "Inventory",
+      description: `Batch ${updatedBatch.batchCode} for ${updatedBatch.itemName} was marked for disposal. Quantity: ${updatedBatch.quantity}.`,
+    });
 
     res.json({
       message: "Batch successfully moved to 'for disposal' status",

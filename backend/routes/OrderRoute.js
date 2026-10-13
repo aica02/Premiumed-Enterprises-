@@ -288,7 +288,7 @@ router.post("/", async (req, res) => {
           boxes: orderMode === "box" ? boxes : 0,
           quantityPerBox,
         };
-      })
+      }),
     );
 
     const calculatedSubtotal =
@@ -480,11 +480,11 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
         if (emailResult.success) {
           emailSent = true;
           console.log(
-            `Deposit slip email sent to accountant: ${accountantEmail}`,
+            `Payment slip email sent to accountant: ${accountantEmail}`,
           );
           order.notes = order.notes
-            ? `${order.notes} | Deposit Slip has been sent.`
-            : "Deposit Slip has been sent.";
+            ? `${order.notes} | Payment Slip has been sent.`
+            : "Payment Slip has been sent.";
           await order.save();
         } else {
           emailError = emailResult.error;
@@ -501,11 +501,14 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
     const actor = getActor(req);
     await createActivityLog({
       userId: actor.userId,
-      username: actor.username,
-      role: actor.role,
-      action: "Upload payment slip",
+      username:
+        actor.username !== "Unknown"
+          ? actor.username
+          : order.username || order.name,
+      role: actor.role !== "Unknown" ? actor.role : "Client",
+      action: "Submit payment slip",
       module: "Order",
-      description: `Order ${order.orderId} had a payment slip uploaded.${emailSent ? " Email sent to accountant." : " No email sent."}`,
+      description: `Client submitted a payment slip for order ${order.orderId}.${emailSent ? " Email sent to accountant." : " No email sent."}`,
     });
 
     // try {
@@ -516,7 +519,7 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
 
     res.json({
       success: true,
-      message: `Slip uploaded successfully.${emailSent ? " Deposit slip sent to accountant." : ""}`,
+      message: `Slip uploaded successfully.${emailSent ? " Payment slip sent to accountant." : ""}`,
       order,
       emailSent,
       emailError: emailError,
@@ -772,62 +775,65 @@ router.patch("/:orderId/status", async (req, res) => {
 
     // Handle TO SHIP (existing logic with accountant email)
     if (status === "TO SHIP") {
-  let emailSent = false;
-  let emailError = null;
+      let emailSent = false;
+      let emailError = null;
 
-  if (order.paymentSlip) {
-    try {
-      const settings = await Settings.findOne();
-      const accountantEmail = settings?.accountantEmail;
+      if (order.paymentSlip) {
+        try {
+          const settings = await Settings.findOne();
+          const accountantEmail = settings?.accountantEmail;
 
-      if (accountantEmail) {
-        // Fix: paymentSlip is like "/uploads/1234-file.pdf"
-        // Strip leading slash and join with cwd
-        const relativePath = order.paymentSlip.replace(/^\/+/, "");
-        const slipPath = path.join(process.cwd(), relativePath);
-        
-        console.log(`[TO SHIP] Looking for slip at: ${slipPath}`);
-        
-        if (fs.existsSync(slipPath)) {
-          const fileBuffer = fs.readFileSync(slipPath);
-          const fileName = path.basename(order.paymentSlip);
+          if (accountantEmail) {
+            // Fix: paymentSlip is like "/uploads/1234-file.pdf"
+            // Strip leading slash and join with cwd
+            const relativePath = order.paymentSlip.replace(/^\/+/, "");
+            const slipPath = path.join(process.cwd(), relativePath);
 
-          const emailResult = await sendDepositSlipToAccountant(
-            order,
-            fileBuffer,
-            fileName,
-            accountantEmail,
-          );
+            console.log(`[TO SHIP] Looking for slip at: ${slipPath}`);
 
-          if (emailResult.success) {
-            emailSent = true;
-            order.notes = order.notes
-              ? `${order.notes} | Deposit slip sent to accountant.`
-              : "Deposit slip sent to accountant.";
+            if (fs.existsSync(slipPath)) {
+              const fileBuffer = fs.readFileSync(slipPath);
+              const fileName = path.basename(order.paymentSlip);
+
+              const emailResult = await sendDepositSlipToAccountant(
+                order,
+                fileBuffer,
+                fileName,
+                accountantEmail,
+              );
+
+              if (emailResult.success) {
+                emailSent = true;
+                order.notes = order.notes
+                  ? `${order.notes} | Payment slip sent to accountant.`
+                  : "Payment slip sent to accountant.";
+              } else {
+                emailError = emailResult.error;
+                console.error(
+                  "Failed to send email to accountant:",
+                  emailError,
+                );
+              }
+            } else {
+              emailError = `Payment slip file not found at: ${slipPath}`;
+              console.error(emailError);
+            }
           } else {
-            emailError = emailResult.error;
-            console.error("Failed to send email to accountant:", emailError);
+            emailError = "Accountant email not configured in settings";
+            console.warn(emailError);
           }
-        } else {
-          emailError = `Payment slip file not found at: ${slipPath}`;
-          console.error(emailError);
+        } catch (emailError) {
+          console.error("Error in email sending process:", emailError);
+          emailError = emailError.message;
         }
-      } else {
-        emailError = "Accountant email not configured in settings";
-        console.warn(emailError);
       }
-    } catch (emailError) {
-      console.error("Error in email sending process:", emailError);
-      emailError = emailError.message;
-    }
-  }
       await createActivityLog({
         userId: actor.userId,
         username: actor.username,
         role: actor.role,
         action: "Ship order",
         module: "Order",
-        description: `Order ${order.orderId} was moved to shipping.${emailSent ? " Deposit slip sent to accountant." : ""}${emailError ? " Email failed: " + emailError : ""}`,
+        description: `Order ${order.orderId} was moved to shipping.${emailSent ? " Payment slip sent to accountant." : ""}${emailError ? " Email failed: " + emailError : ""}`,
       });
 
       order.status = "TO SHIP";
@@ -837,12 +843,12 @@ router.patch("/:orderId/status", async (req, res) => {
       await Notification.create({
         name: order.name,
         orderId: order.orderId,
-        message: `Order #${order.orderId} status is now TO SHIP.${emailSent ? " Deposit slip has been sent to the accountant." : ""}`,
+        message: `Order #${order.orderId} status is now TO SHIP.${emailSent ? " Payment slip has been sent to the accountant." : ""}`,
       });
 
       return res.json({
         success: true,
-        message: `Order moved to shipping${emailSent ? " and deposit slip sent to accountant" : ""}`,
+        message: `Order moved to shipping${emailSent ? " and payment slip sent to accountant" : ""}`,
         order,
         emailSent,
         emailError,
@@ -1100,8 +1106,7 @@ router.get("/", async (req, res) => {
 
     partialOrders.forEach((partialOrder) => {
       const parentOrderId =
-        partialOrder.originalOrderId ||
-        partialOrder.orderId.replace(/-P$/, "");
+        partialOrder.originalOrderId || partialOrder.orderId.replace(/-P$/, "");
       const existingItems = backordersByOrderId.get(parentOrderId) || [];
       backordersByOrderId.set(parentOrderId, [
         ...existingItems,

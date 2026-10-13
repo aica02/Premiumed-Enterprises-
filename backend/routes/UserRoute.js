@@ -7,7 +7,7 @@ import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import createActivityLog from "../utils/createActivityLogs.js";
 import { validatePassword } from "../utils/passwordValidator.js";
-import cloudinaryConfig from '../config/cloudinary.js';
+import cloudinaryConfig from "../config/cloudinary.js";
 import {
   sendEmailWithRetry,
   sendEmployeeAccountEmail,
@@ -15,7 +15,8 @@ import {
 
 dotenv.config();
 
-const { cloudinary, upload, uploadToCloudinary, deleteFromCloudinary } = cloudinaryConfig;
+const { cloudinary, upload, uploadToCloudinary, deleteFromCloudinary } =
+  cloudinaryConfig;
 
 const escapeRegex = (value = "") =>
   value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -28,7 +29,8 @@ const getActor = (req) => ({
 
 const generateRandomPassword = () => {
   const length = 8;
-  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!";
+  const charset =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!";
   let password = "";
   for (let i = 0; i < length; i++) {
     const randomIndex = Math.floor(Math.random() * charset.length);
@@ -39,11 +41,13 @@ const generateRandomPassword = () => {
 
 const getNextEmployeeId = async (role) => {
   try {
-    const validRoles = ['Admin', 'Staff', 'Driver'];
+    const validRoles = ["Admin", "Staff", "Driver"];
     const normalizedRole = role;
 
     if (!validRoles.includes(normalizedRole)) {
-      throw new Error(`Invalid role: ${role}. Must be one of: ${validRoles.join(', ')}`);
+      throw new Error(
+        `Invalid role: ${role}. Must be one of: ${validRoles.join(", ")}`,
+      );
     }
 
     const prefix = normalizedRole.substring(0, 3).toUpperCase();
@@ -55,12 +59,12 @@ const getNextEmployeeId = async (role) => {
       {
         new: true,
         upsert: true,
-        setDefaultsOnInsert: true
-      }
+        setDefaultsOnInsert: true,
+      },
     );
 
     const sequenceNumber = counter.seq || 1;
-    const employeeId = `${prefix}-${String(sequenceNumber).padStart(3, '0')}`;
+    const employeeId = `${prefix}-${String(sequenceNumber).padStart(3, "0")}`;
 
     return employeeId;
   } catch (error) {
@@ -84,7 +88,7 @@ const generateUsername = async (fullName) => {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "")
     .trim();
-  
+
   if (!baseUsername) baseUsername = "employee";
 
   let username = baseUsername;
@@ -104,7 +108,9 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
     const file = req.file;
 
     if (!fullName || !role || !email) {
-      return res.status(400).json({ error: "Full Name, Role, and Email are required." });
+      return res
+        .status(400)
+        .json({ error: "Full Name, Role, and Email are required." });
     }
 
     const charset = "0123456789!_";
@@ -112,7 +118,10 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
     for (let i = 0; i < 3; i++) {
       generated += charset.charAt(Math.floor(Math.random() * charset.length));
     }
-    const namePart = fullName.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5);
+    const namePart = fullName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 5);
     const generatedUsername = namePart + generated;
 
     const generatedPassword = generateRandomPassword();
@@ -165,7 +174,7 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
       await createActivityLog({
         userId: actor?.userId || result.insertedId,
         username: actor?.username || generatedUsername,
-        role: actor?.role || role,
+        role: actor?.role || "Admin",
         action: "Create user",
         module: "Employee Management",
         description: `${role} account "${generatedUsername}" was created.`,
@@ -200,7 +209,6 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
       emailSent: emailResult.success || false,
       user: { ...userResponse, _id: result.insertedId },
     });
-
   } catch (err) {
     console.error("EMPLOYEE CREATION ERROR:", err);
     res.status(500).json({
@@ -210,72 +218,78 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
   }
 });
 // POST - Upload image separately
-router.post("/upload-image/:username", upload.single('profileImage'), async (req, res) => {
-  try {
-    const { username } = req.params;
+router.post(
+  "/upload-image/:username",
+  upload.single("profileImage"),
+  async (req, res) => {
+    try {
+      const { username } = req.params;
 
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
-    }
-
-    const user = await User.findOne({ username });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const previousProfileImagePublicId = user.profileImagePublicId;
-
-    const result = await uploadToCloudinary(req.file.buffer, {
-      folder: 'profile_images',
-      public_id: `profile_${username}_${Date.now()}`,
-      overwrite: false,
-      transformation: [{ width: 500, height: 500, crop: 'limit' }]
-    });
-    if (!result?.secure_url || !result.public_id) {
-      throw new Error('Cloudinary did not return a profile image URL and ID.');
-    }
-
-    user.profileImage = result.secure_url;
-    user.profileImagePublicId = result.public_id;
-    await user.save();
-
-    if (
-      previousProfileImagePublicId &&
-      previousProfileImagePublicId !== user.profileImagePublicId
-    ) {
-      try {
-        await deleteFromCloudinary(previousProfileImagePublicId);
-      } catch (error) {
-        console.error('Failed to delete previous profile image:', error);
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
       }
-    }
 
-    await createActivityLog({
-      userId: user._id,
-      username: user.username,
-      role: user.role,
-      action: "Upload image",
-      module: "Employee Management",
-      description: `${user.role} "${user.username}" uploaded a profile image.`,
-    });
+      const user = await User.findOne({ username });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-    res.json({
-      message: 'Image uploaded successfully',
-      imageUrl: result.secure_url,
-      publicId: result.public_id,
-      user: {
-        _id: user._id,
+      const previousProfileImagePublicId = user.profileImagePublicId;
+
+      const result = await uploadToCloudinary(req.file.buffer, {
+        folder: "profile_images",
+        public_id: `profile_${username}_${Date.now()}`,
+        overwrite: false,
+        transformation: [{ width: 500, height: 500, crop: "limit" }],
+      });
+      if (!result?.secure_url || !result.public_id) {
+        throw new Error(
+          "Cloudinary did not return a profile image URL and ID.",
+        );
+      }
+
+      user.profileImage = result.secure_url;
+      user.profileImagePublicId = result.public_id;
+      await user.save();
+
+      if (
+        previousProfileImagePublicId &&
+        previousProfileImagePublicId !== user.profileImagePublicId
+      ) {
+        try {
+          await deleteFromCloudinary(previousProfileImagePublicId);
+        } catch (error) {
+          console.error("Failed to delete previous profile image:", error);
+        }
+      }
+
+      await createActivityLog({
+        userId: user._id,
         username: user.username,
-        profileImage: user.profileImage,
-        profileImagePublicId: user.profileImagePublicId
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
+        role: user.role,
+        action: "Upload image",
+        module: "Employee Management",
+        description: `${user.role} "${user.username}" uploaded a profile image.`,
+      });
+
+      res.json({
+        message: "Image uploaded successfully",
+        imageUrl: result.secure_url,
+        publicId: result.public_id,
+        user: {
+          _id: user._id,
+          username: user.username,
+          profileImage: user.profileImage,
+          profileImagePublicId: user.profileImagePublicId,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Server error", error: error.message });
+    }
+  },
+);
 // PUT - Update user with Cloudinary image upload
-router.put("/:id", upload.single('profileImage'), async (req, res) => {
+router.put("/:id", upload.single("profileImage"), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -296,13 +310,15 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
     if (req.file) {
       try {
         const result = await uploadToCloudinary(req.file.buffer, {
-          folder: 'profile_images',
+          folder: "profile_images",
           public_id: `profile_${user.username}_${Date.now()}`,
           overwrite: false,
-          transformation: [{ width: 500, height: 500, crop: 'limit' }]
+          transformation: [{ width: 500, height: 500, crop: "limit" }],
         });
         if (!result?.secure_url || !result.public_id) {
-          throw new Error('Cloudinary did not return a profile image URL and ID.');
+          throw new Error(
+            "Cloudinary did not return a profile image URL and ID.",
+          );
         }
 
         updates.profileImage = result.secure_url;
@@ -310,7 +326,7 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
       } catch (cloudinaryError) {
         return res.status(500).json({
           error: "Failed to upload image to Cloudinary",
-          details: cloudinaryError.message
+          details: cloudinaryError.message,
         });
       }
     }
@@ -321,8 +337,8 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
       {
         new: true,
         runValidators: false,
-        lean: false
-      }
+        lean: false,
+      },
     );
 
     if (!updatedUser) {
@@ -337,7 +353,7 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
       try {
         await deleteFromCloudinary(user.profileImagePublicId);
       } catch (error) {
-        console.error('Failed to delete previous profile image:', error);
+        console.error("Failed to delete previous profile image:", error);
       }
     }
 
@@ -345,7 +361,7 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
     await createActivityLog({
       userId: actor.userId,
       username: actor.username || updatedUser.username,
-      role: actor.role || updatedUser.role,
+      role: actor.role || "Admin",
       action: "Update user",
       module: "Employee Management",
       description: `User "${updatedUser.username}" was updated.`,
@@ -355,11 +371,10 @@ router.put("/:id", upload.single('profileImage'), async (req, res) => {
     delete userResponse.password;
 
     return res.status(200).json(userResponse);
-
   } catch (err) {
     return res.status(400).json({
       error: "Failed to update user details.",
-      details: err.message
+      details: err.message,
     });
   }
 });
@@ -369,11 +384,7 @@ router.patch("/:id", async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true }
-    );
+    const user = await User.findByIdAndUpdate(id, { status }, { new: true });
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -405,8 +416,7 @@ router.delete("/:id", async (req, res) => {
     if (user.profileImagePublicId) {
       try {
         await deleteFromCloudinary(user.profileImagePublicId);
-      } catch (error) {
-      }
+      } catch (error) {}
     }
 
     const actor = getActor(req);
@@ -426,14 +436,13 @@ router.delete("/:id", async (req, res) => {
 });
 // POST - Change password
 router.post("/change-password", async (req, res) => {
-  
   try {
     const { username, oldPassword, newPassword } = req.body;
 
     if (!username || !oldPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        error: "Missing required fields."
+        error: "Missing required fields.",
       });
     }
 
@@ -442,7 +451,7 @@ router.post("/change-password", async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "Password validation failed",
-        details: validation.errors
+        details: validation.errors,
       });
     }
 
@@ -451,7 +460,7 @@ router.post("/change-password", async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: "User not found."
+        error: "User not found.",
       });
     }
 
@@ -460,7 +469,7 @@ router.post("/change-password", async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        error: "Current password is incorrect."
+        error: "Current password is incorrect.",
       });
     }
 
@@ -470,13 +479,13 @@ router.post("/change-password", async (req, res) => {
     const updatedUser = await User.findOneAndUpdate(
       { username: username },
       { $set: { password: hashedPassword } },
-      { new: true, runValidators: false }
+      { new: true, runValidators: false },
     );
-    
+
     if (!updatedUser) {
       return res.status(500).json({
         success: false,
-        error: "Failed to update password."
+        error: "Failed to update password.",
       });
     }
 
@@ -487,19 +496,18 @@ router.post("/change-password", async (req, res) => {
       action: "Change password",
       module: "Security",
       description: `${user.role || "User"} "${user.username}" changed their password.`,
-    }).catch(err => console.error("Log error:", err));
+    }).catch((err) => console.error("Log error:", err));
 
     return res.status(200).json({
       success: true,
       message: "Password updated successfully!",
-      strength: validation.strength
+      strength: validation.strength,
     });
-
   } catch (err) {
     console.error("Change password error:", err);
     return res.status(500).json({
       success: false,
-      error: err.message || "Internal server error."
+      error: err.message || "Internal server error.",
     });
   }
 });
@@ -514,7 +522,9 @@ router.post("/forgot-password", async (req, res) => {
   try {
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ error: "No account found with this email address." });
+      return res
+        .status(404)
+        .json({ error: "No account found with this email address." });
     }
 
     const newPassword = generateRandomPassword();
@@ -525,13 +535,13 @@ router.post("/forgot-password", async (req, res) => {
     const updatedUser = await User.findOneAndUpdate(
       { _id: user._id, password: user.password },
       { $set: { password: hashedPassword } },
-      { new: true, runValidators: false }
+      { new: true, runValidators: false },
     );
-    
+
     if (!updatedUser) {
       return res.status(500).json({
         success: false,
-        error: "Failed to update password."
+        error: "Failed to update password.",
       });
     }
     const mailOptions = {
@@ -608,21 +618,24 @@ router.post("/forgot-password", async (req, res) => {
       const rollbackResult = await User.findOneAndUpdate(
         { _id: user._id, password: hashedPassword },
         { $set: { password: user.password } },
-        { new: true, runValidators: false }
+        { new: true, runValidators: false },
       );
 
       if (!rollbackResult) {
         console.error(
-          `Could not restore the previous password after reset email delivery failed for user ${user._id}.`
+          `Could not restore the previous password after reset email delivery failed for user ${user._id}.`,
         );
       }
 
-      console.error("Forgot password email delivery failed:", emailResult.error);
+      console.error(
+        "Forgot password email delivery failed:",
+        emailResult.error,
+      );
       return res.status(502).json({
         success: false,
         error: rollbackResult
           ? "Unable to send the reset email. Your password was not changed. Please try again later."
-          : "Unable to confirm the reset email or restore your previous password. Please contact support."
+          : "Unable to confirm the reset email or restore your previous password. Please contact support.",
       });
     }
 
@@ -633,18 +646,18 @@ router.post("/forgot-password", async (req, res) => {
       action: "Reset password",
       module: "Security",
       description: `${user.role} "${user.username}" had their password reset.`,
-    }).catch(err => console.error("Log error:", err));
+    }).catch((err) => console.error("Log error:", err));
 
     res.json({
       success: true,
       message: "A new password has been sent to your email address.",
-      email: user.email
+      email: user.email,
     });
-
   } catch (err) {
     console.error("Forgot password error:", err);
     res.status(500).json({
-      error: "Failed to process password reset request. Please try again later."
+      error:
+        "Failed to process password reset request. Please try again later.",
     });
   }
 });
@@ -659,14 +672,16 @@ router.post("/verify-email", async (req, res) => {
   try {
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ error: "No account found with this email address." });
+      return res
+        .status(404)
+        .json({ error: "No account found with this email address." });
     }
 
     res.json({
       exists: true,
       email: user.email,
       username: user.username,
-      fullName: user.fullName
+      fullName: user.fullName,
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to verify email address." });
@@ -712,6 +727,5 @@ router.put("/:id/image", async (req, res) => {
     res.status(400).json({ error: "Failed to update profile image" });
   }
 });
-
 
 export default router;

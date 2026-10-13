@@ -86,7 +86,11 @@ const UsersAccessControl = () => {
 
   const handleEmployeeFieldChange = (name, inputValue) => {
     const formatName =
-      name === "phoneNumber" ? "mobile" : name === "fullName" ? "ownerName" : name;
+      name === "phoneNumber"
+        ? "mobile"
+        : name === "fullName"
+          ? "ownerName"
+          : name;
     const value = formatFieldInput(formatName, inputValue);
     setFormData((prev) => ({ ...prev, [name]: value }));
     setTouchedFields((prev) => ({ ...prev, [name]: true }));
@@ -175,7 +179,10 @@ const UsersAccessControl = () => {
     const email = formatFieldInput("email", formData.email).trim();
     const phoneNumber = formData.phoneNumber.trim();
     const phoneNumberWithCountryCode = phoneNumber
-      ? formatInternationalPhone(formData.phoneCountryCode || "+63", phoneNumber)
+      ? formatInternationalPhone(
+          formData.phoneCountryCode || "+63",
+          phoneNumber,
+        )
       : "";
 
     setIsSaving(true);
@@ -204,7 +211,14 @@ const UsersAccessControl = () => {
       const response = await axios.post(
         `${API_URL}/api/usersAccessControlPage`,
         fd,
-        { headers: { "Content-Type": "multipart/form-data" } },
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            "X-Username": localStorage.getItem("username") || "",
+            "X-User-Id": localStorage.getItem("userId") || "",
+            "X-Role": localStorage.getItem("role") || "Admin",
+          },
+        },
       );
 
       const { user: createdUser, emailSent } = response.data;
@@ -277,6 +291,9 @@ const UsersAccessControl = () => {
         {
           headers: {
             "Content-Type": "multipart/form-data",
+            "X-Username": localStorage.getItem("username") || "",
+            "X-User-Id": localStorage.getItem("userId") || "",
+            "X-Role": localStorage.getItem("role") || "Admin",
           },
         },
       );
@@ -740,44 +757,62 @@ const UsersAccessControl = () => {
                   <div className="form-title">
                     <p className="label">Personal Information</p>
                   </div>
-                  <input
-                    type="text"
-                    placeholder="Full Name *"
-                    value={formData.fullName || ""}
-                    className={fieldErrors.fullName ? "input-error" : ""}
-                    onChange={(e) =>
-                      handleEmployeeFieldChange("fullName", e.target.value)
-                    }
-                    onBlur={(e) =>
-                      handleEmployeeFieldBlur("fullName", e.target.value)
-                    }
-                    disabled={!isEditing && activeModal === "viewProfile"}
-                  />
-                  {touchedFields.fullName && fieldErrors.fullName && (
-                    <div className="inline-error-message">
-                      {fieldErrors.fullName}
-                    </div>
-                  )}
-                  <input
-                    type="text"
-                    placeholder="Address"
-                    value={formData.address || ""}
-                    className={fieldErrors.address ? "input-error" : ""}
-                    onChange={(e) =>
-                      handleEmployeeFieldChange("address", e.target.value)
-                    }
-                    onBlur={(e) =>
-                      handleEmployeeFieldBlur("address", e.target.value)
-                    }
-                    disabled={!isEditing && activeModal === "viewProfile"}
-                  />
-                  {touchedFields.address && fieldErrors.address && (
-                    <div className="inline-error-message">
-                      {fieldErrors.address}
-                    </div>
-                  )}
-                  {activeModal === "addEmployee" || isEditing ? (
-                    <div className="employee-phone-field">
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="employee-full-name">
+                      Full Name
+                    </label>
+                    <input
+                      id="employee-full-name"
+                      type="text"
+                      placeholder="Full name"
+                      value={formData.fullName || ""}
+                      className={fieldErrors.fullName ? "input-error" : ""}
+                      onChange={(e) =>
+                        handleEmployeeFieldChange("fullName", e.target.value)
+                      }
+                      onBlur={(e) =>
+                        handleEmployeeFieldBlur("fullName", e.target.value)
+                      }
+                      disabled={!isEditing && activeModal === "viewProfile"}
+                    />
+                    {touchedFields.fullName && fieldErrors.fullName && (
+                      <div className="inline-error-message">
+                        {fieldErrors.fullName}
+                      </div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="employee-address">
+                      Address
+                    </label>
+                    <input
+                      id="employee-address"
+                      type="text"
+                      placeholder="City, Province"
+                      value={formData.address || ""}
+                      className={fieldErrors.address ? "input-error" : ""}
+                      onChange={(e) =>
+                        handleEmployeeFieldChange("address", e.target.value)
+                      }
+                      onBlur={(e) =>
+                        handleEmployeeFieldBlur("address", e.target.value)
+                      }
+                      disabled={!isEditing && activeModal === "viewProfile"}
+                    />
+                    {touchedFields.address && fieldErrors.address && (
+                      <div className="inline-error-message">
+                        {fieldErrors.address}
+                      </div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label
+                      className="field-label"
+                      htmlFor="employee-phone-number"
+                    >
+                      Phone
+                    </label>
+                    {activeModal === "addEmployee" || isEditing ? (
                       <div className="employee-phone-input">
                         <select
                           aria-label="Mobile country code"
@@ -820,86 +855,101 @@ const UsersAccessControl = () => {
                           required={activeModal === "addEmployee"}
                         />
                       </div>
-                      {touchedFields.phoneNumber &&
-                        fieldErrors.phoneNumber && (
-                          <div className="inline-error-message">
-                            {fieldErrors.phoneNumber}
-                          </div>
-                        )}
-                    </div>
-                  ) : (
+                    ) : (
+                      <input
+                        id="employee-phone-number"
+                        type="text"
+                        placeholder="Phone Number"
+                        value={formData.phoneNumber || ""}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            phoneNumber: formatFieldInput(
+                              "mobile",
+                              e.target.value,
+                            ),
+                          })
+                        }
+                        disabled={!isEditing && activeModal === "viewProfile"}
+                      />
+                    )}
+                    {touchedFields.phoneNumber && fieldErrors.phoneNumber && (
+                      <div className="inline-error-message">
+                        {fieldErrors.phoneNumber}
+                      </div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="employee-email">
+                      Email
+                    </label>
                     <input
-                      type="text"
-                      placeholder="Phone Number"
-                      value={formData.phoneNumber || ""}
+                      id="employee-email"
+                      type="email"
+                      placeholder="example@gmail.com"
+                      value={formData.email || ""}
+                      className={fieldErrors.email ? "input-error" : ""}
                       onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          phoneNumber: formatFieldInput("mobile", e.target.value),
-                        })
+                        handleEmployeeFieldChange("email", e.target.value)
+                      }
+                      onBlur={(e) =>
+                        handleEmployeeFieldBlur("email", e.target.value)
+                      }
+                      autoComplete={
+                        activeModal === "addEmployee" ? "email" : undefined
+                      }
+                      maxLength={
+                        activeModal === "addEmployee"
+                          ? FIELD_MAX_LENGTHS.email
+                          : undefined
                       }
                       disabled={!isEditing && activeModal === "viewProfile"}
                     />
-                  )}
-                  <input
-                    type="email"
-                    placeholder={
-                      activeModal === "addEmployee"
-                        ? "example@gmail.com"
-                        : "Email"
-                    }
-                    value={formData.email || ""}
-                    className={fieldErrors.email ? "input-error" : ""}
-                    onChange={(e) =>
-                      handleEmployeeFieldChange("email", e.target.value)
-                    }
-                    onBlur={(e) =>
-                      handleEmployeeFieldBlur("email", e.target.value)
-                    }
-                    autoComplete={
-                      activeModal === "addEmployee" ? "email" : undefined
-                    }
-                    maxLength={
-                      activeModal === "addEmployee"
-                        ? FIELD_MAX_LENGTHS.email
-                        : undefined
-                    }
-                    disabled={!isEditing && activeModal === "viewProfile"}
-                  />
-                  {touchedFields.email && fieldErrors.email && (
-                    <div className="inline-error-message">
-                      {fieldErrors.email}
-                    </div>
-                  )}
-
-                  <select
-                    className={`role-selection ${fieldErrors.role ? "input-error" : ""}`}
-                    value={formData.role || ""}
-                    onChange={(e) =>
-                      handleEmployeeFieldChange("role", e.target.value)
-                    }
-                    onBlur={(e) =>
-                      handleEmployeeFieldBlur("role", e.target.value)
-                    }
-                    disabled={!isEditing && activeModal === "viewProfile"}
-                  >
-                    <option value="">Select Role *</option>
-                    <option value="Admin">Admin</option>
-                    <option value="Staff">Staff</option>
-                    <option value="Driver">Driver</option>
-                  </select>
-                  {touchedFields.role && fieldErrors.role && (
-                    <div className="inline-error-message">
-                      {fieldErrors.role}
-                    </div>
-                  )}
+                    {touchedFields.email && fieldErrors.email && (
+                      <div className="inline-error-message">
+                        {fieldErrors.email}
+                      </div>
+                    )}
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="employee-role">
+                      Role
+                    </label>
+                    <select
+                      id="employee-role"
+                      className={`role-selection ${fieldErrors.role ? "input-error" : ""}`}
+                      value={formData.role || ""}
+                      onChange={(e) =>
+                        handleEmployeeFieldChange("role", e.target.value)
+                      }
+                      onBlur={(e) =>
+                        handleEmployeeFieldBlur("role", e.target.value)
+                      }
+                      disabled={!isEditing && activeModal === "viewProfile"}
+                    >
+                      <option value="">Select Role *</option>
+                      <option value="Admin">Admin</option>
+                      <option value="Staff">Staff</option>
+                      <option value="Driver">Driver</option>
+                    </select>
+                    {touchedFields.role && fieldErrors.role && (
+                      <div className="inline-error-message">
+                        {fieldErrors.role}
+                      </div>
+                    )}
+                  </div>
 
                   {formData._id && formData.employeeId && (
-                    <div className="employee-form">
-                      <div className="form-title">
-                        <p className="label">Employee ID</p>
-                      </div>
-                      <input type="text" value={formData.employeeId} disabled />
+                    <div className="field-group">
+                      <label className="field-label" htmlFor="employee-id">
+                        Employee ID
+                      </label>
+                      <input
+                        id="employee-id"
+                        type="text"
+                        value={formData.employeeId}
+                        disabled
+                      />
                     </div>
                   )}
 

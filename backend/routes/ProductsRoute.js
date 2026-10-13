@@ -2,6 +2,7 @@
 import express from "express";
 import Product from "../models/Product.js";
 import Batch from "../models/Batch.js";
+import createActivityLog from "../utils/createActivityLogs.js";
 const router = express.Router();
 
 // GET all inventory items with their batches
@@ -317,6 +318,27 @@ router.put("/updatePrices", async (req, res) => {
       itemCode: p.itemCode, 
       price: p.price 
     })));
+
+    if (validUpdates.length > 0) {
+      const actor = req.actor || {};
+      const changedPrices = validUpdates
+        .slice(0, 10)
+        .map((product) => `${product.name} (${product.itemCode}): ${product.price}`)
+        .join("; ");
+      const remainingCount = validUpdates.length - 10;
+
+      await createActivityLog({
+        userId: actor.userId || null,
+        username:
+          actor.username && actor.username !== "Unknown"
+            ? actor.username
+            : "Admin",
+        role: actor.role && actor.role !== "Unknown" ? actor.role : "Admin",
+        action: "Set supply prices",
+        module: "Inventory",
+        description: `Prices were set for ${validUpdates.length} ${validUpdates.length === 1 ? "supply" : "supplies"}: ${changedPrices}${remainingCount > 0 ? `; and ${remainingCount} more` : ""}.`,
+      });
+    }
     
     res.status(200).json({ 
       message: "Prices updated successfully",

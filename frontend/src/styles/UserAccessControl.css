@@ -227,6 +227,34 @@
   gap: 15px;
 }
 
+.employee-modal-overlay .employee-modal-body .employee-form > .field-group {
+  width: 100%;
+  min-width: 0;
+}
+
+.employee-modal-overlay
+  .employee-modal-body
+  .employee-form
+  > .field-group
+  > input,
+.employee-modal-overlay
+  .employee-modal-body
+  .employee-form
+  > .field-group
+  > select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.employee-modal-overlay
+  .employee-modal-body
+  .employee-form
+  > .field-group
+  > .employee-phone-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .employee-modal-body .employee-form .form-title {
   border-bottom: 1px solid #dcdcdc;
   border-left: 4px solid #f4b400;

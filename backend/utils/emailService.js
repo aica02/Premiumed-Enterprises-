@@ -14,8 +14,12 @@ const brevo = new BrevoClient({
 export const sendEmailWithRetry = async (mailOptions, retries = 3) => {
   for (let i = 0; i < retries; i++) {
     try {
-      const response = await brevo.transactionalEmails.sendTransacEmail(mailOptions);
-      return { success: true, messageId: response?.messageId || response?.messageIds };
+      const response =
+        await brevo.transactionalEmails.sendTransacEmail(mailOptions);
+      return {
+        success: true,
+        messageId: response?.messageId || response?.messageIds,
+      };
     } catch (error) {
       console.error(`Email attempt ${i + 1} failed:`, error.message);
       if (i === retries - 1) {
@@ -27,7 +31,11 @@ export const sendEmailWithRetry = async (mailOptions, retries = 3) => {
   return { success: false, error: "All retry attempts failed" };
 };
 
-export const sendOrderStatusUpdate = async (orderData, clientEmail, newStatus) => {
+export const sendOrderStatusUpdate = async (
+  orderData,
+  clientEmail,
+  newStatus,
+) => {
   try {
     const statusMessages = {
       RETURNED:
@@ -40,7 +48,8 @@ export const sendOrderStatusUpdate = async (orderData, clientEmail, newStatus) =
     };
 
     let statusMessage =
-      statusMessages[newStatus] || `Your order status has been updated to: ${newStatus}`;
+      statusMessages[newStatus] ||
+      `Your order status has been updated to: ${newStatus}`;
     let dateChangeInfo = "";
 
     if (newStatus === "RETURNED" && (orderData.oldDate || orderData.newDate)) {
@@ -70,13 +79,16 @@ export const sendOrderStatusUpdate = async (orderData, clientEmail, newStatus) =
     }
 
     const totalItems = orderData.items
-      ? orderData.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
+      ? orderData.items.reduce(
+          (sum, item) => sum + (Number(item.quantity) || 0),
+          0,
+        )
       : 0;
 
     const totalDelivered = orderData.items
       ? orderData.items.reduce(
           (sum, item) => sum + (Number(item.deliveredQuantity) || 0),
-          0
+          0,
         )
       : 0;
 
@@ -308,7 +320,7 @@ export const sendDepositSlipToAccountant = async (
   orderData,
   depositSlipBuffer,
   originalFilename,
-  accountantEmail
+  accountantEmail,
 ) => {
   try {
     if (!accountantEmail || !accountantEmail.includes("@")) {
@@ -381,7 +393,7 @@ export const sendDepositSlipToAccountant = async (
             rejectToken,
             rejectTokenExpiry: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3), // 3 days
           },
-        }
+        },
       );
     } catch (persistErr) {
       console.error("Failed to persist reject token:", persistErr.message);
@@ -397,12 +409,12 @@ export const sendDepositSlipToAccountant = async (
         email: process.env.SYSTEM_EMAIL,
       },
       to: [{ email: accountantEmail }],
-      subject: `Deposit Slip Uploaded - Order #${orderData.orderNumber || orderData.orderId || orderData._id}`,
+      subject: `Payment Slip Uploaded - Order #${orderData.orderNumber || orderData.orderId || orderData._id}`,
       textContent: `
 PREMIUMED ENTERPRISES
-DEPOSIT SLIP SUBMISSION
+PAYMENT SLIP SUBMISSION
 
-A deposit slip has been uploaded for the following order:
+A payment slip has been uploaded for the following order:
 
 Order Number: ${orderData.orderNumber || orderData.orderId || orderData._id}
 Client Name: ${orderData.customerName || orderData.name || "N/A"}
@@ -419,9 +431,9 @@ Total: ₱${(orderData.total || totalAmount).toFixed(2)}
 Delivery Address: ${orderData.deliveryAddress || orderData.shippingAddress || "N/A"}
 Contact: ${orderData.contactNumber || orderData.procurementMobile || "N/A"}
 
-The deposit slip is attached to this email. Please verify and process accordingly.
+The payment slip is attached to this email. Please verify and process accordingly.
 
-If the deposit slip is invalid, you can reject it here:
+If the payment slip is invalid, you can reject it here:
 ${rejectUrl}
 
 -----------------------------------------
@@ -434,7 +446,7 @@ ${new Date().getFullYear()}
           <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Deposit Slip Uploaded - Premiumed Enterprises</title>
+            <title>Payment Slip Uploaded - Premiumed Enterprises</title>
           </head>
 
           <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
@@ -449,11 +461,11 @@ ${new Date().getFullYear()}
 
               <div style="padding: 35px;">
                 <h2 style="margin-top: 0; margin-bottom: 25px; color: #222222; font-size: 22px;">
-                  Deposit Slip Submission
+                  Payment Slip Submission
                 </h2>
 
                 <p style="font-size: 15px; line-height: 1.6;">
-                  A deposit slip has been uploaded for the following order:
+                  A payment slip has been uploaded for the following order:
                 </p>
 
                 <div style="margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
@@ -543,7 +555,7 @@ ${new Date().getFullYear()}
                 <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
                   <p style="margin: 0; font-size: 14px; line-height: 1.5;">
                     <strong>Important:</strong>
-                    The deposit slip is attached to this email.
+                    The payment slip is attached to this email.
                     Please verify and process accordingly.
                   </p>
                 </div>
@@ -563,7 +575,7 @@ ${new Date().getFullYear()}
                       border-radius: 4px;
                     "
                   >
-                    Reject Deposit Slip
+                    Reject Payment Slip
                   </a>
                 </div>
 
@@ -594,21 +606,25 @@ ${new Date().getFullYear()}
 
     return await sendEmailWithRetry(mailOptions);
   } catch (error) {
-    console.error("Error sending deposit slip to accountant:", error);
+    console.error("Error sending payment slip to accountant:", error);
     return { success: false, error: error.message };
   }
 };
 
-export const getDepositSlipRejectedEmail = ({ username, orderId, actionUrl }) => {
+export const getDepositSlipRejectedEmail = ({
+  username,
+  orderId,
+  actionUrl,
+}) => {
   return {
-    subject: `Deposit Slip Rejected - Order #${orderId}`,
+    subject: `Payment Slip Rejected - Order #${orderId}`,
     html: `
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Deposit Slip Rejected - Premiumed Enterprises</title>
+          <title>Payment Slip Rejected - Premiumed Enterprises</title>
         </head>
 
         <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
@@ -623,7 +639,7 @@ export const getDepositSlipRejectedEmail = ({ username, orderId, actionUrl }) =>
 
             <div style="padding: 35px;">
               <h2 style="margin-top: 0; margin-bottom: 25px; color: #b8251e; font-size: 22px;">
-                Deposit Slip Rejected
+                Payment Slip Rejected
               </h2>
 
               <p style="font-size: 15px; line-height: 1.6;">
@@ -631,7 +647,7 @@ export const getDepositSlipRejectedEmail = ({ username, orderId, actionUrl }) =>
               </p>
 
               <p style="font-size: 15px; line-height: 1.6;">
-                Your submitted deposit slip for order
+                Your submitted payment slip for order
                 <strong>#${orderId}</strong>
                 was verified and could not be accepted.
               </p>
@@ -660,14 +676,14 @@ export const getDepositSlipRejectedEmail = ({ username, orderId, actionUrl }) =>
                   <strong>Important:</strong>
                   Your payment status has been reset to
                   <strong>PENDING</strong>.
-                  Please re-upload a valid deposit slip to complete your transaction.
+                  Please re-upload a valid payment slip to complete your transaction.
                 </p>
               </div>
 
               <!-- ACTION BUTTON -->
               <div style="margin: 30px 0; text-align: center;">
                 <a
-                  href="${actionUrl || '#'}"
+                  href="${actionUrl || "#"}"
                   style="
                     display: inline-block;
                     padding: 14px 28px;
@@ -679,7 +695,7 @@ export const getDepositSlipRejectedEmail = ({ username, orderId, actionUrl }) =>
                     border-radius: 4px;
                   "
                 >
-                  Re-upload Deposit Slip
+                  Re-upload Payment Slip
                 </a>
               </div>
 
@@ -814,7 +830,7 @@ Subtotal: ₱${subtotal.toFixed(2)}
 Total: ₱${total.toFixed(2)}
 
 ------------------
-Thank you for your order! Kindly submit the Deposit Slip once you received this email.
+Thank you for your order! Kindly submit the Payment Slip once you received this email.
 
 Premiumed Enterprises
 ${new Date().getFullYear()}
@@ -936,8 +952,8 @@ ${new Date().getFullYear()}
                 <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
                   <p style="margin: 0; font-size: 14px; line-height: 1.5;">
                     <strong>Important:</strong>
-                    Kindly submit the Deposit Slip once you receive this email.
-                    Please ensure that the uploaded deposit slip is clear and readable.
+                    Kindly submit the Payment Slip once you receive this email.
+                    Please ensure that the uploaded payment slip is clear and readable.
                   </p>
                 </div>
                 <p style="font-size: 13px; color: #777777; line-height: 1.5;">
@@ -977,7 +993,7 @@ export const sendAccountApprovalEmail = async (
   username,
   password,
   centerName,
-  attachment = null
+  attachment = null,
 ) => {
   try {
     const mailOptions = {
@@ -1094,7 +1110,7 @@ export const sendEmployeeAccountEmail = async (
   password,
   fullName,
   role,
-  employeeId
+  employeeId,
 ) => {
   try {
     const mailOptions = {

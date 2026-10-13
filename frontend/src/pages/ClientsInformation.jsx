@@ -23,6 +23,7 @@ import {
   generateClientProfilePDF,
   generateClientDirectoryReport,
 } from "../utils/pdf/clientProfileReports";
+import logReportPrinted from "../utils/logReportPrinted";
 
 const ClientsInformation = () => {
   const [activeTab, setActiveTab] = useState("information");
@@ -298,6 +299,7 @@ const ClientsInformation = () => {
       logo,
       filename: `Clients Information Report.pdf`,
     });
+    void logReportPrinted("Client Information", "Client Management");
 
     toast.success(
       `Client Information Report generated successfully with ${data.length} record${
@@ -651,6 +653,10 @@ const ClientProfileModal = ({ client, onClose }) => {
       client: safeClient,
       filename: `Client-${safeClient.fullName}.pdf`,
     });
+    void logReportPrinted(
+      `Client Profile for ${safeClient.fullName}`,
+      "Client Management",
+    );
 
     toast.success(
       `Client-${safeClient.fullName} Report generated successfully.`,

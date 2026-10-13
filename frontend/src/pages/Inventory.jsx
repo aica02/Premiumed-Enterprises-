@@ -11,6 +11,7 @@ import axios from "axios";
 import { Toaster, toast } from "react-hot-toast";
 import logo from "../assets/Premiumed logo.png";
 import { generateInventoryReport } from "../utils/pdf/reportEngine";
+import logReportPrinted from "../utils/logReportPrinted";
 import { CATEGORIES } from "../components/Categories";
 import EmptyState from "../components/EmptyState";
 import PricingModal from "../components/PricingModal";
@@ -401,6 +402,10 @@ const Inventory = () => {
           ? "Disposed-Inventory-Report.pdf"
           : "Full-Inventory-Report.pdf",
     });
+    void logReportPrinted(
+      type === "disposed" ? "Disposed Inventory" : "Full Inventory",
+      "Inventory",
+    );
   };
 
   return (

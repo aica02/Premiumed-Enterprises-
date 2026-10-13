@@ -73,9 +73,17 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
     try {
       setSaving(true);
 
-      await axios.put(`${BACKEND_URL}/api/products/updatePrices`, {
-        prices: pricing,
-      });
+      await axios.put(
+        `${BACKEND_URL}/api/products/updatePrices`,
+        { prices: pricing },
+        {
+          headers: {
+            "X-Username": localStorage.getItem("username") || "",
+            "X-User-Id": localStorage.getItem("userId") || "",
+            "X-Role": localStorage.getItem("role") || "Admin",
+          },
+        },
+      );
 
       toast.success("Prices updated successfully.");
 

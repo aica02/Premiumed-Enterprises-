@@ -14,6 +14,7 @@ import { FaTimes } from "react-icons/fa";
 import ExcelJS from "exceljs";
 import "../styles/Dashboard.css";
 import EmptyState from "./EmptyState";
+import logReportPrinted from "../utils/logReportPrinted";
 
 import logo from "../assets/Premiumed logo.png";
 
@@ -619,6 +620,7 @@ const InventoryChart = () => {
     document.body.removeChild(anchor);
 
     window.URL.revokeObjectURL(url);
+    void logReportPrinted("Inventory Trends Excel", "Dashboard");
   };
 
   const toggleFilter = (filterName) => {

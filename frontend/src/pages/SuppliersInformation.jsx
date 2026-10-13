@@ -21,6 +21,7 @@ import { Toaster, toast } from "react-hot-toast";
 import logo from "../assets/Premiumed logo.png";
 import EmptyState from "../components/EmptyState";
 import { generateSupplyFilteredReport } from "../utils/pdf/SupplierInfoReportEngine";
+import logReportPrinted from "../utils/logReportPrinted";
 import {
   COUNTRY_CODES,
   FIELD_MAX_LENGTHS,
@@ -196,6 +197,7 @@ const SuppliersInformation = () => {
       filename: "Suppliers-Report.pdf",
       logo,
     });
+    void logReportPrinted("Suppliers", "Supplier Management");
 
     toast.success(
       `Generated Supplier Information Report with ${tableData.length} records`,
@@ -278,6 +280,7 @@ const SuppliersInformation = () => {
         reportType: "suppliers",
         filename: `Supplier Information.pdf`,
       });
+      void logReportPrinted("Filtered Suppliers", "Supplier Management");
       toast.success(
         `Generated Supplier Information Report with ${dataToPrint.length} records`,
       );
@@ -429,6 +432,7 @@ const SuppliersInformation = () => {
         logo,
         filename: `Supply Information.pdf`,
       });
+      void logReportPrinted("Filtered Purchase Batches", "Purchase Management");
 
       toast.success(
         `Generated Supply Purchase report with ${dataToPrint.length} records`,
@@ -1461,6 +1465,7 @@ const SuppliersInformation = () => {
                     <h4>Supplier Information</h4>
                   </div>
                   <InputItem
+                    placeholder="Full name"
                     label="Supplier Name"
                     name="name"
                     value={newSupplier.name}
@@ -1476,6 +1481,7 @@ const SuppliersInformation = () => {
                   />
 
                   <InputItem
+                    placeholder="City, Province"
                     label="Address"
                     name="address"
                     value={newSupplier.address}
@@ -1506,6 +1512,7 @@ const SuppliersInformation = () => {
                     <h4>Contact Person</h4>
                   </div>
                   <InputItem
+                    placeholder="Full name"
                     label="Full Name"
                     name="contact"
                     value={newSupplier.contact}
@@ -1581,6 +1588,7 @@ const SuppliersInformation = () => {
                     )}
                   </div>
                   <InputItem
+                    placeholder="City, Province"
                     label="Location"
                     name="location"
                     value={newSupplier.location}
@@ -1639,6 +1647,7 @@ const SuppliersInformation = () => {
                   />
                   {isEditing ? (
                     <InputItem
+                      placeholder="Full name"
                       label="Supplier Name"
                       name="name"
                       value={selectedSupplier.name}
@@ -1661,6 +1670,7 @@ const SuppliersInformation = () => {
                         readOnly
                       />
                       <InputItem
+                        placeholder="City, Province"
                         label="Location"
                         name="location"
                         value={selectedSupplier.location}
@@ -1707,6 +1717,7 @@ const SuppliersInformation = () => {
                   {isEditing ? (
                     <>
                       <InputItem
+                        placeholder="Full name"
                         label="Full Name"
                         name="contact"
                         value={selectedSupplier.contact}
@@ -1763,6 +1774,7 @@ const SuppliersInformation = () => {
                         )}
                       </div>
                       <InputItem
+                        placeholder="example@gmail.com"
                         label="Email"
                         name="email"
                         value={selectedSupplier.email}
@@ -1773,6 +1785,7 @@ const SuppliersInformation = () => {
                         error={supplierTouched.email && supplierErrors.email}
                       />
                       <InputItem
+                        placeholder="City, Province"
                         label="Address"
                         name="address"
                         value={selectedSupplier.address}
@@ -1788,6 +1801,7 @@ const SuppliersInformation = () => {
                   ) : (
                     <>
                       <DetailItem
+                        placeholder="Full name"
                         label="Full Name"
                         value={selectedSupplier.contact}
                       />

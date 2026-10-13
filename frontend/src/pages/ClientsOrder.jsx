@@ -22,6 +22,7 @@ import {
   generateOrderReceipt,
   generateFilteredReport,
 } from "../utils/pdf/reportEngine";
+import logReportPrinted from "../utils/logReportPrinted";
 
 const ClientsOrder = () => {
   const [activeModal, setActiveModal] = useState(null);
@@ -326,6 +327,7 @@ const ClientsOrder = () => {
       data: tableData,
       filename: `Order-${order.orderId}.pdf`,
     });
+    void logReportPrinted(`Order ${order.orderId}`, "Order Management");
     toast.success(`Print ${order.name} order successfully.`);
   };
 
@@ -360,6 +362,10 @@ const ClientsOrder = () => {
       data: tableData,
       filename: `Delivery-${selectedOrder.orderId}.pdf`,
     });
+    void logReportPrinted(
+      `Order receipt ${selectedOrder.orderId}`,
+      "Order Management",
+    );
     toast.success(`Print OR for ${selectedOrder.name} successfully.`);
   };
 
@@ -470,7 +476,7 @@ const ClientsOrder = () => {
     }
 
     generateFilteredReport({
-      title: `Filtered Orders Report`,
+      title: `Orders Report`,
       sectionTitle: filterDescription,
       companyName: "PREMIUMED ENTERPRISES",
       companyAddress:
@@ -482,8 +488,9 @@ const ClientsOrder = () => {
       columns: columns,
       data: tableData,
       logo,
-      filename: `Filtered-Orders-Report-${new Date().getTime()}.pdf`,
+      filename: `Orders-Report-${new Date().getTime()}.pdf`,
     });
+    void logReportPrinted("Orders", "Order Management");
 
     toast.success(
       `Generated report with ${filteredOrdersForReport.length} orders`,

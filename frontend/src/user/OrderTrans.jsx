@@ -172,7 +172,7 @@ export default function OrderTrans() {
         },
       );
 
-      toast.success("Deposit slip uploaded successfully!");
+      toast.success("Payment slip uploaded successfully!");
 
       if (response.data.order) {
         setSelectedOrder(response.data.order);
@@ -184,7 +184,7 @@ export default function OrderTrans() {
       console.error("Upload failed:", error);
 
       toast.error(
-        error.response?.data?.message || "Failed to upload deposit slip.",
+        error.response?.data?.message || "Failed to upload payment slip.",
       );
     } finally {
       setIsProcessing(false);
@@ -655,15 +655,15 @@ export default function OrderTrans() {
 
             <div className="receipt-divider" />
 
-            {/* Deposit slip rejected banner */}
+            {/* Payment slip rejected banner */}
             {hasDepositSlipRejected(selectedOrder) && (
               <div className="deposit-rejected-banner">
                 <FaExclamationCircle />
                 <div>
-                  <strong>Deposit Slip Rejected</strong>
+                  <strong>Payment Slip Rejected</strong>
                   <p>
-                    Your submitted deposit slip was reviewed and could not be
-                    accepted. Please upload a new, valid deposit slip to
+                    Your submitted payment slip was reviewed and could not be
+                    accepted. Please upload a new, valid payment slip to
                     continue.
                   </p>
                 </div>
@@ -677,11 +677,11 @@ export default function OrderTrans() {
                   let remarks = "";
 
                   if (hasDepositSlipSent(selectedOrder)) {
-                    remarks += "Deposit Slip: Sent to Accountant\n";
+                    remarks += "Payment Slip: Sent to Accountant\n";
                   } else if (hasDepositSlipRejected(selectedOrder)) {
-                    remarks += "Deposit Slip: REJECTED — please re-upload\n";
+                    remarks += "Payment Slip: REJECTED — please re-upload\n";
                   } else {
-                    remarks += "Deposit Slip: Not yet sent\n";
+                    remarks += "Payment Slip: Not yet sent\n";
                   }
 
                   if (
@@ -795,7 +795,7 @@ export default function OrderTrans() {
               </div>
             )}
 
-            {/* Deposit slip submit / re-upload button */}
+            {/* Payment slip submit / re-upload button */}
             {(() => {
               const sent = hasDepositSlipSent(selectedOrder);
               const rejected = hasDepositSlipRejected(selectedOrder);
@@ -810,12 +810,12 @@ export default function OrderTrans() {
                     : "disabled";
 
               const buttonLabel = sent
-                ? "DEPOSIT SLIP SENT ✓"
+                ? "PAYMENT SLIP SENT ✓"
                 : rejected
-                  ? "RE-UPLOAD DEPOSIT SLIP"
+                  ? "RE-UPLOAD PAYMENT SLIP"
                   : isProcessing
                     ? "UPLOADING..."
-                    : "SUBMIT DEPOSIT SLIP";
+                    : "SUBMIT PAYMENT SLIP";
 
               const isDisabled =
                 sent || (!isToShip && !rejected) || isProcessing;
@@ -826,7 +826,7 @@ export default function OrderTrans() {
                   disabled={isDisabled}
                   onClick={() => {
                     if (sent) {
-                      toast.info("Deposit slip has already been sent");
+                      toast.info("Payment slip has already been sent");
                       return;
                     }
 
@@ -909,8 +909,8 @@ export default function OrderTrans() {
 
               {confirmAction === "UPLOAD_DEPOSIT_SLIP" &&
                 (hasDepositSlipRejected(depositSlipData?.order)
-                  ? "Re-upload Deposit Slip?"
-                  : "Send Deposit Slip?")}
+                  ? "Re-upload Payment Slip?"
+                  : "Send Payment Slip?")}
             </h3>
 
             <p className="confirm-modal-message">
@@ -926,8 +926,8 @@ export default function OrderTrans() {
                 <>
                   <span>
                     {hasDepositSlipRejected(depositSlipData?.order)
-                      ? "Are you sure you want to re-upload this deposit slip and send it to the accountant?"
-                      : "Are you sure you want to send this deposit slip to the accountant?"}
+                      ? "Are you sure you want to re-upload this payment slip and send it to the accountant?"
+                      : "Are you sure you want to send this payment slip to the accountant?"}
                   </span>
 
                   <strong className="confirm-file-name">

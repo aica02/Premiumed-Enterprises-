@@ -419,7 +419,7 @@ router.get("/reject-deposit", async (req, res) => {
         tone: "error",
         title: "This link is invalid or expired.",
         message:
-          "The deposit slip rejection has already been processed or the secure token is no longer valid.",
+          "The payment slip rejection has already been processed or the secure token is no longer valid.",
         url: fullUrl,
       }),
     );
@@ -498,21 +498,21 @@ router.get("/reject-deposit", async (req, res) => {
       renderDepositStatusPage({
         statusCode: 200,
         tone: "success",
-        title: "Deposit slip rejected successfully.",
+        title: "Payment slip rejected successfully.",
         message:
           "The payment record has been updated and the client has been notified.",
         url: fullUrl,
       }),
     );
   } catch (error) {
-    console.error("Reject deposit update failed:", error);
+    console.error("Reject payment slip update failed:", error);
     return res.status(500).send(
       renderDepositStatusPage({
         statusCode: 500,
         tone: "error",
         title: "Something went wrong.",
         message:
-          "We couldn't update the deposit record. Please try again or contact support.",
+          "We couldn't update the payment record. Please try again or contact support.",
         url: fullUrl,
       }),
     );
