@@ -278,13 +278,20 @@ const WarehouseMap = () => {
               />
             ))}
             {pallets.map((pallet) => {
+              const isSelected = selectedRack === pallet.id;
               const dynamicStatus = computeDynamicStatus(pallet.id, items);
               const tooltipText = getLocationTooltip(pallet.id, "Pallet");
 
               return (
                 <div
                   key={pallet.id}
-                  className={`warehouse-pallet ${dynamicStatus}`}
+                  className={`warehouse-pallet ${
+                    selectedRack
+                      ? isSelected
+                        ? dynamicStatus
+                        : "no-items"
+                      : dynamicStatus
+                  }`}
                   title={tooltipText}
                   role="button"
                   tabIndex={0}
