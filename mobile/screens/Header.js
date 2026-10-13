@@ -28,6 +28,7 @@ import {
   ScrollView,
 } from "react-native";
 import Sidebar from "./Sidebar";
+import { offlineFetch as fetch } from "../shared/offlineApi";
 import {
   validatePassword,
   getPasswordStrength,

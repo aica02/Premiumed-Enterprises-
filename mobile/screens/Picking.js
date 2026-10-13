@@ -26,7 +26,7 @@ import Sidebar from "./Sidebar";
 import Header from "./Header";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
-
+import { offlineFetch as fetch } from "../shared/offlineApi";
 
 export default function DeliveryList({ navigation }) {
   const [orders, setOrders] = useState([]);
@@ -40,6 +40,7 @@ export default function DeliveryList({ navigation }) {
   const [scanned, setScanned] = useState(false);
   const [completingOrder, setCompletingOrder] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
+  const [batchBlockedNotice, setBatchBlockedNotice] = useState(null);
   const [completionSuccess, setCompletionSuccess] = useState(null);
   const isProcessing = useRef(false);
   const [pickedCounts, setPickedCounts] = useState({});
@@ -51,8 +52,7 @@ export default function DeliveryList({ navigation }) {
   const [staffPosition, setStaffPosition] = useState("");
   const [userId, setUserId] = useState(null);
 
-  const { tables, labels, lines, areas, racks } = warehouseMapLayout;
-
+  const { tables, labels, lines, areas, pallets, racks } = warehouseMapLayout;
 
   const API_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/orders`;
   const INVENTORY_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage`;
@@ -195,7 +195,6 @@ export default function DeliveryList({ navigation }) {
   };
 
   const processScannedBarcode = (data) => {
-
     if (!selectedOrder || !inventory) {
       showScanAlert("Error", "Order or inventory data not available");
       resetScanner();
@@ -228,12 +227,22 @@ export default function DeliveryList({ navigation }) {
     }
 
     if (
+      scannedBatch.status === "pending" ||
       scannedBatch.status === "disposed" ||
+      scannedBatch.status === "for disposal" ||
       scannedBatch.status === "on-hold"
     ) {
-      showScanAlert("Batch Blocked", `Batch status is ${scannedBatch.status}.`, [
-        { text: "OK", onPress: resetScanner },
-      ]);
+      const reason =
+        scannedBatch.status === "pending"
+          ? "This supply has not been stored yet and cannot be picked."
+          : scannedBatch.status === "for disposal"
+            ? "This supply is marked for disposal and cannot be picked."
+          : `Batch status is ${scannedBatch.status}.`;
+      setBatchBlockedNotice({
+        batchCode: scannedBatch.batchCode,
+        status: scannedBatch.status,
+        message: reason,
+      });
       return;
     }
 
@@ -284,7 +293,15 @@ export default function DeliveryList({ navigation }) {
 
     const validBatches = foundItem.batches
       .filter((b) => {
-        if (!b || b.quantity <= 0 || b.status === "disposed") return false;
+        if (
+          !b ||
+          b.quantity <= 0 ||
+          b.status === "pending" ||
+          b.status === "disposed" ||
+          b.status === "for disposal"
+        ) {
+          return false;
+        }
 
         const pickedFromThisBatch = pickedCounts[b.batchCode] || 0;
         const remainingInBatch = b.quantity - pickedFromThisBatch;
@@ -445,7 +462,10 @@ export default function DeliveryList({ navigation }) {
 
         setPickedCounts({});
         await fetchData();
-        setCompletionSuccess({ emailSent: responseData.emailSent });
+        setCompletionSuccess({
+          emailSent: responseData.emailSent,
+          queued: responseData.queued,
+        });
       } else {
         const errData = await response.json();
         Alert.alert("Error", errData.message || "Failed to update inventory.");
@@ -508,6 +528,13 @@ export default function DeliveryList({ navigation }) {
       );
 
       if (response.ok) {
+        const result = await response.json();
+        if (result.queued) {
+          Alert.alert(
+            "Saved Offline",
+            "The order status update is saved on this device and will sync when you reconnect.",
+          );
+        }
         setModalVisible(false);
 
         if (newStatus === "APPROVED") {
@@ -636,6 +663,24 @@ export default function DeliveryList({ navigation }) {
               />
             ))}
 
+            {/* PALLETS */}
+            {pallets.map((pallet, index) => (
+              <View
+                key={`${pallet.id}-${index}`}
+                style={[
+                  warehouseMapStyles.rack,
+                  {
+                    top: pallet.top,
+                    left: pallet.left,
+                    width: pallet.width,
+                    height: pallet.height,
+                  },
+                ]}
+              >
+                <Text style={warehouseMapStyles.rackLabel}>{pallet.id}</Text>
+              </View>
+            ))}
+
             {/* RACKS */}
             {racks.map((rack, index) => {
               const rackStyle =
@@ -746,14 +791,33 @@ export default function DeliveryList({ navigation }) {
                   </Text>
                 </View>
                 <Text style={pickingStyles.itemsHeader}>Supplies</Text>
-                {selectedOrder?.items?.map((item, index) => (
-                  <View key={index} style={pickingStyles.itemRow}>
-                    <Text style={pickingStyles.itemName}>
-                      {item.name || item.itemName}
-                    </Text>
-                    <Text style={pickingStyles.itemQty}>x{item.quantity}</Text>
-                  </View>
-                ))}
+                {selectedOrder?.items?.map((item, index) => {
+                  const isBox =
+                    item.orderMode === "box" && item.quantityPerBox > 0;
+                  return (
+                    <View key={index} style={pickingStyles.itemRow}>
+                      <Text style={pickingStyles.itemName}>
+                        {item.name || item.itemName}
+                      </Text>
+                      <View style={{ alignItems: "flex-end" }}>
+                        {isBox ? (
+                          <>
+                            <Text style={pickingStyles.itemQty}>
+                              {item.boxes} box{item.boxes !== 1 ? "es" : ""}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: "#6B7280" }}>
+                              ({item.quantity} pcs)
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={pickingStyles.itemQty}>
+                            {item.quantity} Pcs.
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
               </ScrollView>
               <View style={pickingStyles.footerActions}>
                 <TouchableOpacity
@@ -922,51 +986,112 @@ export default function DeliveryList({ navigation }) {
             <View
               style={[
                 pickingStyles.feedbackCard,
-                scanFeedback.type === "fefo" && pickingStyles.feedbackCardWarning,
+                scanFeedback.type === "fefo" &&
+                  pickingStyles.feedbackCardWarning,
               ]}
             >
-            <View
-              style={[
-                pickingStyles.feedbackIcon,
-                scanFeedback.type === "fefo"
-                  ? pickingStyles.feedbackIconWarning
-                  : pickingStyles.feedbackIconSuccess,
-              ]}
-            >
-              {scanFeedback.type === "fefo" ? (
-                <AlertTriangle size={30} color="#B45309" />
-              ) : (
-                <CheckCircle size={32} color="#047857" />
-              )}
+              <View
+                style={[
+                  pickingStyles.feedbackIcon,
+                  scanFeedback.type === "fefo"
+                    ? pickingStyles.feedbackIconWarning
+                    : pickingStyles.feedbackIconSuccess,
+                ]}
+              >
+                {scanFeedback.type === "fefo" ? (
+                  <AlertTriangle size={30} color="#B45309" />
+                ) : (
+                  <CheckCircle size={32} color="#047857" />
+                )}
+              </View>
+
+              <Text style={pickingStyles.feedbackEyebrow}>PICKING ORDER</Text>
+              <Text style={pickingStyles.feedbackTitle}>
+                Pick the earliest expiry first
+              </Text>
+
+              <View style={pickingStyles.feedbackDetails}>
+                <Text style={pickingStyles.feedbackDetailLabel}>SCAN NEXT</Text>
+                <Text style={pickingStyles.feedbackBatchHighlight}>
+                  {scanFeedback.earliestBatch.batchCode}
+                </Text>
+                <Text style={pickingStyles.feedbackDetailText}>
+                  Expires{" "}
+                  {new Date(
+                    scanFeedback.earliestBatch.expirationDate,
+                  ).toLocaleDateString()}
+                </Text>
+                <Text style={pickingStyles.feedbackDetailTextMuted}>
+                  Batch {scanFeedback.scannedBatch.batchCode} should be picked
+                  later.
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  pickingStyles.feedbackButton,
+                  pickingStyles.feedbackButtonWarning,
+                ]}
+                onPress={closeScanFeedback}
+              >
+                <ScanLine size={18} color="#FFFFFF" />
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN CORRECT BATCH
+                </Text>
+              </TouchableOpacity>
             </View>
+          </View>
+        </Modal>
+      )}
 
-            <Text style={pickingStyles.feedbackEyebrow}>PICKING ORDER</Text>
-            <Text style={pickingStyles.feedbackTitle}>
-              Pick the earliest expiry first
-            </Text>
+      {batchBlockedNotice && (
+        <Modal
+          transparent
+          visible={Boolean(batchBlockedNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            setBatchBlockedNotice(null);
+            resetScanner();
+          }}
+        >
+          <View style={pickingStyles.putawayExpiredOverlay}>
+            <View style={pickingStyles.putawayExpiredCard}>
+              <View style={pickingStyles.putawayExpiredIcon}>
+                <AlertTriangle size={36} color="#B91C1C" />
+              </View>
+              <Text style={pickingStyles.putawayExpiredEyebrow}>
+                PICKING BLOCKED
+              </Text>
+              <Text style={pickingStyles.putawayExpiredTitle}>
+                Batch cannot be picked
+              </Text>
+              <Text style={pickingStyles.putawayExpiredMessage}>
+                {batchBlockedNotice.message}
+              </Text>
 
-            <View style={pickingStyles.feedbackDetails}>
-              <Text style={pickingStyles.feedbackDetailLabel}>SCAN NEXT</Text>
-              <Text style={pickingStyles.feedbackBatchHighlight}>
-                {scanFeedback.earliestBatch.batchCode}
-              </Text>
-              <Text style={pickingStyles.feedbackDetailText}>
-                Expires {new Date(scanFeedback.earliestBatch.expirationDate).toLocaleDateString()}
-              </Text>
-              <Text style={pickingStyles.feedbackDetailTextMuted}>
-                Batch {scanFeedback.scannedBatch.batchCode} should be picked later.
-              </Text>
-            </View>
+              <View style={pickingStyles.putawayExpiredDetails}>
+                <Text style={pickingStyles.putawayExpiredLabel}>BATCH</Text>
+                <Text style={pickingStyles.putawayExpiredBatchCode}>
+                  {batchBlockedNotice.batchCode}
+                </Text>
+                <Text style={pickingStyles.putawayExpiredLabel}>STATUS</Text>
+                <Text style={pickingStyles.putawayExpiredDate}>
+                  {batchBlockedNotice.status}
+                </Text>
+              </View>
 
-            <TouchableOpacity
-              style={[pickingStyles.feedbackButton, pickingStyles.feedbackButtonWarning]}
-              onPress={closeScanFeedback}
-            >
-              <ScanLine size={18} color="#FFFFFF" />
-              <Text style={pickingStyles.feedbackButtonText}>
-                SCAN CORRECT BATCH
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={pickingStyles.putawayExpiredButton}
+                onPress={() => {
+                  setBatchBlockedNotice(null);
+                  resetScanner();
+                }}
+              >
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN ANOTHER BATCH
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -982,54 +1107,66 @@ export default function DeliveryList({ navigation }) {
         >
           <View style={pickingStyles.completionSuccessOverlay}>
             <View style={pickingStyles.completionSuccessCard}>
-            <View style={pickingStyles.completionSuccessIcon}>
-              <CheckCircle size={38} color="#047857" />
-            </View>
-            <Text style={pickingStyles.completionSuccessEyebrow}>
-              PICKING COMPLETE
-            </Text>
-            <Text style={pickingStyles.completionSuccessTitle}>
-              Inventory successfully deducted
-            </Text>
-            <Text style={pickingStyles.completionSuccessMessage}>
-              The order has been moved to shipping and is ready for the next step.
-            </Text>
+              <View style={pickingStyles.completionSuccessIcon}>
+                <CheckCircle size={38} color="#047857" />
+              </View>
+              <Text style={pickingStyles.completionSuccessEyebrow}>
+                {completionSuccess.queued
+                  ? "PICKING QUEUED"
+                  : "PICKING COMPLETE"}
+              </Text>
+              <Text style={pickingStyles.completionSuccessTitle}>
+                {completionSuccess.queued
+                  ? "Waiting to sync"
+                  : "Inventory successfully deducted"}
+              </Text>
+              <Text style={pickingStyles.completionSuccessMessage}>
+                {completionSuccess.queued
+                  ? "The picking update is saved on this device. Inventory will be updated when you reconnect."
+                  : "The order has been moved to shipping and is ready for the next step."}
+              </Text>
 
-            <View style={pickingStyles.completionStatusRow}>
-              <View style={pickingStyles.completionStatusIcon}>
-                <CheckCircle size={19} color="#047857" />
+              <View style={pickingStyles.completionStatusRow}>
+                <View style={pickingStyles.completionStatusIcon}>
+                  <CheckCircle size={19} color="#047857" />
+                </View>
+                <View style={pickingStyles.completionStatusCopy}>
+                  <Text style={pickingStyles.completionStatusTitle}>
+                    Inventory updated
+                  </Text>
+                  <Text style={pickingStyles.completionStatusText}>
+                    Picked quantities have been deducted.
+                  </Text>
+                </View>
               </View>
-              <View style={pickingStyles.completionStatusCopy}>
-                <Text style={pickingStyles.completionStatusTitle}>
-                  Inventory updated
-                </Text>
-                <Text style={pickingStyles.completionStatusText}>
-                  Picked quantities have been deducted.
-                </Text>
+              <View style={pickingStyles.completionStatusRow}>
+                <View style={pickingStyles.completionStatusIcon}>
+                  <Truck size={19} color="#047857" />
+                </View>
+                <View style={pickingStyles.completionStatusCopy}>
+                  <Text style={pickingStyles.completionStatusTitle}>
+                    {completionSuccess.queued
+                      ? "Saved on this device"
+                      : "Moved to shipping"}
+                  </Text>
+                  <Text style={pickingStyles.completionStatusText}>
+                    {completionSuccess.queued
+                      ? "This change has not reached the server yet."
+                      : completionSuccess.emailSent
+                        ? "Receipt sent to the client."
+                        : "Shipping status updated successfully."}
+                  </Text>
+                </View>
               </View>
-            </View>
-            <View style={pickingStyles.completionStatusRow}>
-              <View style={pickingStyles.completionStatusIcon}>
-                <Truck size={19} color="#047857" />
-              </View>
-              <View style={pickingStyles.completionStatusCopy}>
-                <Text style={pickingStyles.completionStatusTitle}>
-                  Moved to shipping
-                </Text>
-                <Text style={pickingStyles.completionStatusText}>
-                  {completionSuccess.emailSent
-                    ? "Receipt sent to the client."
-                    : "Shipping status updated successfully."}
-                </Text>
-              </View>
-            </View>
 
-            <TouchableOpacity
-              style={pickingStyles.completionSuccessButton}
-              onPress={closeCompletionSuccess}
-            >
-              <Text style={pickingStyles.feedbackButtonText}>BACK TO ORDERS</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={pickingStyles.completionSuccessButton}
+                onPress={closeCompletionSuccess}
+              >
+                <Text style={pickingStyles.feedbackButtonText}>
+                  BACK TO ORDERS
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>

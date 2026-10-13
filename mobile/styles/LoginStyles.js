@@ -79,6 +79,25 @@ export const loginStyles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 10,
   },
+  loginErrorContainer: {
+    width: "100%",
+    backgroundColor: "#FEE2E2",
+    borderRadius: 5,
+    padding: 10,
+    marginBottom: 15,
+  },
+  loginFieldErrorText: {
+    width: "100%",
+    color: "#B91C1C",
+    fontSize: 12,
+    marginTop: -10,
+    marginBottom: 12,
+  },
+  loginErrorText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    textAlign: "center",
+  },
   loginButton: {
     backgroundColor: "#D4AF37",
     paddingVertical: 12,

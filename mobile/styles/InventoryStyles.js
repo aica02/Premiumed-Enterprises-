@@ -198,6 +198,14 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5E7EB",
   },
+  boxnreorder: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
   fieldErrorText: {
     color: "#B91C1C",
     fontSize: 11,
@@ -209,6 +217,7 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
+
   pickerContainer: {
     backgroundColor: "#F3F4F6",
     borderRadius: 8,

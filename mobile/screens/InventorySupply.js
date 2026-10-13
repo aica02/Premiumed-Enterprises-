@@ -20,7 +20,6 @@ import {
   PlusCircle,
   XCircle,
   Calendar,
-  Printer,
   CheckCircle,
   Package,
   Upload,
@@ -29,14 +28,27 @@ import {
   Info,
   AlertTriangle,
   Check,
+  Wifi,
+  WifiOff,
+  Printer,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
 
 import { CATEGORIES } from "../components/Categories";
 import { UNITTYPES } from "../components/UnitType";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
+import { offlineFetch as fetch } from "../shared/offlineApi";
+import { readJsonResponse } from "../shared/readJsonResponse";
+import {
+  autoConnectPrinter,
+  scanForPrinters,
+  connectToScannedPrinter,
+  printBarcodeTSPL,
+  stopPrinterScan,
+} from "../utils/PrinterService";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
@@ -45,6 +57,11 @@ const CLOUDINARY_UPLOAD_PRESET =
 const USER_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/login/profile`;
 const MAX_QUANTITY = 1000;
 const COUNTED_BATCH_STATUSES = ["stored", "for disposal"];
+const PPE_CATEGORY = "Personal Protective Equipment (PPE)";
+const INJECTION_SHARPS_CATEGORY = "Injection & Sharps Supplies";
+const INTRAVENOUS_FLUIDS_CATEGORY = "Intravenous Fluids & Solutions";
+const MEDICAL_KITS_CATEGORY = "Medical Kits";
+const KIT_INCLUSIONS_CATEGORY = "Kit Inclusions";
 
 export default function InventorySupply({
   navigation,
@@ -82,6 +99,11 @@ export default function InventorySupply({
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errorFeedback, setErrorFeedback] = useState(null);
   const [printQty, setPrintQty] = useState("1");
+  const [printerDevice, setPrinterDevice] = useState(null);
+  const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
+  const [availablePrinters, setAvailablePrinters] = useState([]);
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -97,11 +119,27 @@ export default function InventorySupply({
     category: "Cardiovascular & Emergency Medications",
     unitType: "Piece",
     quantity: "",
+    box: "",
     expirationDate: new Date(),
     location: "R1-A",
     supplierName: "Supplier A",
     reorderLevel: "50",
   });
+
+  useEffect(() => {
+    autoConnectPrinter(setPrinterStatus)
+      .then((device) => {
+        if (device) setPrinterDevice(device);
+      })
+      .catch((error) => {
+        console.error("Printer auto-connect failed:", error);
+        setPrinterStatus("Printer Disconnected");
+      });
+
+    return () => {
+      stopPrinterScan();
+    };
+  }, []);
 
   const getFefoStatus = (expirationDate) => {
     const today = new Date();
@@ -123,7 +161,7 @@ export default function InventorySupply({
     return { label: "Available", color: "#10B981", bg: "#D1FAE5" };
   };
 
-  const renderRackItems = () => {
+  const getSelectableLocations = (category) => {
     const occupiedLocations = new Set(
       batches
         .filter(
@@ -132,8 +170,8 @@ export default function InventorySupply({
         .map((batch) => batch.storageLocation),
     );
 
-    return [...warehouseMapLayout.racks]
-      .sort((firstRack, secondRack) => {
+    const racks = [...warehouseMapLayout.racks].sort(
+      (firstRack, secondRack) => {
         const [, firstNumber, firstSlot] = firstRack.id.match(/^R(\d+)-(.+)$/);
         const [, secondNumber, secondSlot] =
           secondRack.id.match(/^R(\d+)-(.+)$/);
@@ -141,14 +179,35 @@ export default function InventorySupply({
           Number(firstNumber) - Number(secondNumber) ||
           firstSlot.localeCompare(secondSlot)
         );
-      })
-      .map(({ id: location }) => {
-        if (!formData.itemCode && occupiedLocations.has(location)) {
-          return null;
-        }
-        return <Picker.Item key={location} label={location} value={location} />;
-      })
-      .filter(Boolean);
+      },
+    );
+    const palletPrefixes =
+      category === PPE_CATEGORY
+        ? ["P4"]
+        : category === INJECTION_SHARPS_CATEGORY
+          ? ["P3"]
+          : category === MEDICAL_KITS_CATEGORY
+            ? ["P1"]
+            : category === INTRAVENOUS_FLUIDS_CATEGORY
+              ? ["P2", "P5"]
+              : null;
+    const locations = palletPrefixes
+      ? warehouseMapLayout.pallets.filter(({ id }) =>
+          palletPrefixes.some((prefix) => id.startsWith(`${prefix}-`)),
+        )
+      : category === KIT_INCLUSIONS_CATEGORY
+        ? racks.filter(({ id }) => id.startsWith("R6-"))
+        : racks.filter(({ id }) => !id.startsWith("R6-"));
+
+    return locations.filter(
+      ({ id }) => formData.itemCode || !occupiedLocations.has(id),
+    );
+  };
+
+  const renderRackItems = () => {
+    return getSelectableLocations(formData.category).map(({ id }) => (
+      <Picker.Item key={id} label={id} value={id} />
+    ));
   };
 
   const getFilteredBatches = () => {
@@ -197,15 +256,10 @@ export default function InventorySupply({
 
     return processedBatches;
   };
-const uploadToCloudinary = async (imageUri, itemName) => {
-  try {
+
+  const uploadToCloudinary = async (imageUri, itemName) => {
     if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
-      console.error("Missing Cloudinary env vars", {
-        CLOUDINARY_CLOUD_NAME,
-        CLOUDINARY_UPLOAD_PRESET,
-      });
-      Alert.alert("Config Error", "Cloudinary environment variables are missing.");
-      return null;
+      throw new Error("Cloudinary environment variables are missing.");
     }
 
     const sanitizedName = itemName
@@ -215,11 +269,10 @@ const uploadToCloudinary = async (imageUri, itemName) => {
       .replace(/^-|-$/g, "");
 
     const filename = `${sanitizedName}-${Date.now()}.jpg`;
-
     const compressed = await ImageManipulator.manipulateAsync(
       imageUri,
       [{ resize: { width: 800 } }],
-      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
     );
 
     let uri = compressed.uri;
@@ -241,57 +294,59 @@ const uploadToCloudinary = async (imageUri, itemName) => {
     formData.append("folder", "inventory-items");
 
     const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
-
-    const response = await fetch(url, {
+    const response = await globalThis.fetch(url, {
       method: "POST",
       body: formData,
     });
-
-    const text = await response.text();
-
+    const result = await readJsonResponse(response, "Cloudinary image upload");
     if (!response.ok) {
-      Alert.alert(
-        "Upload Failed",
-        `Cloudinary returned ${response.status}.\n${text.slice(0, 200)}`
+      throw new Error(
+        result?.error?.message ||
+          `Cloudinary returned HTTP ${response.status}.`,
       );
-      return null;
     }
+    if (!result?.secure_url) {
+      throw new Error("Cloudinary response did not include an image URL.");
+    }
+    return result.secure_url;
+  };
 
-    const result = JSON.parse(text);
-    return result.secure_url || null;
-  } catch (error) {
-    console.error("Cloudinary upload error:", error);
-    Alert.alert("Upload Error", String(error?.message || error));
-    return null;
-  }
-};
-
-  const pickImage = async () => {
+  const pickImage = async (onSelected = setImage) => {
     try {
-      const permissionResult =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert(
-          "Permission Required",
-          "Please grant camera roll permissions.",
-        );
-        return;
+      if (Platform.OS !== "android") {
+        const permissionResult =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permissionResult.granted) {
+          Alert.alert(
+            "Permission Required",
+            "Please grant camera roll permissions.",
+          );
+          return;
+        }
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
       if (!result.canceled) {
-        setImage({ uri: result.assets[0].uri });
+        const uri = result.assets?.[0]?.uri;
+        if (!uri) {
+          throw new Error("The image picker did not return an image.");
+        }
+        onSelected({ uri });
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to pick image");
+      console.error("Supply image picker failed:", error);
+      Alert.alert(
+        "Error",
+        error instanceof Error ? error.message : "Failed to pick image.",
+      );
     }
   };
 
-  const takePhoto = async () => {
+  const takePhoto = async (onSelected = setImage) => {
     try {
       const permissionResult =
         await ImagePicker.requestCameraPermissionsAsync();
@@ -304,20 +359,101 @@ const uploadToCloudinary = async (imageUri, itemName) => {
         aspect: [1, 1],
         quality: 0.8,
       });
-      if (!result.canceled) {
-        setImage({ uri: result.assets[0].uri });
+      const selectedAsset = result.assets?.[0];
+      if (!result.canceled && selectedAsset?.uri) {
+        onSelected({ uri: selectedAsset.uri });
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to take photo");
+      console.error("Camera capture failed:", error);
+      Alert.alert(
+        "Unable to Take Photo",
+        error?.message || "Failed to take photo.",
+      );
     }
   };
 
-  const showImageOptions = () => {
+  const showImageOptions = (onSelected = setImage) => {
     Alert.alert("Select Image", "Choose an option", [
       { text: "Cancel", style: "cancel" },
-      { text: "Take Photo", onPress: takePhoto },
-      { text: "Choose from Gallery", onPress: pickImage },
+      { text: "Take Photo", onPress: () => takePhoto(onSelected) },
+      { text: "Choose from Gallery", onPress: () => pickImage(onSelected) },
     ]);
+  };
+
+  const saveBatchModalImage = async (selectedImage) => {
+    if (!selectedItem?.itemCode || uploading) return;
+
+    try {
+      const network = await NetInfo.fetch();
+      if (!network.isConnected || network.isInternetReachable === false) {
+        Alert.alert(
+          "Internet Required",
+          "Connect to the internet to upload and save the product photo.",
+        );
+        return;
+      }
+
+      setUploading(true);
+      const imageUrl = await uploadToCloudinary(
+        selectedImage.uri,
+        selectedItem.name,
+      );
+      if (!imageUrl) return;
+
+      const token = await AsyncStorage.getItem("userToken");
+      const storedUserId = await AsyncStorage.getItem("userId");
+      const storedUsername = await AsyncStorage.getItem("username");
+      const storedRole = await AsyncStorage.getItem("userRole");
+      const response = await fetch(
+        `${BACKEND_URL}/api/inventoryPage/product/${encodeURIComponent(selectedItem.itemCode)}/image`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(storedUserId ? { "x-user-id": storedUserId } : {}),
+            ...(storedUsername ? { "x-username": storedUsername } : {}),
+            ...(storedRole ? { "x-role": storedRole } : {}),
+          },
+          body: JSON.stringify({ itemImage: imageUrl }),
+        },
+      );
+      const result = await readJsonResponse(response, "Product photo update");
+      if (!response.ok) {
+        throw new Error(
+          result?.message ||
+            `Product photo update returned HTTP ${response.status}.`,
+        );
+      }
+
+      const updatedItem = {
+        ...selectedItem,
+        itemImage: result?.product?.itemImage || imageUrl,
+      };
+      setSelectedItem(updatedItem);
+      setItems((currentItems) =>
+        currentItems.map((item) =>
+          item.itemCode === updatedItem.itemCode
+            ? { ...item, itemImage: updatedItem.itemImage }
+            : item,
+        ),
+      );
+      if (!result?.queued) await fetchItems();
+      Alert.alert(
+        result?.queued ? "Photo Saved Offline" : "Photo Updated",
+        result?.queued
+          ? "The new product photo is queued and will sync when the connection is restored."
+          : "The product photo has been updated.",
+      );
+    } catch (error) {
+      console.error("Product photo update failed:", error);
+      Alert.alert(
+        "Photo Update Failed",
+        error.message || "Unable to update the product photo.",
+      );
+    } finally {
+      setUploading(false);
+    }
   };
 
   const resetForm = () => {
@@ -327,6 +463,7 @@ const uploadToCloudinary = async (imageUri, itemName) => {
       category: "Cardiovascular & Emergency Medications",
       unitType: "Piece",
       quantity: "",
+      box: "",
       expirationDate: new Date(),
       location: "R1-A",
       supplierName: "Supplier A",
@@ -339,15 +476,21 @@ const uploadToCloudinary = async (imageUri, itemName) => {
 
   const handleSaveItem = () => {
     const errors = {};
-    if (!formData.itemCode && !formData.itemName.trim()) {
+    const isRestock = !!formData.itemCode;
+
+    if (!isRestock && !formData.itemName.trim()) {
       errors.itemName = "Supply name is required.";
     }
     if (!formData.category) errors.category = "Category is required.";
     if (!formData.unitType) errors.unitType = "Unit type is required.";
-    if (!formData.quantity) {
-      errors.quantity = "Quantity is required.";
+
+    if (!isRestock && !formData.quantity) {
+      errors.quantity = "Quantity per box is required.";
     }
-    if (!formData.reorderLevel) {
+
+    if (!formData.box) errors.box = "Box is required.";
+
+    if (!isRestock && !formData.reorderLevel) {
       errors.reorderLevel = "Reorder level is required.";
     }
     if (!formData.location) errors.location = "Storage location is required.";
@@ -358,11 +501,31 @@ const uploadToCloudinary = async (imageUri, itemName) => {
       return;
     }
 
-    const quantity = Number(formData.quantity);
-    if (!Number.isFinite(quantity) || quantity <= 0) {
-      setFieldErrors({ quantity: "Quantity must be greater than 0." });
+    const box = Number(formData.box);
+    if (!Number.isFinite(box) || box <= 0) {
+      setFieldErrors({ box: "Box must be greater than 0." });
       return;
     }
+
+    let unitsPerBox = 0;
+    if (isRestock) {
+      const existingItem = items.find((i) => i.itemCode === formData.itemCode);
+      unitsPerBox = Number(existingItem?.quantityPerBox) || 0;
+      if (unitsPerBox <= 0) {
+        setFieldErrors({
+          quantity: "Item has no quantity per box configured.",
+        });
+        return;
+      }
+    } else {
+      unitsPerBox = Number(formData.quantity);
+      if (!Number.isFinite(unitsPerBox) || unitsPerBox <= 0) {
+        setFieldErrors({ quantity: "Quantity must be greater than 0." });
+        return;
+      }
+    }
+
+    const totalUnits = unitsPerBox * box;
 
     const existingQuantity = batches
       .filter(
@@ -373,7 +536,7 @@ const uploadToCloudinary = async (imageUri, itemName) => {
       .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
     const availableQuantity = Math.max(MAX_QUANTITY - existingQuantity, 0);
 
-    if (quantity > availableQuantity) {
+    if (totalUnits > availableQuantity) {
       setQuantityError(
         `Only ${availableQuantity} quantity is available to be stored.`,
       );
@@ -382,22 +545,24 @@ const uploadToCloudinary = async (imageUri, itemName) => {
 
     setQuantityError("");
 
-    if (Number(formData.reorderLevel) < 0) {
+    if (!isRestock && Number(formData.reorderLevel) < 0) {
       setFieldErrors({ reorderLevel: "Reorder level cannot be negative." });
       return;
     }
 
     setFieldErrors({});
-    // Close the input modal and show the confirmation modal
     setShowAddModal(false);
     setShowConfirmModal(true);
   };
 
   const handleQuantityChange = (value) => {
     setFormData({ ...formData, quantity: value });
-
-    const quantity = Number(value);
     setFieldErrors((prev) => ({ ...prev, quantity: "" }));
+
+    const unitsPerBox = Number(value);
+    const box = Number(formData.box) || 0;
+    const totalUnits = unitsPerBox * box;
+
     const existingQuantity = batches
       .filter(
         (batch) =>
@@ -408,10 +573,121 @@ const uploadToCloudinary = async (imageUri, itemName) => {
     const availableQuantity = Math.max(MAX_QUANTITY - existingQuantity, 0);
 
     setQuantityError(
-      value && Number.isFinite(quantity) && quantity > availableQuantity
+      value && Number.isFinite(unitsPerBox) && totalUnits > availableQuantity
         ? `Only ${availableQuantity} quantity is available to be stored.`
         : "",
     );
+  };
+
+  const handleBoxChange = (value) => {
+    setFormData({ ...formData, box: value });
+    setFieldErrors((prev) => ({ ...prev, box: "" }));
+
+    const box = Number(value);
+    const unitsPerBox = Number(formData.quantity) || 0;
+    const totalUnits = box * unitsPerBox;
+
+    const existingQuantity = batches
+      .filter(
+        (batch) =>
+          batch.itemCode === formData.itemCode &&
+          COUNTED_BATCH_STATUSES.includes(batch.status),
+      )
+      .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
+    const availableQuantity = Math.max(MAX_QUANTITY - existingQuantity, 0);
+
+    setQuantityError(
+      value && Number.isFinite(box) && totalUnits > availableQuantity
+        ? `Only ${availableQuantity} quantity is available to be stored.`
+        : "",
+    );
+  };
+
+  const handleScanPrinters = async () => {
+    setAvailablePrinters([]);
+    setShowPrinterModal(true);
+    try {
+      const scanStarted = await scanForPrinters((device) => {
+        setAvailablePrinters((current) => {
+          if (current.some((printer) => printer.id === device.id)) {
+            return current;
+          }
+          return [...current, device];
+        });
+      });
+      if (!scanStarted) {
+        setShowPrinterModal(false);
+        Alert.alert(
+          "Bluetooth Permission Required",
+          "Allow Bluetooth permissions to scan for label printers.",
+        );
+      }
+    } catch (error) {
+      console.error("Printer scan failed:", error);
+      setShowPrinterModal(false);
+      Alert.alert(
+        "Printer Scan Failed",
+        error.message || "Unable to scan for printers.",
+      );
+    }
+  };
+
+  const handleSelectPrinter = async (device) => {
+    try {
+      setPrinterStatus("Connecting...");
+      const connectedDevice = await connectToScannedPrinter(device);
+      setPrinterDevice(connectedDevice);
+      setPrinterStatus(`Connected to ${device.name || "Xprinter"}`);
+      setShowPrinterModal(false);
+    } catch (error) {
+      console.error("Printer connection failed:", error);
+      setPrinterStatus("Disconnected");
+      Alert.alert(
+        "Connection Error",
+        error.message || "Could not connect to printer.",
+      );
+    }
+  };
+
+  const handlePrintLabel = async () => {
+    const quantity = Number(printQty);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      Alert.alert(
+        "Invalid Quantity",
+        "Enter a positive whole number of labels.",
+      );
+      return;
+    }
+    if (!restockSuccessData?.batchCode) {
+      Alert.alert(
+        "Batch Not Ready",
+        "A batch code is required before printing.",
+      );
+      return;
+    }
+    if (!printerDevice) {
+      Alert.alert("No Printer", "Please connect your Xprinter first.", [
+        { text: "Connect Printer", onPress: handleScanPrinters },
+        { text: "Cancel", style: "cancel" },
+      ]);
+      return;
+    }
+
+    try {
+      setIsPrinting(true);
+      await printBarcodeTSPL(
+        printerDevice,
+        restockSuccessData.batchCode,
+        restockSuccessData.itemName,
+        restockSuccessData.expirationDate,
+        quantity,
+      );
+      Alert.alert("Success", "Sent to Xprinter!");
+    } catch (error) {
+      Alert.alert("Print Error", error.message || "Failed to print barcode.");
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   const performSave = async () => {
@@ -463,7 +739,7 @@ const uploadToCloudinary = async (imageUri, itemName) => {
         category: formData.category,
         unitType: formData.unitType,
         supplierName: formData.supplierName || "Unknown",
-        quantity: String(Number(formData.quantity)),
+        box: String(Number(formData.box)),
         reorderLevel: String(Number(formData.reorderLevel)),
         expirationDate: formData.expirationDate.toISOString(),
         storageLocation: formData.location,
@@ -472,6 +748,10 @@ const uploadToCloudinary = async (imageUri, itemName) => {
         role: storedRole,
         price: 0,
       };
+
+      if (!formData.itemCode) {
+        payload.quantity = String(Number(formData.quantity));
+      }
 
       if (formData.itemCode) {
         payload.itemCode = formData.itemCode;
@@ -498,26 +778,37 @@ const uploadToCloudinary = async (imageUri, itemName) => {
       const result = await res.json();
 
       if (res.ok) {
+        const queued = Boolean(result.queued);
         setUploadProgress(100);
+        setShowConfirmModal(false);
         setShowAddModal(false);
         setRestockSuccessData({
           itemName: formData.itemName,
-          batchCode: result.batch?.batchCode || "GEN-001",
-          quantity: formData.quantity,
+          batchCode: queued ? null : result.batch?.batchCode,
+          expirationDate:
+            result.batch?.expirationDate ||
+            formData.expirationDate.toISOString(),
+          quantity: result.batch?.quantity ?? formData.quantity,
           imageUrl: imageUrl,
+          queued,
+          imageNotSynced: queued && Boolean(image?.uri && !imageUrl),
         });
         setShowSuccessModal(true);
         resetForm();
         await fetchItems();
         await fetchBatches();
       } else {
+        setShowConfirmModal(false);
         setErrorFeedback({
           title: "Unable to save inventory",
-          message: result.message || "Save failed. Please review the details and try again.",
+          message:
+            result.message ||
+            "Save failed. Please review the details and try again.",
         });
       }
     } catch (err) {
       console.error("Save error:", err);
+      setShowConfirmModal(false);
       setErrorFeedback({
         title: "Connection error",
         message: "Please check your connection and try again.",
@@ -615,9 +906,11 @@ const uploadToCloudinary = async (imageUri, itemName) => {
               itemName: item.name,
               category: item.category,
               unitType: item.unitType,
+              quantity: String(item.quantityPerBox ?? ""),
               reorderLevel: String(item.reorderLevel),
               supplierName: item.supplierName,
               location: latestLocation,
+              box: "",
             });
             if (item.itemImage) {
               setImage({ uri: item.itemImage });
@@ -637,6 +930,49 @@ const uploadToCloudinary = async (imageUri, itemName) => {
 
   return (
     <>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          backgroundColor: "#1E293B",
+          padding: 10,
+          borderRadius: 8,
+          marginBottom: 10,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          {printerDevice ? (
+            <Wifi size={18} color="#10B981" />
+          ) : (
+            <WifiOff size={18} color="#EF4444" />
+          )}
+          <Text
+            style={{
+              color: "#FFF",
+              marginLeft: 8,
+              fontSize: 12,
+              fontWeight: "bold",
+            }}
+          >
+            {printerStatus}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={handleScanPrinters}
+          style={{
+            backgroundColor: "#D4AF37",
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 4,
+          }}
+        >
+          <Text style={{ color: "#FFF", fontSize: 11, fontWeight: "bold" }}>
+            {printerDevice ? "CHANGE PRINTER" : "CONNECT PRINTER"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
           <Search size={20} color="#D4AF37" />
@@ -670,7 +1006,51 @@ const uploadToCloudinary = async (imageUri, itemName) => {
           </Text>
         </View>
       )}
-
+      <Modal visible={showPrinterModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.batchModalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>SELECT XPRINTER</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  stopPrinterScan();
+                  setShowPrinterModal(false);
+                }}
+              >
+                <XCircle size={24} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ paddingVertical: 10 }}>
+              {availablePrinters.length === 0 ? (
+                <Text
+                  style={{ textAlign: "center", padding: 20, color: "#6B7280" }}
+                >
+                  Scanning for nearby Bluetooth printers...
+                </Text>
+              ) : (
+                availablePrinters.map((device) => (
+                  <TouchableOpacity
+                    key={device.id}
+                    style={{
+                      padding: 15,
+                      borderBottomWidth: 1,
+                      borderColor: "#EEE",
+                    }}
+                    onPress={() => handleSelectPrinter(device)}
+                  >
+                    <Text style={{ fontWeight: "bold", fontSize: 16 }}>
+                      {device.name || "Unknown Printer"}
+                    </Text>
+                    <Text style={{ color: "#888", fontSize: 12 }}>
+                      {device.id}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       {/* Add/Restock Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -728,7 +1108,9 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                     </Text>
                   )}
                   {fieldErrors.itemName ? (
-                    <Text style={styles.fieldErrorText}>{fieldErrors.itemName}</Text>
+                    <Text style={styles.fieldErrorText}>
+                      {fieldErrors.itemName}
+                    </Text>
                   ) : null}
                 </View>
 
@@ -751,7 +1133,9 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                           justifyContent: "center",
                         },
                       ]}
-                      onPress={formData.itemCode ? undefined : showImageOptions}
+                      onPress={
+                        formData.itemCode ? undefined : () => showImageOptions()
+                      }
                     >
                       <Image
                         source={{ uri: image.uri }}
@@ -777,7 +1161,9 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                           justifyContent: "center",
                         },
                       ]}
-                      onPress={formData.itemCode ? undefined : showImageOptions}
+                      onPress={
+                        formData.itemCode ? undefined : () => showImageOptions()
+                      }
                     >
                       <Upload size={20} color="#9CA3AF" />
                       <Text
@@ -787,7 +1173,7 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                           color: "#9CA3AF",
                         }}
                       >
-                        {formData.itemCode ? "Existing" : "Add"}
+                        {formData.itemCode ? "" : ""}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -809,9 +1195,18 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                 <Picker
                   enabled={!formData.itemCode}
                   selectedValue={formData.category}
-                  onValueChange={(v) =>
-                    setFormData({ ...formData, category: v })
-                  }
+                  onValueChange={(category) => {
+                    const availableLocations = getSelectableLocations(category);
+                    setFormData((current) => ({
+                      ...current,
+                      category,
+                      location: availableLocations.some(
+                        ({ id }) => id === current.location,
+                      )
+                        ? current.location
+                        : (availableLocations[0]?.id ?? ""),
+                    }));
+                  }}
                 >
                   <Picker.Item label="Select a Category" value="" />
                   {CATEGORIES.map((cat) => (
@@ -820,11 +1215,13 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                 </Picker>
               </View>
               {fieldErrors.category ? (
-                <Text style={styles.fieldErrorText}>{fieldErrors.category}</Text>
+                <Text style={styles.fieldErrorText}>
+                  {fieldErrors.category}
+                </Text>
               ) : null}
 
               <View style={styles.row}>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.label}>
                     Unit Type
                     {!formData.itemCode && (
@@ -850,46 +1247,64 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                     </Picker>
                   </View>
                   {fieldErrors.unitType ? (
-                    <Text style={styles.fieldErrorText}>{fieldErrors.unitType}</Text>
+                    <Text style={styles.fieldErrorText}>
+                      {fieldErrors.unitType}
+                    </Text>
                   ) : null}
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.label}>
-                    Quantity <Text style={{ color: "#EF4444" }}>*</Text>
+                    Box <Text style={{ color: "#EF4444" }}>*</Text>
                   </Text>
                   <TextInput
-                    style={styles.input}
+                    style={[
+                      styles.boxnreorder,
+                      { width: "100%", maxWidth: "100%" },
+                    ]}
                     keyboardType="numeric"
                     maxLength={4}
-                    value={formData.quantity}
-                    onChangeText={handleQuantityChange}
+                    value={formData.box}
+                    onChangeText={handleBoxChange}
                   />
-                  {fieldErrors.quantity || quantityError ? (
-                    <Text
-                      style={styles.fieldErrorText}
-                    >
-                      {fieldErrors.quantity || quantityError}
-                    </Text>
+                  {fieldErrors.box ? (
+                    <Text style={styles.fieldErrorText}>{fieldErrors.box}</Text>
                   ) : null}
                 </View>
               </View>
 
               <View style={styles.row}>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.label}>
-                    Expiration Date <Text style={{ color: "#EF4444" }}>*</Text>
+                    Quantity <Text style={{ color: "#EF4444" }}>*</Text>
                   </Text>
-                  <TouchableOpacity
-                    style={styles.dateSelector}
-                    onPress={() => setShowDatePicker(true)}
-                  >
-                    <Calendar size={20} color="#D4AF37" />
-                    <Text style={{ marginLeft: 10 }}>
-                      {formData.expirationDate.toDateString()}
+                  <TextInput
+                    style={[
+                      styles.input,
+                      formData.itemCode
+                        ? { backgroundColor: "#E5E7EB", color: "#6B7280" }
+                        : {},
+                    ]}
+                    keyboardType="numeric"
+                    maxLength={4}
+                    value={formData.quantity}
+                    editable={!formData.itemCode}
+                    onChangeText={handleQuantityChange}
+                  />
+                  {formData.itemCode && (
+                    <Text
+                      style={{ fontSize: 10, color: "#6B7280", marginTop: 2 }}
+                    >
+                      Units per box (locked)
                     </Text>
-                  </TouchableOpacity>
+                  )}
+                  {fieldErrors.quantity || quantityError ? (
+                    <Text style={styles.fieldErrorText}>
+                      {fieldErrors.quantity || quantityError}
+                    </Text>
+                  ) : null}
                 </View>
-                <View style={{ flex: 1 }}>
+
+                <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.label}>
                     Reorder Level
                     {!formData.itemCode && (
@@ -898,7 +1313,7 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                   </Text>
                   <TextInput
                     style={[
-                      styles.input,
+                      styles.boxnreorder,
                       formData.itemCode
                         ? { backgroundColor: "#E5E7EB", color: "#6B7280" }
                         : {},
@@ -910,9 +1325,26 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                     }
                   />
                   {fieldErrors.reorderLevel ? (
-                    <Text style={styles.fieldErrorText}>{fieldErrors.reorderLevel}</Text>
+                    <Text style={styles.fieldErrorText}>
+                      {fieldErrors.reorderLevel}
+                    </Text>
                   ) : null}
                 </View>
+              </View>
+
+              <View>
+                <Text style={styles.label}>
+                  Expiration Date <Text style={{ color: "#EF4444" }}>*</Text>
+                </Text>
+                <TouchableOpacity
+                  style={styles.dateSelector}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Calendar size={20} color="#D4AF37" />
+                  <Text style={{ marginLeft: 10 }}>
+                    {formData.expirationDate.toDateString()}
+                  </Text>
+                </TouchableOpacity>
               </View>
 
               {showDatePicker && (
@@ -920,12 +1352,18 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                   value={formData.expirationDate || new Date()}
                   mode="date"
                   display="default"
-                  onChange={(e, d) => {
-                    setShowDatePicker(false);
-                    if (d) {
-                      setFormData({ ...formData, expirationDate: d });
+                  onValueChange={(_, date) => {
+                    if (date) {
+                      setFormData((current) => ({
+                        ...current,
+                        expirationDate: date,
+                      }));
+                      if (Platform.OS === "android") {
+                        setShowDatePicker(false);
+                      }
                     }
                   }}
+                  onDismiss={() => setShowDatePicker(false)}
                 />
               )}
 
@@ -952,7 +1390,9 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                 </Picker>
               </View>
               {fieldErrors.location ? (
-                <Text style={styles.fieldErrorText}>{fieldErrors.location}</Text>
+                <Text style={styles.fieldErrorText}>
+                  {fieldErrors.location}
+                </Text>
               ) : null}
 
               <Text style={styles.label}>
@@ -985,7 +1425,9 @@ const uploadToCloudinary = async (imageUri, itemName) => {
                 </Picker>
               </View>
               {fieldErrors.supplierName ? (
-                <Text style={styles.fieldErrorText}>{fieldErrors.supplierName}</Text>
+                <Text style={styles.fieldErrorText}>
+                  {fieldErrors.supplierName}
+                </Text>
               ) : null}
 
               {uploading && (
@@ -1045,22 +1487,53 @@ const uploadToCloudinary = async (imageUri, itemName) => {
           <View style={styles.batchModalContainer}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                {selectedItem?.itemImage && (
-                  <Image
-                    source={{ uri: selectedItem.itemImage }}
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 6,
-                      marginRight: 10,
-                    }}
-                  />
-                )}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    selectedItem?.itemImage
+                      ? "Change product photo"
+                      : "Add product photo"
+                  }
+                  disabled={uploading}
+                  onPress={() => showImageOptions(saveBatchModalImage)}
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 6,
+                    marginRight: 10,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "#F3F4F6",
+                  }}
+                >
+                  {uploading ? (
+                    <ActivityIndicator color="#D4AF37" />
+                  ) : selectedItem?.itemImage ? (
+                    <Image
+                      source={{ uri: selectedItem.itemImage }}
+                      style={{ width: 48, height: 48, borderRadius: 6 }}
+                    />
+                  ) : (
+                    <Upload size={20} color="#9CA3AF" />
+                  )}
+                </TouchableOpacity>
                 <View>
                   <Text style={styles.modalSubTitle}>
                     ITEM CODE: {selectedItem?.itemCode}
                   </Text>
                   <Text style={styles.modalTitle}>{selectedItem?.name}</Text>
+                  <TouchableOpacity
+                    disabled={uploading}
+                    onPress={() => showImageOptions(saveBatchModalImage)}
+                  >
+                    <Text style={{ color: "#9A6700", fontSize: 12 }}>
+                      {uploading
+                        ? "Updating photo..."
+                        : selectedItem?.itemImage
+                          ? "Change photo"
+                          : "Add photo"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
               <TouchableOpacity onPress={() => setShowBatchModal(false)}>
@@ -1152,12 +1625,17 @@ const uploadToCloudinary = async (imageUri, itemName) => {
         </View>
       </Modal>
 
-      {/* confirmation modal */}
+      {/* Confirmation Modal */}
       <Modal
         visible={showConfirmModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowConfirmModal(false)}
+        onRequestClose={() => {
+          if (!uploading) {
+            setShowConfirmModal(false);
+            setShowAddModal(true);
+          }
+        }}
       >
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmModal}>
@@ -1175,10 +1653,12 @@ const uploadToCloudinary = async (imageUri, itemName) => {
 
               <TouchableOpacity
                 onPress={() => {
+                  if (uploading) return;
                   setShowConfirmModal(false);
                   setShowAddModal(true);
                 }}
                 style={styles.confirmClose}
+                disabled={uploading}
               >
                 <XCircle size={28} color="#EF4444" />
               </TouchableOpacity>
@@ -1214,10 +1694,15 @@ const uploadToCloudinary = async (imageUri, itemName) => {
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Quantity</Text>
+                <Text style={styles.detailLabel}>Quantity per Box</Text>
                 <Text style={styles.detailValue}>
                   {formData.quantity} {formData.unitType}
                 </Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Number of Boxes</Text>
+                <Text style={styles.detailValue}>{formData.box}</Text>
               </View>
 
               <View style={styles.detailRow}>
@@ -1268,6 +1753,40 @@ const uploadToCloudinary = async (imageUri, itemName) => {
               </View>
             </ScrollView>
 
+            {/* Upload Progress */}
+            {uploading && (
+              <View style={{ marginVertical: 10, paddingHorizontal: 20 }}>
+                <View
+                  style={{
+                    height: 4,
+                    backgroundColor: "#E5E7EB",
+                    borderRadius: 2,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: `${uploadProgress}%`,
+                      height: "100%",
+                      backgroundColor: "#D4AF37",
+                      borderRadius: 2,
+                    }}
+                  />
+                </View>
+                <Text
+                  style={{
+                    textAlign: "center",
+                    marginTop: 5,
+                    color: "#6B7280",
+                    fontSize: 12,
+                  }}
+                >
+                  {uploadProgress < 70
+                    ? "Uploading image..."
+                    : "Saving item..."}
+                </Text>
+              </View>
+            )}
+
             {/* Notice */}
             <View style={styles.confirmNotice}>
               <Info size={16} color="#D4AF37" />
@@ -1282,27 +1801,32 @@ const uploadToCloudinary = async (imageUri, itemName) => {
             {/* Buttons */}
             <View style={styles.confirmActions}>
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, uploading && { opacity: 0.5 }]}
                 onPress={() => {
+                  if (uploading) return;
                   setShowConfirmModal(false);
                   setShowAddModal(true);
                 }}
+                disabled={uploading}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.confirmButton}
-                onPress={() => {
-                  setShowConfirmModal(false);
-                  performSave();
-                }}
+                style={[styles.confirmButton, uploading && { opacity: 0.7 }]}
+                onPress={performSave}
+                disabled={uploading}
               >
-                <Check size={18} color="#FFFFFF" />
-
-                <Text style={styles.confirmButtonText}>
-                  {formData.itemCode ? "Yes, Restock" : "Yes, Add"}
-                </Text>
+                {uploading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Check size={18} color="#FFFFFF" />
+                    <Text style={styles.confirmButtonText}>
+                      {formData.itemCode ? "Yes, Restock" : "Yes, Add"}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1315,34 +1839,49 @@ const uploadToCloudinary = async (imageUri, itemName) => {
           <View style={styles.successModalContainer}>
             <CheckCircle size={60} color="#10B981" />
 
-            <Text style={styles.successTitle}>Save Successful!</Text>
+            <Text style={styles.successTitle}>
+              {restockSuccessData?.queued
+                ? "Saved Offline"
+                : "Save Successful!"}
+            </Text>
+            {restockSuccessData?.queued && (
+              <Text style={styles.detailValue}>
+                This inventory change will sync when you reconnect. The server
+                will assign the batch code after syncing.
+                {restockSuccessData?.imageNotSynced
+                  ? " The selected image was not uploaded and must be added after reconnecting."
+                  : ""}
+              </Text>
+            )}
 
-            <View
-              style={{
-                width: 220,
-                height: 100,
-                alignSelf: "center",
-                marginVertical: 10,
-              }}
-            >
-              <Image
-                source={{
-                  uri: `https://quickchart.io/barcode?text=${restockSuccessData?.batchCode}&type=code128&width=200&height=80`,
-                }}
-                style={{ width: 220, height: 80, alignSelf: "center" }}
-                resizeMode="contain"
-              />
-              <Text
+            {restockSuccessData?.batchCode && (
+              <View
                 style={{
+                  width: 220,
+                  height: 100,
                   alignSelf: "center",
-                  marginTop: -105,
-                  fontSize: 12,
-                  fontWeight: "bold",
+                  marginVertical: 10,
                 }}
               >
-                {restockSuccessData?.batchCode}
-              </Text>
-            </View>
+                <Image
+                  source={{
+                    uri: `https://quickchart.io/barcode?text=${restockSuccessData?.batchCode}&type=code128&width=200&height=80`,
+                  }}
+                  style={{ width: 220, height: 80, alignSelf: "center" }}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={{
+                    alignSelf: "center",
+                    marginTop: -105,
+                    fontSize: 12,
+                    fontWeight: "bold",
+                  }}
+                >
+                  {restockSuccessData?.batchCode}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.successDetailBox}>
               <Text style={styles.detailLabel}>
@@ -1354,7 +1893,7 @@ const uploadToCloudinary = async (imageUri, itemName) => {
               <Text style={styles.detailLabel}>
                 Batch Code:{" "}
                 <Text style={styles.detailValue}>
-                  {restockSuccessData?.batchCode}
+                  {restockSuccessData?.batchCode || "Assigned after sync"}
                 </Text>
               </Text>
               <Text style={styles.detailLabel}>
@@ -1365,28 +1904,34 @@ const uploadToCloudinary = async (imageUri, itemName) => {
               </Text>
             </View>
 
-            <View style={styles.printSection}>
-              <Text style={styles.printLabel}>Labels to print:</Text>
-              <TextInput
-                style={styles.printInput}
-                keyboardType="numeric"
-                value={printQty}
-                onChangeText={setPrintQty}
-              />
-            </View>
+            {!restockSuccessData?.queued && (
+              <View style={styles.printSection}>
+                <Text style={styles.printLabel}>Labels to print:</Text>
+                <TextInput
+                  style={styles.printInput}
+                  keyboardType="numeric"
+                  value={printQty}
+                  onChangeText={setPrintQty}
+                />
+              </View>
+            )}
 
-            <TouchableOpacity
-              style={[styles.saveBtn, styles.printButton]}
-              onPress={() => {
-                Alert.alert(
-                  "Print",
-                  `Printing ${printQty} label(s) for ${restockSuccessData?.batchCode}`,
-                );
-              }}
-            >
-              <Printer size={20} color="#FFF" style={styles.printIcon} />
-              <Text style={styles.saveBtnText}>PRINT LABELS</Text>
-            </TouchableOpacity>
+            {!restockSuccessData?.queued && (
+              <TouchableOpacity
+                style={[styles.saveBtn, styles.printButton]}
+                onPress={handlePrintLabel}
+                disabled={isPrinting}
+              >
+                {isPrinting ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <>
+                    <Printer size={20} color="#FFF" style={styles.printIcon} />
+                    <Text style={styles.saveBtnText}>PRINT LABELS</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               onPress={() => setShowSuccessModal(false)}

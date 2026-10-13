@@ -11,7 +11,7 @@ import {
 } from "lucide-react-native";
 import { pickingStyles } from "../styles/SidebarStyles";
 import { useNavigation } from "@react-navigation/native";
-import axios from "axios";
+import { offlineFetch } from "../shared/offlineApi";
 
 const API_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 
@@ -85,13 +85,13 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
     try {
       const token = await AsyncStorage.getItem("userToken");
 
-      const res = await axios.get(`${API_URL}/api/putaway/count`, {
+      const res = await offlineFetch(`${API_URL}/api/putaway/count`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
-      setUnstoredCount(res.data.count);
+      setUnstoredCount((await res.json()).count);
     } catch (error) {
       console.log("Error fetching unstored supplies:", error);
     }
@@ -101,13 +101,13 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
     try {
       const token = await AsyncStorage.getItem("userToken");
 
-      const res = await axios.get(`${API_URL}/api/putaway/disposeCount`, {
+      const res = await offlineFetch(`${API_URL}/api/putaway/disposeCount`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
-      setDisposeCount(res.data.count);
+      setDisposeCount((await res.json()).count);
     } catch (error) {
       console.log("Error fetching disposal count:", error);
     }

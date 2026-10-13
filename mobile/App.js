@@ -3,7 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import { Alert } from 'react-native';
+import * as Updates from 'expo-updates';
 // Screens
 import LoginScreen from './screens/LoginScreen';
 import DeliveryList from './screens/DeliveryList';
@@ -17,7 +18,6 @@ import Settings from './screens/Settings';
 // Offline Utilities & Components
 import { initDB } from './utils/db';
 import { useNetworkStatus } from './utils/useNetworkStatus';
-import { processSyncQueue } from './shared/syncService';
 import OfflineBanner from './components/offlineBanner';
 
 const Stack = createStackNavigator();
@@ -28,17 +28,54 @@ export default function App() {
   
   const isOnline = useNetworkStatus();
 
-  useEffect(() => {
-    initDB().catch((err) => console.error('Failed to init SQLite DB:', err));
-
-    checkLoginStatus();
-  }, []);
-
-  useEffect(() => {
-    if (isOnline) {
-      processSyncQueue();
+useEffect(() => {
+  const initialize = async () => {
+    try {
+      await initDB();
+      await checkLoginStatus();
+    } catch (err) {
+      console.error('Failed to initialize offline storage:', err);
+      setInitialRoute('Login');
+      setIsLoading(false);
     }
-  }, [isOnline]);
+  };
+
+  const checkForUpdates = async () => {
+    // Skip in development — expo-updates doesn't work in dev builds
+    if (__DEV__) return;
+
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+
+        Alert.alert(
+          'Update Ready',
+          'A new version has been downloaded. Restart now to apply it?',
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Restart',
+              onPress: async () => {
+                try {
+                  await Updates.reloadAsync();
+                } catch (e) {
+                  console.error('Reload failed:', e);
+                }
+              },
+            },
+          ],
+          { cancelable: true }
+        );
+      }
+    } catch (error) {
+      console.error('Update check failed:', error);
+    }
+  };
+
+  initialize();
+  checkForUpdates();
+}, []);
 
   const checkLoginStatus = async () => {
     try {

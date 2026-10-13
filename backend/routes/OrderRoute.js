@@ -508,11 +508,11 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
       description: `Order ${order.orderId} had a payment slip uploaded.${emailSent ? " Email sent to accountant." : " No email sent."}`,
     });
 
-    try {
-      fs.unlinkSync(req.file.path);
-    } catch (cleanupError) {
-      console.error("Error cleaning up file:", cleanupError);
-    }
+    // try {
+    //   fs.unlinkSync(req.file.path);
+    // } catch (cleanupError) {
+    //   console.error("Error cleaning up file:", cleanupError);
+    // }
 
     res.json({
       success: true,
@@ -772,51 +772,55 @@ router.patch("/:orderId/status", async (req, res) => {
 
     // Handle TO SHIP (existing logic with accountant email)
     if (status === "TO SHIP") {
-      let emailSent = false;
-      let emailError = null;
+  let emailSent = false;
+  let emailError = null;
 
-      if (order.paymentSlip) {
-        try {
-          const settings = await Settings.findOne();
-          const accountantEmail = settings?.accountantEmail;
+  if (order.paymentSlip) {
+    try {
+      const settings = await Settings.findOne();
+      const accountantEmail = settings?.accountantEmail;
 
-          if (accountantEmail) {
-            const slipPath = path.join(__dirname, "..", order.paymentSlip);
-            if (fs.existsSync(slipPath)) {
-              const fileBuffer = fs.readFileSync(slipPath);
-              const fileName = path.basename(order.paymentSlip);
+      if (accountantEmail) {
+        // Fix: paymentSlip is like "/uploads/1234-file.pdf"
+        // Strip leading slash and join with cwd
+        const relativePath = order.paymentSlip.replace(/^\/+/, "");
+        const slipPath = path.join(process.cwd(), relativePath);
+        
+        console.log(`[TO SHIP] Looking for slip at: ${slipPath}`);
+        
+        if (fs.existsSync(slipPath)) {
+          const fileBuffer = fs.readFileSync(slipPath);
+          const fileName = path.basename(order.paymentSlip);
 
-              const emailResult = await sendDepositSlipToAccountant(
-                order,
-                fileBuffer,
-                fileName,
-                accountantEmail,
-              );
+          const emailResult = await sendDepositSlipToAccountant(
+            order,
+            fileBuffer,
+            fileName,
+            accountantEmail,
+          );
 
-              if (emailResult.success) {
-                emailSent = true;
-                order.notes = order.notes
-                  ? `${order.notes} | Deposit slip sent to accountant.`
-                  : "Deposit slip sent to accountant.";
-              } else {
-                emailError = emailResult.error;
-                console.error(
-                  "Failed to send email to accountant:",
-                  emailError,
-                );
-              }
-            } else {
-              console.warn(`Payment slip file not found at path: ${slipPath}`);
-            }
+          if (emailResult.success) {
+            emailSent = true;
+            order.notes = order.notes
+              ? `${order.notes} | Deposit slip sent to accountant.`
+              : "Deposit slip sent to accountant.";
           } else {
-            console.warn("Accountant email not configured in settings");
+            emailError = emailResult.error;
+            console.error("Failed to send email to accountant:", emailError);
           }
-        } catch (emailError) {
-          console.error("Error in email sending process:", emailError);
-          emailError = emailError.message;
+        } else {
+          emailError = `Payment slip file not found at: ${slipPath}`;
+          console.error(emailError);
         }
+      } else {
+        emailError = "Accountant email not configured in settings";
+        console.warn(emailError);
       }
-
+    } catch (emailError) {
+      console.error("Error in email sending process:", emailError);
+      emailError = emailError.message;
+    }
+  }
       await createActivityLog({
         userId: actor.userId,
         username: actor.username,

@@ -14,12 +14,16 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Eye, EyeOff, XCircle } from "lucide-react-native";
 import { loginStyles } from "../styles/LoginStyles";
+import { offlineFetch as fetch } from "../shared/offlineApi";
 
 const API_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 
 export default function LoginScreen({ navigation }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [usernameError, setUsernameError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -48,8 +52,19 @@ export default function LoginScreen({ navigation }) {
   };
 
   const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert("Error", "Please fill in all fields");
+    setUsernameError("");
+    setPasswordError("");
+    setLoginNotice("");
+
+    if (!username.trim()) {
+      setUsernameError("Please enter your username.");
+    }
+
+    if (!password.trim()) {
+      setPasswordError("Please enter your password.");
+    }
+
+    if (!username.trim() || !password.trim()) {
       return;
     }
 
@@ -84,6 +99,20 @@ export default function LoginScreen({ navigation }) {
       const data = await response.json();
 
       if (data.success) {
+        if (data.status !== "Active") {
+          setLoginNotice(
+            "Account has been deactivated. Please contact the admin.",
+          );
+          return;
+        }
+
+        if (data.role !== "Staff" && data.role !== "Driver") {
+          setLoginNotice(
+            "Your account does not have permission to use the mobile app. Please contact an administrator.",
+          );
+          return;
+        }
+
         await AsyncStorage.setItem("userToken", data.token);
         await AsyncStorage.setItem("userRole", data.role);
         await AsyncStorage.setItem("username", data.username);
@@ -94,24 +123,19 @@ export default function LoginScreen({ navigation }) {
           await AsyncStorage.setItem("status", data.status);
         }
 
-        if (data.role === "Staff" && data.status === "Active") {
+        if (data.role === "Staff") {
           navigation.replace("Picking");
-        } else if (data.role === "Driver" && data.status === "Active") {
+        } else if (data.role === "Driver") {
           navigation.replace("DeliveryList");
-        } else {
-          console.error(
-            "Unknown role or inactive status:",
-            data.role,
-            data.status,
-          );
-
-          Alert.alert(
-            "Error",
-            "Invalid user role or Deactivated account. Please contact admin for support.",
-          );
         }
       } else {
-        Alert.alert("Login Failed", data.message || "Invalid credentials");
+        if (data.code === "USERNAME_NOT_FOUND") {
+          setUsernameError("Incorrect username. Please try again");
+        } else if (data.code === "INCORRECT_PASSWORD") {
+          setPasswordError("Incorrect password. Please try again.");
+        } else {
+          setLoginNotice(data.message || "Unable to log in. Please try again.");
+        }
       }
     } catch (error) {
       console.error("Error name:", error.name);
@@ -247,16 +271,37 @@ export default function LoginScreen({ navigation }) {
 
           <Text style={loginStyles.loginHeader}>LOG IN</Text>
 
+          {loginNotice ? (
+            <View
+              style={loginStyles.loginErrorContainer}
+              accessibilityRole="alert"
+            >
+              <Text style={loginStyles.loginErrorText}>{loginNotice}</Text>
+            </View>
+          ) : null}
+
           <TextInput
             style={loginStyles.input}
             placeholder="Username"
             placeholderTextColor="#999"
             value={username}
-            onChangeText={setUsername}
+            onChangeText={(value) => {
+              setUsername(value);
+              setUsernameError("");
+              setLoginNotice("");
+            }}
             autoCapitalize="none"
             autoCorrect={false}
             editable={!loading}
           />
+          {usernameError ? (
+            <Text
+              style={loginStyles.loginFieldErrorText}
+              accessibilityRole="alert"
+            >
+              {usernameError}
+            </Text>
+          ) : null}
 
           {/* Password Input */}
           <View style={loginStyles.passwordContainer}>
@@ -266,7 +311,11 @@ export default function LoginScreen({ navigation }) {
               placeholderTextColor="#999"
               secureTextEntry={!showPassword}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(value) => {
+                setPassword(value);
+                setPasswordError("");
+                setLoginNotice("");
+              }}
               editable={!loading}
             />
 
@@ -281,6 +330,14 @@ export default function LoginScreen({ navigation }) {
               )}
             </TouchableOpacity>
           </View>
+          {passwordError ? (
+            <Text
+              style={loginStyles.loginFieldErrorText}
+              accessibilityRole="alert"
+            >
+              {passwordError}
+            </Text>
+          ) : null}
 
           {/* Forgot Password */}
           <TouchableOpacity

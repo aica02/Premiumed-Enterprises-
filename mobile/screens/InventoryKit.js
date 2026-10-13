@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -10,34 +10,54 @@ import {
   Modal,
   Platform,
   KeyboardAvoidingView,
-  RefreshControl,
   Image,
+  StyleSheet,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import {
   Search,
   PlusCircle,
   XCircle,
-  Calendar,
   Package,
   Upload,
   RotateCcw,
   CheckCircle,
-  Printer,
   AlertTriangle,
+  ScanLine,
+  Check,
+  Wifi,
+  WifiOff,
+  Printer,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
+import { offlineFetch as fetch } from "../shared/offlineApi";
+import { readJsonResponse } from "../shared/readJsonResponse";
+import {
+  autoConnectPrinter,
+  connectToPrinter,
+  printBarcodeTSPL,
+  scanForPrinters,
+  stopPrinterScan,
+} from "../utils/PrinterService";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET =
   process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 const MAX_QUANTITY = 1000;
+const KIT_QUANTITY_PER_BOX = 100;
 const COUNTED_BATCH_STATUSES = ["stored", "for disposal"];
+
+const getDefaultKitExpiration = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 2);
+  return d;
+};
 
 export default function InventoryKit({
   navigation,
@@ -56,7 +76,6 @@ export default function InventoryKit({
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [image, setImage] = useState(null);
@@ -67,30 +86,144 @@ export default function InventoryKit({
   const [fefoFilter, setFefoFilter] = useState("All FEFO");
   const [stockFilter, setStockFilter] = useState("All Stock");
 
-  // Success modal states
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [restockSuccessData, setRestockSuccessData] = useState(null);
   const [printQty, setPrintQty] = useState("1");
+  const [printerDevice, setPrinterDevice] = useState(null);
+  const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
+  const [availablePrinters, setAvailablePrinters] = useState([]);
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [errorFeedback, setErrorFeedback] = useState(null);
 
   const [kitItems, setKitItems] = useState([]);
 
   const [showConfirmKitModal, setShowConfirmKitModal] = useState(false);
 
-  // inline error
   const [kitItemErrors, setKitItemErrors] = useState({});
   const [quantityError, setQuantityError] = useState("");
   const [kitFormErrors, setKitFormErrors] = useState({});
   const [confirmError, setConfirmError] = useState("");
+
+  const [scanningModalVisible, setScanningModalVisible] = useState(false);
+  const [scanQueue, setScanQueue] = useState([]);
+  const [scanQueueIndex, setScanQueueIndex] = useState(0);
+  const [scanAllocations, setScanAllocations] = useState({});
+  const [scanned, setScanned] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
+  const [showCancelScanConfirm, setShowCancelScanConfirm] = useState(false);
+  const [incompleteScanShortfalls, setIncompleteScanShortfalls] = useState([]);
+  const [showIncompleteScanConfirm, setShowIncompleteScanConfirm] =
+    useState(false);
+  const isProcessing = useRef(false);
+
+  const [permission, requestPermission] = useCameraPermissions();
+
+  useEffect(() => {
+    autoConnectPrinter(setPrinterStatus)
+      .then((device) => {
+        if (device) setPrinterDevice(device);
+      })
+      .catch((error) => {
+        console.error("Printer auto-connect failed:", error);
+        setPrinterStatus("Printer Disconnected");
+      });
+  }, []);
+
+  const handleScanPrinters = async () => {
+    setAvailablePrinters([]);
+    setShowPrinterModal(true);
+    try {
+      const scanStarted = await scanForPrinters((device) => {
+        setAvailablePrinters((current) => {
+          if (current.some((printer) => printer.id === device.id)) {
+            return current;
+          }
+          return [...current, device];
+        });
+      });
+      if (!scanStarted) {
+        setShowPrinterModal(false);
+        Alert.alert(
+          "Bluetooth Permission Required",
+          "Allow Bluetooth permissions to scan for label printers.",
+        );
+      }
+    } catch (error) {
+      console.error("Printer scan failed:", error);
+      setShowPrinterModal(false);
+      Alert.alert(
+        "Printer Scan Failed",
+        error.message || "Unable to scan for printers.",
+      );
+    }
+  };
+
+  const handleSelectPrinter = async (device) => {
+    try {
+      setPrinterStatus("Connecting...");
+      const connectedDevice = await connectToPrinter(device.id);
+      setPrinterDevice(connectedDevice);
+      setPrinterStatus(`Connected to ${device.name || "Xprinter"}`);
+      setShowPrinterModal(false);
+    } catch (error) {
+      console.error("Printer connection failed:", error);
+      setPrinterStatus("Printer Disconnected");
+      Alert.alert("Connection Error", "Could not connect to printer.");
+    }
+  };
+
+  const handlePrintLabel = async () => {
+    const quantity = Number(printQty);
+    if (!Number.isSafeInteger(quantity) || quantity < 1) {
+      Alert.alert(
+        "Invalid Quantity",
+        "Enter a positive whole number of labels.",
+      );
+      return;
+    }
+    if (!restockSuccessData?.batchCode) {
+      Alert.alert(
+        "Batch Not Ready",
+        "A batch code is required before printing.",
+      );
+      return;
+    }
+    if (!printerDevice) {
+      Alert.alert("No Printer", "Please connect your Xprinter first.", [
+        { text: "Connect Printer", onPress: handleScanPrinters },
+        { text: "Cancel", style: "cancel" },
+      ]);
+      return;
+    }
+
+    try {
+      setIsPrinting(true);
+      await printBarcodeTSPL(
+        printerDevice,
+        restockSuccessData.batchCode,
+        restockSuccessData.itemName,
+        restockSuccessData.expirationDate,
+        quantity,
+      );
+      Alert.alert("Success", "Label sent to Xprinter!");
+    } catch (error) {
+      console.error("Barcode printing failed:", error);
+      Alert.alert("Print Error", error.message || "Failed to print barcode.");
+    } finally {
+      setIsPrinting(false);
+    }
+  };
 
   const [kitFormData, setKitFormData] = useState({
     itemCode: "",
     name: "",
     category: "Medical Kits",
     unitType: "Set",
-    quantity: "1",
-    expirationDate: new Date(),
-    location: "R1-A",
+    box: "",
+    quantity: String(KIT_QUANTITY_PER_BOX),
+    expirationDate: getDefaultKitExpiration(),
+    location: "P1-A",
     supplierName: "Premiumed Enterprises",
     reorderLevel: "50",
     kitItems: [],
@@ -141,11 +274,8 @@ export default function InventoryKit({
       if (a.quantity === 0 && b.quantity > 0) return 1;
       if (a.quantity > 0 && b.quantity === 0) return -1;
 
-      if (sortOrder === "QTY Low → High") {
-        return a.quantity - b.quantity;
-      } else if (sortOrder === "QTY High → Low") {
-        return b.quantity - a.quantity;
-      }
+      if (sortOrder === "QTY Low → High") return a.quantity - b.quantity;
+      if (sortOrder === "QTY High → Low") return b.quantity - a.quantity;
       return 0;
     });
 
@@ -153,7 +283,6 @@ export default function InventoryKit({
       processedBatches.sort((a, b) => {
         if (a.quantity === 0 && b.quantity > 0) return 1;
         if (a.quantity > 0 && b.quantity === 0) return -1;
-
         const dateA = new Date(a.expirationDate);
         const dateB = new Date(b.expirationDate);
         return expirySort === "Nearest Exp." ? dateA - dateB : dateB - dateA;
@@ -172,71 +301,63 @@ export default function InventoryKit({
         .map((batch) => batch.storageLocation),
     );
 
-    return [...warehouseMapLayout.racks]
-      .sort((firstRack, secondRack) => {
-        const [, firstNumber, firstSlot] = firstRack.id.match(/^R(\d+)-(.+)$/);
-        const [, secondNumber, secondSlot] =
-          secondRack.id.match(/^R(\d+)-(.+)$/);
-        return (
-          Number(firstNumber) - Number(secondNumber) ||
-          firstSlot.localeCompare(secondSlot)
-        );
-      })
-      .map(({ id: location }) => {
-        if (!kitFormData.itemCode && occupiedLocations.has(location)) {
-          return null;
-        }
-        return <Picker.Item key={location} label={location} value={location} />;
-      })
-      .filter(Boolean);
+    const locations = warehouseMapLayout.pallets.filter(({ id }) =>
+      /^P1-[A-D]$/.test(id),
+    );
+
+    return locations
+      .filter(({ id }) => kitFormData.itemCode || !occupiedLocations.has(id))
+      .map(({ id }) => <Picker.Item key={id} label={id} value={id} />);
   };
 
   const uploadToCloudinary = async (imageUri, itemName) => {
-    try {
-      const sanitizedName = itemName
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
-
-      const timestamp = Date.now();
-      const filename = `${sanitizedName}-${timestamp}.jpg`;
-
-      const compressed = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [{ resize: { width: 800 } }],
-        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
-      );
-
-      const formData = new FormData();
-      formData.append("file", {
-        uri: compressed.uri,
-        type: "image/jpeg",
-        name: filename,
-      });
-      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-      formData.append("folder", "inventory-items");
-
-      const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-        {
-          method: "POST",
-          body: formData,
-          headers: {
-            Accept: "application/json",
-          },
-        },
-      );
-
-      const result = await response.json();
-      return result.secure_url || null;
-    } catch (error) {
-      console.error("Cloudinary upload error:", error);
-      return null;
+    if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+      throw new Error("Cloudinary environment variables are missing.");
     }
+
+    const sanitizedName = itemName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "");
+    const filename = `${sanitizedName}-${Date.now()}.jpg`;
+    const compressed = await ImageManipulator.manipulateAsync(
+      imageUri,
+      [{ resize: { width: 800 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
+    );
+
+    const formData = new FormData();
+    formData.append("file", {
+      uri: compressed.uri,
+      type: "image/jpeg",
+      name: filename,
+    });
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    formData.append("folder", "inventory-items");
+
+    const response = await globalThis.fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+      {
+        method: "POST",
+        body: formData,
+        headers: { Accept: "application/json" },
+      },
+    );
+    const result = await readJsonResponse(response, "Cloudinary image upload");
+    if (!response.ok) {
+      throw new Error(
+        result?.error?.message ||
+          `Cloudinary returned HTTP ${response.status}.`,
+      );
+    }
+    if (!result?.secure_url) {
+      throw new Error("Cloudinary response did not include an image URL.");
+    }
+    return result.secure_url;
   };
 
-  const pickImage = async () => {
+  const pickImage = async (onSelected = setImage) => {
     try {
       const permissionResult =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -248,20 +369,25 @@ export default function InventoryKit({
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
-      if (!result.canceled) {
-        setImage({ uri: result.assets[0].uri });
+      const selectedAsset = result.assets?.[0];
+      if (!result.canceled && selectedAsset?.uri) {
+        onSelected({ uri: selectedAsset.uri });
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to pick image");
+      console.error("Image library selection failed:", error);
+      Alert.alert(
+        "Unable to Select Photo",
+        error?.message || "Failed to pick image.",
+      );
     }
   };
 
-  const takePhoto = async () => {
+  const takePhoto = async (onSelected = setImage) => {
     try {
       const permissionResult =
         await ImagePicker.requestCameraPermissionsAsync();
@@ -274,20 +400,112 @@ export default function InventoryKit({
         aspect: [1, 1],
         quality: 0.8,
       });
-      if (!result.canceled) {
-        setImage({ uri: result.assets[0].uri });
+      const selectedAsset = result.assets?.[0];
+      if (!result.canceled && selectedAsset?.uri) {
+        onSelected({ uri: selectedAsset.uri });
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to take photo");
+      console.error("Camera capture failed:", error);
+      Alert.alert(
+        "Unable to Take Photo",
+        error?.message || "Failed to take photo.",
+      );
     }
   };
 
-  const showImageOptions = () => {
+  const showImageOptions = (onSelected = setImage) => {
     Alert.alert("Select Image", "Choose an option", [
       { text: "Cancel", style: "cancel" },
-      { text: "Take Photo", onPress: takePhoto },
-      { text: "Choose from Gallery", onPress: pickImage },
+      { text: "Take Photo", onPress: () => takePhoto(onSelected) },
+      { text: "Choose from Gallery", onPress: () => pickImage(onSelected) },
     ]);
+  };
+
+  const saveBatchModalImage = async (selectedImage) => {
+    if (!selectedItem?.itemCode || uploading) return;
+
+    try {
+      const network = await NetInfo.fetch();
+      if (!network.isConnected || network.isInternetReachable === false) {
+        Alert.alert(
+          "Internet Required",
+          "Connect to the internet to upload and save the kit photo.",
+        );
+        return;
+      }
+
+      setUploading(true);
+      const imageUrl = await uploadToCloudinary(
+        selectedImage.uri,
+        selectedItem.name,
+      );
+      if (!imageUrl) {
+        throw new Error("Cloudinary did not return a product image URL.");
+      }
+      const token = await AsyncStorage.getItem("userToken");
+      const storedUserId = await AsyncStorage.getItem("userId");
+      const storedUsername = await AsyncStorage.getItem("username");
+      const storedRole = await AsyncStorage.getItem("userRole");
+      const response = await fetch(
+        `${BACKEND_URL}/api/inventoryPage/product/${encodeURIComponent(selectedItem.itemCode)}/image`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(storedUserId ? { "x-user-id": storedUserId } : {}),
+            ...(storedUsername ? { "x-username": storedUsername } : {}),
+            ...(storedRole ? { "x-role": storedRole } : {}),
+          },
+          body: JSON.stringify({ itemImage: imageUrl }),
+        },
+      );
+      const result = await readJsonResponse(response, "Kit photo update");
+      if (!response.ok) {
+        throw new Error(
+          result?.message ||
+            `Kit photo update returned HTTP ${response.status}.`,
+        );
+      }
+
+      const updatedItem = {
+        ...selectedItem,
+        itemImage: result?.product?.itemImage || imageUrl,
+      };
+      setSelectedItem(updatedItem);
+      setItems((currentItems) =>
+        currentItems.map((item) =>
+          item.itemCode === updatedItem.itemCode
+            ? { ...item, itemImage: updatedItem.itemImage }
+            : item,
+        ),
+      );
+      if (!result?.queued) await fetchItems();
+      Alert.alert(
+        result?.queued ? "Photo Saved Offline" : "Photo Updated",
+        result?.queued
+          ? "The new kit photo is queued and will sync when the connection is restored."
+          : "The kit photo has been updated.",
+      );
+    } catch (error) {
+      console.error("Kit photo update failed:", error);
+      Alert.alert(
+        "Photo Update Failed",
+        error.message || "Unable to update the kit photo.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const resetScanState = () => {
+    setScanningModalVisible(false);
+    setScanQueue([]);
+    setScanQueueIndex(0);
+    setScanAllocations({});
+    setScanned(false);
+    setScanFeedback(null);
+    isProcessing.current = false;
   };
 
   const resetKitForm = () => {
@@ -295,9 +513,10 @@ export default function InventoryKit({
       itemCode: "",
       name: "",
       category: "Medical Kits",
-      quantity: "1",
-      expirationDate: new Date(),
-      location: "R1-A",
+      box: "",
+      quantity: String(KIT_QUANTITY_PER_BOX),
+      expirationDate: getDefaultKitExpiration(),
+      location: "P1-A",
       supplierName: "Premiumed Enterprises",
       unitType: "Set",
       reorderLevel: "50",
@@ -309,6 +528,7 @@ export default function InventoryKit({
     setQuantityError("");
     setKitFormErrors({});
     setImage(null);
+    resetScanState();
   };
 
   const removeKitItemFromKit = (index) => {
@@ -320,12 +540,10 @@ export default function InventoryKit({
       setKitItems((prev) =>
         prev.map((item, i) => (i === index ? { ...item, quantity: "" } : item)),
       );
-
       setKitItemErrors((prev) => ({
         ...prev,
         [kitItems[index]?._id]: "Quantity is required.",
       }));
-
       return;
     }
 
@@ -350,78 +568,6 @@ export default function InventoryKit({
     }
   };
 
-  const completeKitBatch = async (batchId) => {
-    try {
-      const token = await AsyncStorage.getItem("userToken");
-      const storedUserId = await AsyncStorage.getItem("userId");
-      const storedUsername = await AsyncStorage.getItem("username");
-      const storedRole = await AsyncStorage.getItem("userRole");
-
-      const batchResponse = await fetch(
-        `${BACKEND_URL}/api/inventoryPage/batches/all`,
-      );
-      const batches = await batchResponse.json();
-      const batch = batches.find((b) => b._id === batchId);
-
-      if (!batch) {
-        setErrorFeedback({
-          title: "Batch not found",
-          message: "This kit batch could not be found. Refresh the inventory and try again.",
-        });
-        return false;
-      }
-
-      const response = await fetch(
-        `${BACKEND_URL}/api/inventoryPage/batch/stored`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(storedUserId ? { "x-user-id": storedUserId } : {}),
-            ...(storedUsername ? { "x-username": storedUsername } : {}),
-            ...(storedRole ? { "x-role": storedRole } : {}),
-          },
-          body: JSON.stringify({
-            batchCode: batch.batchCode,
-            itemCode: batch.itemCode,
-            userId: storedUserId,
-            username: storedUsername,
-            role: storedRole,
-          }),
-        },
-      );
-
-      const result = await response.json();
-
-      if (response.ok) {
-        setRestockSuccessData({
-          itemName: batch.itemName,
-          batchCode: batch.batchCode,
-          quantity: batch.quantity,
-          imageUrl: null,
-        });
-        setShowSuccessModal(true);
-        await fetchItems();
-        await fetchBatches();
-        return true;
-      } else {
-        setErrorFeedback({
-          title: "Unable to store kit",
-          message: result.message || "Failed to complete kit batch.",
-        });
-        return false;
-      }
-    } catch (error) {
-      console.error("Complete kit error:", error);
-      setErrorFeedback({
-        title: "Kit storage failed",
-        message: "The kit could not be stored. Please check your connection and try again.",
-      });
-      return false;
-    }
-  };
-
   const validateKitBeforeSave = () => {
     const errors = {};
 
@@ -442,8 +588,8 @@ export default function InventoryKit({
       }
     });
 
-    if (!Number.isFinite(Number(kitFormData.quantity)) || Number(kitFormData.quantity) <= 0) {
-      setConfirmError("Kit quantity must be greater than zero.");
+    if (!kitFormData.box || Number(kitFormData.box) <= 0) {
+      setConfirmError("Box must be greater than zero.");
       return false;
     }
 
@@ -471,6 +617,14 @@ export default function InventoryKit({
     if (!kitFormData.itemCode && kitItems.length === 0) {
       formErrors.items = "Add at least one kit inclusion.";
     }
+    if (!kitFormData.box) {
+      formErrors.box = "Box is required.";
+    } else {
+      const boxNum = Number(kitFormData.box);
+      if (!Number.isFinite(boxNum) || boxNum <= 0) {
+        formErrors.box = "Box must be greater than 0.";
+      }
+    }
 
     if (Object.keys(formErrors).length > 0) {
       setKitFormErrors(formErrors);
@@ -495,15 +649,11 @@ export default function InventoryKit({
 
     setKitItemErrors(errors);
 
-    if (Object.keys(errors).length > 0) {
-      return;
-    }
+    if (Object.keys(errors).length > 0) return;
 
-    const kitQuantity = Number(kitFormData.quantity);
-    if (!Number.isFinite(kitQuantity) || kitQuantity <= 0) {
-      setKitFormErrors({ quantity: "Quantity must be greater than zero." });
-      return;
-    }
+    const boxCount = Number(kitFormData.box);
+    const quantityPerBox = KIT_QUANTITY_PER_BOX;
+    const totalQuantity = boxCount * quantityPerBox;
 
     const existingQuantity = batches
       .filter(
@@ -514,7 +664,7 @@ export default function InventoryKit({
       .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
     const availableQuantity = Math.max(MAX_QUANTITY - existingQuantity, 0);
 
-    if (kitQuantity > availableQuantity) {
+    if (totalQuantity > availableQuantity) {
       setQuantityError(
         `Only ${availableQuantity} quantity is available to be stored.`,
       );
@@ -528,25 +678,322 @@ export default function InventoryKit({
     setShowConfirmKitModal(true);
   };
 
-  const handleQuantityChange = (value) => {
-    setKitFormData({ ...kitFormData, quantity: value });
-    setKitFormErrors((prev) => ({ ...prev, quantity: "" }));
+  // ====== BUILD SCAN QUEUE ======
+  const buildScanQueue = () => {
+    const boxCount = Number(kitFormData.box) || 0;
+    const inclusions =
+      kitItems.length > 0 ? kitItems : kitFormData.kitItems || [];
 
-    const quantity = Number(value);
-    const existingQuantity = batches
-      .filter(
-        (batch) =>
-          batch.itemCode === kitFormData.itemCode &&
-          COUNTED_BATCH_STATUSES.includes(batch.status),
-      )
-      .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
-    const availableQuantity = Math.max(MAX_QUANTITY - existingQuantity, 0);
+    return inclusions
+      .map((item) => {
+        const perBox = Number(item.quantity) || 0;
+        return {
+          itemCode: item.itemCode,
+          _id: item._id,
+          name: item.name,
+          perBox,
+          totalRequired: perBox * boxCount,
+        };
+      })
+      .filter((i) => i.totalRequired > 0 && i.itemCode);
+  };
 
-    setQuantityError(
-      value && Number.isFinite(quantity) && quantity > availableQuantity
-        ? `Only ${availableQuantity} quantity is available to be stored.`
-        : "",
+  const startScanning = async () => {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        Alert.alert(
+          "Permission Denied",
+          "Camera access is required to scan inclusion batches.",
+        );
+        return;
+      }
+    }
+
+    const queue = buildScanQueue();
+
+    if (queue.length === 0) {
+      Alert.alert(
+        "No Inclusions",
+        "This kit has no inclusion quantities to scan.",
+      );
+      return;
+    }
+
+    setScanQueue(queue);
+    setScanQueueIndex(0);
+    setScanAllocations({});
+    setScanned(false);
+    setScanFeedback(null);
+    isProcessing.current = false;
+
+    setShowConfirmKitModal(false);
+    setScanningModalVisible(true);
+  };
+
+  const resetScanner = () => {
+    isProcessing.current = false;
+    setScanned(false);
+  };
+
+  const closeScanFeedback = () => {
+    setScanFeedback(null);
+    resetScanner();
+  };
+
+  const currentScanItem = useMemo(() => {
+    if (!scanningModalVisible) return null;
+    return scanQueue[scanQueueIndex] || null;
+  }, [scanningModalVisible, scanQueue, scanQueueIndex]);
+
+  const getScannedQtyForItem = (itemCode) => {
+    const map = scanAllocations[itemCode] || {};
+    return Object.values(map).reduce((sum, q) => sum + (Number(q) || 0), 0);
+  };
+
+  const handleBarCodeScanned = ({ data }) => {
+    if (isProcessing.current) return;
+    isProcessing.current = true;
+    setScanned(true);
+    processScannedBarcode(data);
+  };
+
+  const processScannedBarcode = (data) => {
+    const item = currentScanItem;
+
+    if (!item) {
+      resetScanner();
+      return;
+    }
+
+    const scannedBatchCode = String(data).trim();
+
+    let foundItem = null;
+    let scannedBatch = null;
+
+    for (const invItem of items) {
+      if (invItem && invItem.batches) {
+        const batch = invItem.batches.find(
+          (b) =>
+            b && b.batchCode && String(b.batchCode).trim() === scannedBatchCode,
+        );
+        if (batch) {
+          foundItem = invItem;
+          scannedBatch = batch;
+          break;
+        }
+      }
+    }
+
+    if (!scannedBatch) {
+      Alert.alert("Invalid Barcode", "Batch not found in inventory.", [
+        { text: "OK", onPress: resetScanner },
+      ]);
+      return;
+    }
+
+    if (
+      scannedBatch.status === "disposed" ||
+      scannedBatch.status === "on-hold" ||
+      scannedBatch.status === "pending"
+    ) {
+      Alert.alert(
+        "Batch Unavailable",
+        `Batch status is ${scannedBatch.status}. Cannot use for kit inclusion.`,
+        [{ text: "OK", onPress: resetScanner }],
+      );
+      return;
+    }
+
+    if (foundItem.itemCode !== item.itemCode) {
+      Alert.alert(
+        "Wrong Item",
+        `Expected ${item.name} (${item.itemCode}).\nScanned: ${
+          foundItem.name || foundItem.itemCode
+        }.\n\nPlease scan the correct inclusion batch.`,
+        [{ text: "OK", onPress: resetScanner }],
+      );
+      return;
+    }
+
+    const alreadyScanned = getScannedQtyForItem(item.itemCode);
+    const remainingNeeded = item.totalRequired - alreadyScanned;
+
+    if (remainingNeeded <= 0) {
+      Alert.alert(
+        "Already Fulfilled",
+        `${item.name} is already satisfied (${item.totalRequired}/${item.totalRequired}).`,
+        [{ text: "OK", onPress: resetScanner }],
+      );
+      return;
+    }
+
+    const today = new Date();
+    if (new Date(scannedBatch.expirationDate) <= today) {
+      Alert.alert(
+        "Expired Batch",
+        `Batch ${scannedBatch.batchCode} is expired.`,
+        [{ text: "OK", onPress: resetScanner }],
+      );
+      return;
+    }
+
+    // FEFO: is this the earliest-expiring batch with remaining stock?
+    const batchesForItem = foundItem.batches
+      .filter((b) => {
+        if (!b) return false;
+        if (b.quantity <= 0) return false;
+        if (b.status === "disposed" || b.status === "pending") return false;
+        if (new Date(b.expirationDate) <= today) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(a.expirationDate) - new Date(b.expirationDate));
+
+    if (batchesForItem.length === 0) {
+      Alert.alert("No Stock", "No valid batches available for this item.", [
+        { text: "OK", onPress: resetScanner },
+      ]);
+      return;
+    }
+
+    const earliestBatch = batchesForItem[0];
+
+    // Get already-scanned qty per batch for this item
+    const itemAllocations = scanAllocations[item.itemCode] || {};
+    const getRemainingInBatch = (batch) => {
+      const already = itemAllocations[batch.batchCode] || 0;
+      return Math.max(0, Number(batch.quantity) - already);
+    };
+
+    if (earliestBatch.batchCode !== scannedBatch.batchCode) {
+      // The scanned batch is not the earliest — show FEFO warning
+      const remainingInScanned = getRemainingInBatch(scannedBatch);
+
+      if (remainingInScanned > 0) {
+        // Verify the earliest batch still has stock after prior scans
+        // Walk earliest batches in order, skip any that are fully allocated
+        let actualEarliest = null;
+        for (const b of batchesForItem) {
+          if (getRemainingInBatch(b) > 0) {
+            actualEarliest = b;
+            break;
+          }
+        }
+
+        if (
+          actualEarliest &&
+          actualEarliest.batchCode !== scannedBatch.batchCode
+        ) {
+          setScanFeedback({
+            type: "fefo",
+            earliestBatch: actualEarliest,
+            scannedBatch,
+          });
+          return;
+        }
+      }
+    }
+
+    const remainingInThisBatch = getRemainingInBatch(scannedBatch);
+
+    if (remainingInThisBatch <= 0) {
+      Alert.alert(
+        "Batch Depleted",
+        `Batch ${scannedBatch.batchCode} has no remaining stock.`,
+        [{ text: "OK", onPress: resetScanner }],
+      );
+      return;
+    }
+
+    const amountToPick = Math.min(remainingInThisBatch, remainingNeeded);
+
+    if (amountToPick <= 0) {
+      Alert.alert("Error", "Unable to scan from this batch.", [
+        { text: "OK", onPress: resetScanner },
+      ]);
+      return;
+    }
+
+    // Update allocations
+    setScanAllocations((prev) => {
+      const forItem = { ...(prev[item.itemCode] || {}) };
+      forItem[scannedBatch.batchCode] =
+        (forItem[scannedBatch.batchCode] || 0) + amountToPick;
+      return { ...prev, [item.itemCode]: forItem };
+    });
+
+    // Check whether current inclusion is now fulfilled
+    const newScannedTotal = getScannedQtyForItem(item.itemCode) + amountToPick;
+
+    if (newScannedTotal >= item.totalRequired) {
+      // Auto-advance to next inclusion (or finish)
+      setTimeout(() => {
+        setScanQueueIndex((prevIndex) => {
+          const nextIndex = prevIndex + 1;
+          return nextIndex;
+        });
+        resetScanner();
+      }, 400);
+    } else {
+      resetScanner();
+    }
+  };
+
+  const totalScannedForQueue = useMemo(() => {
+    return scanQueue.reduce(
+      (sum, q) => sum + getScannedQtyForItem(q.itemCode),
+      0,
     );
+  }, [scanQueue, scanAllocations]);
+
+  const totalRequiredForQueue = useMemo(() => {
+    return scanQueue.reduce((sum, q) => sum + q.totalRequired, 0);
+  }, [scanQueue]);
+
+  const isQueueComplete = useMemo(() => {
+    if (scanQueue.length === 0) return false;
+    return scanQueue.every(
+      (q) => getScannedQtyForItem(q.itemCode) >= q.totalRequired,
+    );
+  }, [scanQueue, scanAllocations]);
+
+  const allInclusionsFulfilled = isQueueComplete;
+
+  const handleSkipOrContinueShortfall = () => {
+    // Warn the user about shortfalls, but allow Save
+    const shortfalls = scanQueue
+      .map((q) => {
+        const scanned = getScannedQtyForItem(q.itemCode);
+        return scanned < q.totalRequired
+          ? `${q.name}: ${scanned}/${q.totalRequired} scanned`
+          : null;
+      })
+      .filter(Boolean);
+
+    if (shortfalls.length === 0) {
+      setScanningModalVisible(false);
+      performSaveKit();
+      return;
+    }
+
+    setIncompleteScanShortfalls(shortfalls);
+    setShowIncompleteScanConfirm(true);
+  };
+
+  const confirmSaveWithShortfall = () => {
+    setShowIncompleteScanConfirm(false);
+    setScanningModalVisible(false);
+    performSaveKit();
+  };
+
+  const handleCancelScan = () => {
+    setShowCancelScanConfirm(true);
+  };
+
+  const confirmCancelScan = () => {
+    setShowCancelScanConfirm(false);
+    setScanningModalVisible(false);
+    setShowAddModal(true);
   };
 
   const performSaveKit = async () => {
@@ -569,10 +1016,8 @@ export default function InventoryKit({
         }
       }
 
-      const kitQuantity = Number(kitFormData.quantity);
+      const boxCount = Number(kitFormData.box);
 
-      // For restocks: DO NOT send kitItems
-      // For new kits: Send kitItems
       let kitItemsPayload = [];
       if (!isRestock) {
         kitItemsPayload = kitItems.map((item) => ({
@@ -598,8 +1043,9 @@ export default function InventoryKit({
         unitType: "Set",
         itemImage: imageUrl,
         isKit: true,
-        quantity: kitQuantity,
-        expirationDate: kitFormData.expirationDate.toISOString(),
+        box: boxCount,
+        quantity: KIT_QUANTITY_PER_BOX,
+        expirationDate: getDefaultKitExpiration().toISOString(),
         storageLocation: kitFormData.location,
         ...(kitItemsPayload.length > 0 && { kitItems: kitItemsPayload }),
         userId: storedUserId,
@@ -608,15 +1054,9 @@ export default function InventoryKit({
         price: 0,
       };
 
-      // If restock, remove kitItems from payload
       if (isRestock) {
         delete kitProductPayload.kitItems;
       }
-
-      console.log(
-        "Sending payload:",
-        JSON.stringify(kitProductPayload, null, 2),
-      );
 
       const productResponse = await fetch(
         `${BACKEND_URL}/api/inventoryPage/kit`,
@@ -636,7 +1076,6 @@ export default function InventoryKit({
       const productResult = await productResponse.json();
 
       if (!productResponse.ok) {
-        // Handle specific validation errors
         if (productResult.missingItems) {
           const missingNames = productResult.missingItems
             .map((i) => i.name)
@@ -672,10 +1111,17 @@ export default function InventoryKit({
       setShowAddModal(false);
       setRestockSuccessData({
         itemName: kitFormData.name,
-        batchCode: productResult.batch?.batchCode || "KIT-001",
-        quantity: kitFormData.quantity,
+        batchCode: productResult.queued ? null : productResult.batch?.batchCode,
+        expirationDate:
+          productResult.batch?.expirationDate ||
+          getDefaultKitExpiration().toISOString(),
+        quantity: boxCount * KIT_QUANTITY_PER_BOX,
         imageUrl: imageUrl,
         isRestock: isRestock,
+        queued: Boolean(productResult.queued),
+        imageNotSynced: Boolean(
+          productResult.queued && image?.uri && !imageUrl,
+        ),
       });
       setShowSuccessModal(true);
       resetKitForm();
@@ -698,9 +1144,7 @@ export default function InventoryKit({
     setShowBatchModal(true);
   };
 
-  const isMedicalKit = (item) => {
-    return item.category === "Medical Kits";
-  };
+  const isMedicalKit = (item) => item.category === "Medical Kits";
 
   const getFilteredItems = () => {
     const searchLower = searchTerm.toLowerCase();
@@ -738,11 +1182,7 @@ export default function InventoryKit({
           0,
         );
 
-        return {
-          ...item,
-          availableQty,
-          validBatches: validBatches,
-        };
+        return { ...item, availableQty, validBatches };
       })
       .filter((item) => item.availableQty > 0);
   };
@@ -814,8 +1254,9 @@ export default function InventoryKit({
               name: item.name,
               category: "Medical Kits",
               unitType: "Set",
-              quantity: String(item.quantity || 1),
-              expirationDate: new Date(item.expirationDate || Date.now()),
+              box: "",
+              quantity: String(KIT_QUANTITY_PER_BOX),
+              expirationDate: getDefaultKitExpiration(),
               location: latestLocation,
               supplierName: "Premiumed Enterprises",
               reorderLevel: String(item.reorderLevel || 50),
@@ -840,6 +1281,49 @@ export default function InventoryKit({
 
   return (
     <>
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          backgroundColor: "#1E293B",
+          padding: 10,
+          borderRadius: 8,
+          marginBottom: 10,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          {printerDevice ? (
+            <Wifi size={18} color="#10B981" />
+          ) : (
+            <WifiOff size={18} color="#EF4444" />
+          )}
+          <Text
+            style={{
+              color: "#FFF",
+              marginLeft: 8,
+              fontSize: 12,
+              fontWeight: "bold",
+            }}
+          >
+            {printerStatus}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={handleScanPrinters}
+          style={{
+            backgroundColor: "#D4AF37",
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 4,
+          }}
+        >
+          <Text style={{ color: "#FFF", fontSize: 11, fontWeight: "bold" }}>
+            {printerDevice ? "CHANGE PRINTER" : "CONNECT PRINTER"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
           <Search size={20} color="#D4AF37" />
@@ -874,7 +1358,57 @@ export default function InventoryKit({
         </View>
       )}
 
-      {/* Add Kit Modal */}
+      <Modal visible={showPrinterModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.batchModalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>SELECT XPRINTER</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  stopPrinterScan();
+                  setShowPrinterModal(false);
+                }}
+              >
+                <XCircle size={24} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ paddingVertical: 10 }}>
+              {availablePrinters.length === 0 ? (
+                <Text
+                  style={{
+                    textAlign: "center",
+                    padding: 20,
+                    color: "#6B7280",
+                  }}
+                >
+                  Scanning for nearby Bluetooth printers...
+                </Text>
+              ) : (
+                availablePrinters.map((device) => (
+                  <TouchableOpacity
+                    key={device.id}
+                    style={{
+                      padding: 15,
+                      borderBottomWidth: 1,
+                      borderColor: "#EEE",
+                    }}
+                    onPress={() => handleSelectPrinter(device)}
+                  >
+                    <Text style={{ fontWeight: "bold", fontSize: 16 }}>
+                      {device.name || "Unknown Printer"}
+                    </Text>
+                    <Text style={{ color: "#888", fontSize: 12 }}>
+                      {device.id}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add / Restock Kit Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView
@@ -931,7 +1465,9 @@ export default function InventoryKit({
                     </Text>
                   )}
                   {kitFormErrors.name ? (
-                    <Text style={styles.fieldErrorText}>{kitFormErrors.name}</Text>
+                    <Text style={styles.fieldErrorText}>
+                      {kitFormErrors.name}
+                    </Text>
                   ) : null}
                 </View>
                 <View style={{ flex: 1 }}>
@@ -954,7 +1490,9 @@ export default function InventoryKit({
                         },
                       ]}
                       onPress={
-                        kitFormData.itemCode ? undefined : showImageOptions
+                        kitFormData.itemCode
+                          ? undefined
+                          : () => showImageOptions()
                       }
                     >
                       <Image
@@ -982,19 +1520,12 @@ export default function InventoryKit({
                         },
                       ]}
                       onPress={
-                        kitFormData.itemCode ? undefined : showImageOptions
+                        kitFormData.itemCode
+                          ? undefined
+                          : () => showImageOptions()
                       }
                     >
                       <Upload size={20} color="#9CA3AF" />
-                      <Text
-                        style={{
-                          fontSize: 10,
-                          marginLeft: 5,
-                          color: "#9CA3AF",
-                        }}
-                      >
-                        {kitFormData.itemCode ? "Existing" : "Add"}
-                      </Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1023,59 +1554,60 @@ export default function InventoryKit({
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>
-                    Unit Type
-                    {!kitFormData.itemCode && (
-                      <Text style={{ color: "#EF4444" }}> *</Text>
-                    )}
-                  </Text>
-                  <View
-                    style={[
-                      styles.pickerContainer,
-                      { backgroundColor: "#E5E7EB" },
-                    ]}
-                  >
-                    <Picker selectedValue="Set" enabled={false}>
-                      <Picker.Item label="Set" value="Set" />
-                    </Picker>
-                  </View>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>
-                    Quantity <Text style={{ color: "#EF4444" }}>*</Text>
+                    Box <Text style={{ color: "#EF4444" }}>*</Text>
                   </Text>
                   <TextInput
                     style={styles.input}
                     keyboardType="numeric"
                     maxLength={4}
-                    value={kitFormData.quantity}
-                    onChangeText={handleQuantityChange}
+                    value={kitFormData.box}
+                    onChangeText={(v) => {
+                      setKitFormData({ ...kitFormData, box: v });
+                      setKitFormErrors((prev) => ({ ...prev, box: "" }));
+                    }}
                   />
-                  {kitFormErrors.quantity || quantityError ? (
-                    <Text
-                      style={styles.fieldErrorText}
-                    >
-                      {kitFormErrors.quantity || quantityError}
+                  {kitFormErrors.box ? (
+                    <Text style={styles.fieldErrorText}>
+                      {kitFormErrors.box}
                     </Text>
                   ) : null}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.label}>Quantity</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { backgroundColor: "#E5E7EB", color: "#6B7280" },
+                    ]}
+                    value={String(KIT_QUANTITY_PER_BOX)}
+                    editable={false}
+                  />
+                  <Text
+                    style={{ fontSize: 10, color: "#6B7280", marginTop: 2 }}
+                  >
+                    Fixed at {KIT_QUANTITY_PER_BOX} per box
+                  </Text>
                 </View>
               </View>
 
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>
-                    Expiration Date <Text style={{ color: "#EF4444" }}>*</Text>
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.dateSelector}
-                    onPress={() => setShowDatePicker(true)}
+                  <Text style={styles.label}>Expiration Date</Text>
+                  <View
+                    style={[
+                      styles.dateSelector,
+                      { backgroundColor: "#E5E7EB" },
+                    ]}
                   >
-                    <Calendar size={20} color="#D4AF37" />
-                    <Text style={{ marginLeft: 10 }}>
-                      {kitFormData.expirationDate
-                        ? kitFormData.expirationDate.toDateString()
-                        : "Select Date"}
+                    <Text style={{ color: "#6B7280" }}>
+                      {getDefaultKitExpiration().toDateString()}
                     </Text>
-                  </TouchableOpacity>
+                  </View>
+                  <Text
+                    style={{ fontSize: 10, color: "#6B7280", marginTop: 2 }}
+                  >
+                    Auto-set to 2 years from today
+                  </Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>
@@ -1101,48 +1633,23 @@ export default function InventoryKit({
                 </View>
               </View>
 
-              {showDatePicker && (
-                <DateTimePicker
-                  value={kitFormData.expirationDate || new Date()}
-                  mode="date"
-                  display="default"
-                  onChange={(e, d) => {
-                    setShowDatePicker(false);
-                    if (d) {
-                      setKitFormData({ ...kitFormData, expirationDate: d });
-                    }
-                  }}
-                />
-              )}
-
               <View style={{ marginTop: 15 }}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
+                <Text
+                  style={[styles.label, { fontSize: 16, fontWeight: "bold" }]}
                 >
-                  <Text
-                    style={[styles.label, { fontSize: 16, fontWeight: "bold" }]}
-                  >
-                    KIT SUPPLIES
-                    {!kitFormData.itemCode && (
-                      <Text style={{ color: "#EF4444" }}> *</Text>
-                    )}
-                  </Text>
-                  {isRestockMode && (
-                    <View
-                      style={{ flexDirection: "row", alignItems: "center" }}
-                    ></View>
+                  KIT SUPPLIES
+                  {!kitFormData.itemCode && (
+                    <Text style={{ color: "#EF4444" }}> *</Text>
                   )}
-                </View>
+                </Text>
+
                 {kitFormErrors.items ? (
-                  <Text style={styles.fieldErrorText}>{kitFormErrors.items}</Text>
+                  <Text style={styles.fieldErrorText}>
+                    {kitFormErrors.items}
+                  </Text>
                 ) : null}
 
                 {isRestockMode ? (
-                  //(Restock)
                   <View style={{ marginBottom: 10, opacity: 0.7 }}>
                     {kitItems.length > 0 ? (
                       <View
@@ -1180,7 +1687,7 @@ export default function InventoryKit({
                               • {item.name}
                             </Text>
                             <Text style={{ fontSize: 14, color: "#6B7280" }}>
-                              {item.quantity} per kit
+                              {item.quantity} per kit-box
                             </Text>
                           </View>
                         ))}
@@ -1201,7 +1708,6 @@ export default function InventoryKit({
                     )}
                   </View>
                 ) : (
-                  // (New Kit)
                   <>
                     {getKitInclusionItems().length > 0 ? (
                       <View style={{ marginBottom: 10 }}>
@@ -1251,10 +1757,8 @@ export default function InventoryKit({
                                       const index = kitItems.findIndex(
                                         (k) => k._id === item._id,
                                       );
-
                                       if (index !== -1) {
                                         removeKitItemFromKit(index);
-
                                         setKitItemErrors((prev) => {
                                           const updated = { ...prev };
                                           delete updated[item._id];
@@ -1269,9 +1773,7 @@ export default function InventoryKit({
                                         quantity: 1,
                                         category: item.category,
                                       };
-
                                       setKitItems((prev) => [...prev, newItem]);
-
                                       setKitItemErrors((prev) => ({
                                         ...prev,
                                         [item._id]: "",
@@ -1300,7 +1802,6 @@ export default function InventoryKit({
                                   >
                                     {item.name}
                                   </Text>
-
                                   <Text
                                     style={{
                                       fontSize: 11,
@@ -1327,7 +1828,7 @@ export default function InventoryKit({
                                         marginRight: 6,
                                       }}
                                     >
-                                      Qty/Kit:
+                                      Quantity:
                                       <Text style={{ color: "#EF4444" }}>
                                         *
                                       </Text>
@@ -1335,7 +1836,7 @@ export default function InventoryKit({
 
                                     <TextInput
                                       style={{
-                                        width: 50,
+                                        width: 55,
                                         height: 35,
                                         borderWidth: 1,
                                         borderColor: kitItemErrors[item._id]
@@ -1357,7 +1858,6 @@ export default function InventoryKit({
                                         const index = kitItems.findIndex(
                                           (k) => k._id === item._id,
                                         );
-
                                         if (index !== -1) {
                                           updateKitItemQuantity(index, value);
                                         }
@@ -1394,9 +1894,7 @@ export default function InventoryKit({
                         }}
                       >
                         <Text style={{ color: "#6B7280", textAlign: "center" }}>
-                          No items with category "Kit Inclusions" found.
-                          {"\n"}Please add items with "Kit Inclusions" category
-                          first.
+                          No supplies with category "Kit Inclusions" found.
                         </Text>
                       </View>
                     )}
@@ -1441,7 +1939,7 @@ export default function InventoryKit({
                                 color: "#D4AF37",
                               }}
                             >
-                              {item.quantity} per kit
+                              {item.quantity} per kit-box
                             </Text>
                           </View>
                         ))}
@@ -1542,7 +2040,7 @@ export default function InventoryKit({
         </View>
       </Modal>
 
-      {/* confirmation modal */}
+      {/* Confirmation Modal */}
       <Modal
         visible={showConfirmKitModal}
         transparent
@@ -1554,7 +2052,6 @@ export default function InventoryKit({
       >
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmModal}>
-            {/* Header */}
             <View style={styles.confirmHeader}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.confirmTitle}>
@@ -1562,12 +2059,10 @@ export default function InventoryKit({
                     ? "Confirm Kit Restock"
                     : "Confirm Add Kit"}
                 </Text>
-
                 <Text style={styles.confirmSubtitle}>
                   Review the kit details before continuing.
                 </Text>
               </View>
-
               <TouchableOpacity
                 onPress={() => {
                   setShowConfirmKitModal(false);
@@ -1586,7 +2081,6 @@ export default function InventoryKit({
               </View>
             ) : null}
 
-            {/* Kit Preview */}
             <View style={styles.supplyPreview}>
               <View style={styles.supplyIcon}>
                 {image?.uri ? (
@@ -1598,63 +2092,59 @@ export default function InventoryKit({
                   <Package size={25} color="#D4AF37" />
                 )}
               </View>
-
               <View style={{ flex: 1 }}>
                 <Text style={styles.supplyName}>{kitFormData.name}</Text>
-
                 {kitFormData.itemCode && (
                   <Text style={styles.itemCode}>{kitFormData.itemCode}</Text>
                 )}
-
                 <Text style={styles.categoryText}>
                   Medical Kits • {kitFormData.unitType}
                 </Text>
               </View>
             </View>
 
-            {/* Kit Details */}
             <ScrollView
               style={styles.confirmDetails}
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Quantity</Text>
+                <Text style={styles.detailLabel}>Box</Text>
+                <Text style={styles.detailValue}>{kitFormData.box || 0}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Quantity per Box</Text>
+                <Text style={styles.detailValue}>{KIT_QUANTITY_PER_BOX}</Text>
+              </View>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Total Kits</Text>
                 <Text style={styles.detailValue}>
-                  {kitFormData.quantity} sets
+                  {Number(kitFormData.box || 0) * KIT_QUANTITY_PER_BOX}
                 </Text>
               </View>
-
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Reorder Level</Text>
                 <Text style={styles.detailValue}>
                   {kitFormData.reorderLevel}
                 </Text>
               </View>
-
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Expiration</Text>
                 <Text style={styles.detailValue}>
-                  {kitFormData.expirationDate
-                    ? kitFormData.expirationDate.toDateString()
-                    : "No date"}
+                  {getDefaultKitExpiration().toDateString()}
                 </Text>
               </View>
-
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Storage Location</Text>
                 <Text style={styles.detailValue}>{kitFormData.location}</Text>
               </View>
-
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Supplier</Text>
                 <Text style={styles.detailValue}>
                   {kitFormData.supplierName}
                 </Text>
               </View>
-
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Image</Text>
-
                 <View style={styles.imageStatus}>
                   <View
                     style={[
@@ -1664,14 +2154,12 @@ export default function InventoryKit({
                       },
                     ]}
                   />
-
                   <Text style={styles.detailValue}>
                     {image?.uri ? "Included" : "None"}
                   </Text>
                 </View>
               </View>
 
-              {/* Kit Items */}
               <View style={{ marginTop: 12 }}>
                 <Text
                   style={{
@@ -1708,7 +2196,6 @@ export default function InventoryKit({
                       >
                         {item.name}
                       </Text>
-
                       {item.itemCode && (
                         <Text
                           style={{
@@ -1721,7 +2208,6 @@ export default function InventoryKit({
                         </Text>
                       )}
                     </View>
-
                     <Text
                       style={{
                         fontSize: 12,
@@ -1729,25 +2215,22 @@ export default function InventoryKit({
                         color: "#D4AF37",
                       }}
                     >
-                      {item.quantity} / kit
+                      {item.quantity} / kit-box
                     </Text>
                   </View>
                 ))}
               </View>
             </ScrollView>
 
-            {/* Notice */}
             <View style={styles.confirmNotice}>
               <CheckCircle size={16} color="#D4AF37" />
-
               <Text style={styles.confirmNoticeText}>
                 {kitFormData.itemCode
-                  ? "This will restock the existing medical kit."
-                  : "This kit will be added to your inventory with the selected inclusions."}
+                  ? "Next step: scan inclusion batches to verify FEFO."
+                  : "Next step: scan inclusion batches to verify FEFO."}
               </Text>
             </View>
 
-            {/* Buttons */}
             <View style={styles.confirmActions}>
               <TouchableOpacity
                 style={styles.cancelButton}
@@ -1762,16 +2245,12 @@ export default function InventoryKit({
 
               <TouchableOpacity
                 style={styles.confirmButton}
-                onPress={() => {
-                  if (!validateKitBeforeSave()) {
-                    return;
-                  }
-                  setShowConfirmKitModal(false);
-                  performSaveKit();
+                onPress={async () => {
+                  if (!validateKitBeforeSave()) return;
+                  await startScanning();
                 }}
               >
-                <CheckCircle size={18} color="#FFFFFF" />
-
+                <ScanLine size={18} color="#FFFFFF" />
                 <Text style={styles.confirmButtonText}>
                   {kitFormData.itemCode ? "Yes, Restock" : "Yes, Add"}
                 </Text>
@@ -1781,28 +2260,492 @@ export default function InventoryKit({
         </View>
       </Modal>
 
+      {/* SCANNING MODAL  */}
+      <Modal
+        visible={scanningModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCancelScan}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.batchModalContainer, { paddingBottom: 0 }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalSubTitle}>
+                  VERIFY INCLUSIONS ({scanQueueIndex + 1}/{scanQueue.length})
+                </Text>
+                <Text style={styles.modalTitle}>
+                  {currentScanItem?.name || "Scanning complete"}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={handleCancelScan}>
+                <XCircle size={28} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Current inclusion banner */}
+            {currentScanItem ? (
+              <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+                <Text style={{ fontSize: 13, color: "#6B7280" }}>
+                  Scan {currentScanItem.perBox} per kit-box ×{" "}
+                  {Number(kitFormData.box) || 0} boxes ={" "}
+                  <Text style={{ fontWeight: "700", color: "#111827" }}>
+                    {currentScanItem.totalRequired} pcs
+                  </Text>{" "}
+                  required
+                </Text>
+                <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 4 }}>
+                  Scanned:{" "}
+                  <Text style={{ fontWeight: "700", color: "#111827" }}>
+                    {getScannedQtyForItem(currentScanItem.itemCode)}/
+                    {currentScanItem.totalRequired}
+                  </Text>
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Camera */}
+            <View
+              style={{
+                height: 150,
+                margin: 16,
+                borderRadius: 12,
+                overflow: "hidden",
+                backgroundColor: "#000",
+              }}
+            >
+              {!scanned ? (
+                <CameraView
+                  style={StyleSheet.absoluteFill}
+                  onBarcodeScanned={handleBarCodeScanned}
+                  barcodeSettings={{
+                    barcodeTypes: ["qr", "ean13", "code128", "code39"],
+                  }}
+                />
+              ) : (
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    {
+                      justifyContent: "center",
+                      alignItems: "center",
+                      backgroundColor: "#000",
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: "#D4AF37",
+                      padding: 15,
+                      borderRadius: 10,
+                    }}
+                    onPress={resetScanner}
+                  >
+                    <Text style={{ color: "#FFF", fontWeight: "bold" }}>
+                      SCAN NEXT BATCH
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* Progress list */}
+            <ScrollView style={{ maxHeight: 160, paddingHorizontal: 16 }}>
+              {scanQueue.map((q, idx) => {
+                const scanned = getScannedQtyForItem(q.itemCode);
+                const isDone = scanned >= q.totalRequired;
+                const isCurrent = idx === scanQueueIndex;
+                return (
+                  <View
+                    key={q.itemCode + idx}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      paddingVertical: 8,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#E5E7EB",
+                      backgroundColor: isCurrent ? "#FEF3C7" : "transparent",
+                      paddingHorizontal: 6,
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: isDone ? "#059669" : "#374151",
+                        flex: 1,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {q.name}
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "600",
+                          color: isDone ? "#059669" : "#6B7280",
+                        }}
+                      >
+                        {scanned}/{q.totalRequired}
+                      </Text>
+                      {isDone && (
+                        <Check size={16} color="#10B981" strokeWidth={3} />
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {/* Actions */}
+            <View
+              style={{ flexDirection: "row", paddingHorizontal: 16, gap: 10 }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.saveBtn,
+                  { flex: 1, backgroundColor: "#6B7280" },
+                ]}
+                onPress={handleCancelScan}
+              >
+                <Text style={styles.saveBtnText}>CANCEL</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.saveBtn,
+                  { flex: 1, backgroundColor: "#059669" },
+                ]}
+                onPress={handleSkipOrContinueShortfall}
+              >
+                <Text style={styles.saveBtnText}>SAVE KIT</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showIncompleteScanConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowIncompleteScanConfirm(false)}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.confirmHeader}>
+              <View style={styles.confirmIcon}>
+                <AlertTriangle size={24} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.confirmTitle}>Incomplete Scan</Text>
+                <Text style={styles.confirmSubtitle}>
+                  Some inclusions have not been fully scanned.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowIncompleteScanConfirm(false)}
+                style={styles.confirmClose}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel saving"
+              >
+                <XCircle size={28} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={{ maxHeight: 220 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {incompleteScanShortfalls.map((shortfall, index) => (
+                <View
+                  key={`${shortfall}-${index}`}
+                  style={{
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    marginBottom: 6,
+                    borderRadius: 8,
+                    backgroundColor: "#FFFBEB",
+                    borderWidth: 1,
+                    borderColor: "#FDE68A",
+                  }}
+                >
+                  <Text style={{ color: "#92400E", fontSize: 13 }}>
+                    {shortfall}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            <Text
+              style={{
+                color: "#6B7280",
+                fontSize: 12,
+                lineHeight: 18,
+                marginTop: 12,
+              }}
+            >
+              Putaway will deduct whatever stock is available at that time
+              (FEFO). Continue saving?
+            </Text>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowIncompleteScanConfirm(false)}
+              >
+                <Text style={styles.cancelButtonText}>Keep Scanning</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={confirmSaveWithShortfall}
+              >
+                <Text style={styles.confirmButtonText}>Continue</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showCancelScanConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCancelScanConfirm(false)}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmModal}>
+            <View style={styles.confirmHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.confirmTitle}>Cancel Scanning?</Text>
+                <Text style={styles.confirmSubtitle}>
+                  Your kit details will be preserved. You can try scanning
+                  again.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowCancelScanConfirm(false)}
+                style={styles.confirmClose}
+                accessibilityRole="button"
+                accessibilityLabel="Keep scanning"
+              >
+                <XCircle size={28} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowCancelScanConfirm(false)}
+              >
+                <Text style={styles.cancelButtonText}>Keep Scanning</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, { backgroundColor: "#EF4444" }]}
+                onPress={confirmCancelScan}
+              >
+                <Text style={styles.confirmButtonText}>Cancel Scan</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FEFO Warning Modal (mirrors picking) */}
+      {scanFeedback && (
+        <Modal
+          transparent
+          visible={Boolean(scanFeedback)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {}}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 24,
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: "#FFF",
+                borderRadius: 16,
+                padding: 22,
+                width: "100%",
+                maxWidth: 400,
+              }}
+            >
+              <View
+                style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: 30,
+                  backgroundColor: "#FEF3C7",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  alignSelf: "center",
+                  marginBottom: 12,
+                }}
+              >
+                <AlertTriangle size={30} color="#B45309" />
+              </View>
+
+              <Text
+                style={{
+                  textAlign: "center",
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                  color: "#B45309",
+                  fontWeight: "700",
+                }}
+              >
+                FEFO
+              </Text>
+              <Text
+                style={{
+                  textAlign: "center",
+                  fontSize: 17,
+                  fontWeight: "700",
+                  color: "#111827",
+                  marginTop: 4,
+                }}
+              >
+                Pick the earliest expiry first
+              </Text>
+
+              <View style={{ marginTop: 16 }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                    color: "#6B7280",
+                    fontWeight: "700",
+                  }}
+                >
+                  SCAN NEXT
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontWeight: "700",
+                    color: "#111827",
+                    marginTop: 4,
+                  }}
+                >
+                  {scanFeedback.earliestBatch.batchCode}
+                </Text>
+                <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 4 }}>
+                  Expires{" "}
+                  {new Date(
+                    scanFeedback.earliestBatch.expirationDate,
+                  ).toLocaleDateString()}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: "#9CA3AF",
+                    marginTop: 8,
+                  }}
+                >
+                  Batch {scanFeedback.scannedBatch.batchCode} should be picked
+                  later.
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={{
+                  marginTop: 20,
+                  backgroundColor: "#B45309",
+                  borderRadius: 10,
+                  paddingVertical: 14,
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onPress={closeScanFeedback}
+              >
+                <ScanLine size={18} color="#FFFFFF" />
+                <Text
+                  style={{
+                    color: "#FFFFFF",
+                    fontWeight: "700",
+                    fontSize: 13,
+                    letterSpacing: 0.6,
+                  }}
+                >
+                  SCAN CORRECT BATCH
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {/* Batch Modal */}
       <Modal visible={showBatchModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                {selectedItem?.itemImage && (
-                  <Image
-                    source={{ uri: selectedItem.itemImage }}
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 6,
-                      marginRight: 10,
-                    }}
-                  />
-                )}
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    selectedItem?.itemImage
+                      ? "Change kit photo"
+                      : "Add kit photo"
+                  }
+                  disabled={uploading}
+                  onPress={() => showImageOptions(saveBatchModalImage)}
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 6,
+                    marginRight: 10,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "#F3F4F6",
+                  }}
+                >
+                  {uploading ? (
+                    <ActivityIndicator color="#D4AF37" />
+                  ) : selectedItem?.itemImage ? (
+                    <Image
+                      source={{ uri: selectedItem.itemImage }}
+                      style={{ width: 48, height: 48, borderRadius: 6 }}
+                    />
+                  ) : (
+                    <Upload size={20} color="#9CA3AF" />
+                  )}
+                </TouchableOpacity>
                 <View>
                   <Text style={styles.modalSubTitle}>
                     ITEM CODE: {selectedItem?.itemCode}
                   </Text>
                   <Text style={styles.modalTitle}>{selectedItem?.name}</Text>
+                  <TouchableOpacity
+                    disabled={uploading}
+                    onPress={() => showImageOptions(saveBatchModalImage)}
+                  >
+                    <Text style={{ color: "#9A6700", fontSize: 12 }}>
+                      {uploading
+                        ? "Updating photo..."
+                        : selectedItem?.itemImage
+                          ? "Change photo"
+                          : "Add photo"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
               <TouchableOpacity onPress={() => setShowBatchModal(false)}>
@@ -1926,35 +2869,49 @@ export default function InventoryKit({
         <View style={styles.modalOverlay}>
           <View style={styles.successModalContainer}>
             <CheckCircle size={60} color="#10B981" />
+            <Text style={styles.successTitle}>
+              {restockSuccessData?.queued
+                ? "Saved Offline"
+                : "Save Successful!"}
+            </Text>
+            {restockSuccessData?.queued && (
+              <Text style={styles.detailValue}>
+                This kit change will sync when you reconnect. The server will
+                assign the batch code after syncing.
+                {restockSuccessData?.imageNotSynced
+                  ? " The selected image was not uploaded and must be added after reconnecting."
+                  : ""}
+              </Text>
+            )}
 
-            <Text style={styles.successTitle}>Save Successful!</Text>
-
-            <View
-              style={{
-                width: 220,
-                height: 100,
-                alignSelf: "center",
-                marginVertical: 10,
-              }}
-            >
-              <Image
-                source={{
-                  uri: `https://quickchart.io/barcode?text=${restockSuccessData?.batchCode}&type=code128&width=200&height=80`,
-                }}
-                style={{ width: 220, height: 80, alignSelf: "center" }}
-                resizeMode="contain"
-              />
-              <Text
+            {restockSuccessData?.batchCode && (
+              <View
                 style={{
+                  width: 220,
+                  height: 100,
                   alignSelf: "center",
-                  marginTop: -105,
-                  fontSize: 12,
-                  fontWeight: "bold",
+                  marginVertical: 10,
                 }}
               >
-                {restockSuccessData?.batchCode}
-              </Text>
-            </View>
+                <Image
+                  source={{
+                    uri: `https://quickchart.io/barcode?text=${restockSuccessData?.batchCode}&type=code128&width=200&height=80`,
+                  }}
+                  style={{ width: 220, height: 80, alignSelf: "center" }}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={{
+                    alignSelf: "center",
+                    marginTop: -105,
+                    fontSize: 12,
+                    fontWeight: "bold",
+                  }}
+                >
+                  {restockSuccessData?.batchCode}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.successDetailBox}>
               <Text style={styles.detailLabel}>
@@ -1966,44 +2923,49 @@ export default function InventoryKit({
               <Text style={styles.detailLabel}>
                 Batch Code:{" "}
                 <Text style={styles.detailValue}>
-                  {restockSuccessData?.batchCode}
+                  {restockSuccessData?.batchCode || "Assigned after sync"}
                 </Text>
               </Text>
               <Text style={styles.detailLabel}>
                 Quantity:{" "}
                 <Text style={styles.detailValue}>
-                  {restockSuccessData?.quantity} sets
+                  {restockSuccessData?.quantity} kits
                 </Text>
               </Text>
             </View>
 
-            <View style={styles.printSection}>
-              <Text style={styles.printLabel}>Labels to print:</Text>
-              <TextInput
-                style={styles.printInput}
-                keyboardType="numeric"
-                value={printQty}
-                onChangeText={setPrintQty}
-              />
-            </View>
+            {!restockSuccessData?.queued && (
+              <View style={styles.printSection}>
+                <Text style={styles.printLabel}>Labels to print:</Text>
+                <TextInput
+                  style={styles.printInput}
+                  keyboardType="numeric"
+                  value={printQty}
+                  onChangeText={setPrintQty}
+                />
+              </View>
+            )}
 
-            <TouchableOpacity
-              style={[styles.saveBtn, styles.printButton]}
-              onPress={() => {
-                Alert.alert(
-                  "Print",
-                  `Printing ${printQty} label(s) for ${restockSuccessData?.batchCode}`,
-                );
-              }}
-            >
-              <Printer size={20} color="#FFF" style={styles.printIcon} />
-              <Text style={styles.saveBtnText}>PRINT LABELS</Text>
-            </TouchableOpacity>
+            {!restockSuccessData?.queued && (
+              <TouchableOpacity
+                style={[styles.saveBtn, styles.printButton]}
+                onPress={handlePrintLabel}
+                disabled={isPrinting}
+              >
+                {isPrinting ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <>
+                    <Printer size={20} color="#FFF" style={styles.printIcon} />
+                    <Text style={styles.saveBtnText}>PRINT LABELS</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
               onPress={() => {
                 setShowSuccessModal(false);
-                setPrintQty("1");
               }}
               style={styles.dismissBtn}
             >
