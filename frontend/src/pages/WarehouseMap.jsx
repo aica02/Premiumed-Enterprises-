@@ -81,7 +81,10 @@ const WarehouseMap = () => {
     return items
       .flatMap((item) =>
         (item.batches || [])
-          .filter((batch) => batch.status !== "disposed")
+          .filter(
+            (batch) =>
+              batch.status !== "disposed" && Number(batch.quantity) > 0,
+          )
           .map((batch) => ({
             itemName: item.name,
             batchCode: batch.batchCode,
@@ -212,30 +215,35 @@ const WarehouseMap = () => {
     items.forEach((item) => {
       const locationBatches = (item.batches || []).filter(
         (batch) =>
-          batch.storageLocation === locationId && batch.status !== "disposed",
+          batch.storageLocation === locationId &&
+          batch.status !== "disposed" &&
+          Number(batch.quantity) > 0,
       );
       if (locationBatches.length === 0) return;
 
-      const totalSupplyQuantity = (item.batches || [])
-        .filter((batch) => batch.status !== "disposed")
-        .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
       const reorderLevel = Number(item.reorderLevel) || 50;
 
-      if (totalSupplyQuantity > 0 && totalSupplyQuantity <= reorderLevel) {
-        batchStatuses.add("lowStock");
-      } else if (totalSupplyQuantity > reorderLevel) {
-        batchStatuses.add("good");
-      }
-
       locationBatches.forEach((batch) => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const expirationDate = new Date(batch.expirationDate);
-        expirationDate.setHours(0, 0, 0, 0);
-        const daysLeft = Math.ceil(
-          (expirationDate - today) / (1000 * 60 * 60 * 24),
-        );
-        if (daysLeft <= NEAR_EXPIRY_DAYS) batchStatuses.add("nearExpiry");
+        if (batch.expirationDate) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const expirationDate = new Date(batch.expirationDate);
+
+          if (!Number.isNaN(expirationDate.getTime())) {
+            expirationDate.setHours(0, 0, 0, 0);
+            const daysLeft = Math.ceil(
+              (expirationDate - today) / (1000 * 60 * 60 * 24),
+            );
+
+            if (daysLeft <= NEAR_EXPIRY_DAYS) {
+              batchStatuses.add("nearExpiry");
+              return;
+            }
+          }
+        }
+
+        const quantity = Number(batch.quantity) || 0;
+        batchStatuses.add(quantity <= reorderLevel ? "lowStock" : "good");
       });
     });
 
@@ -458,16 +466,17 @@ const WarehouseMap = () => {
                       </tr>
                     ))}
 
-                  {activeTab === "nearExpiry" && nearExpiryData.length === 0 && (
-                    <tr>
-                      <td colSpan={5}>
-                        <EmptyState
-                          title="No near-expiry or expired batches"
-                          message="There are no batches expiring within 30 days or past their expiration date."
-                        />
-                      </td>
-                    </tr>
-                  )}
+                  {activeTab === "nearExpiry" &&
+                    nearExpiryData.length === 0 && (
+                      <tr>
+                        <td colSpan={5}>
+                          <EmptyState
+                            title="No near-expiry or expired batches"
+                            message="There are no batches expiring within 30 days or past their expiration date."
+                          />
+                        </td>
+                      </tr>
+                    )}
 
                   {activeTab === "lowStock" &&
                     lowStockData.map((item, index) => (
