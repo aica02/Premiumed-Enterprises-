@@ -56,11 +56,22 @@ export const pickingStyles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#F9FAFB",
   },
+  menuItemActive: {
+    backgroundColor: "#FFF7E6",
+    borderRadius: 10,
+    borderBottomColor: "transparent",
+    paddingLeft: 12,
+    paddingRight: 12,
+  },
   menuItemText: {
     fontSize: 16,
     fontWeight: "600",
     color: "#4B5563",
     marginLeft: 15,
+  },
+  menuItemTextActive: {
+    color: "#7C4A03",
+    fontWeight: "700",
   },
 
   // for putaway list - number of not stored supplies.
@@ -78,7 +89,6 @@ export const pickingStyles = StyleSheet.create({
     backgroundColor: "#EF4444",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 6,
   },
 
   notificationBadgeText: {

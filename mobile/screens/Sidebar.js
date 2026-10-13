@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TouchableOpacity, Modal, Image } from "react-native";
+import { View, Text, TouchableOpacity, Modal } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   XCircle,
@@ -10,12 +10,13 @@ import {
   PackageX,
 } from "lucide-react-native";
 import { pickingStyles } from "../styles/SidebarStyles";
-import { useNavigation } from "@react-navigation/native";
+import { useRoute } from "@react-navigation/native";
 import { offlineFetch } from "../shared/offlineApi";
 
 const API_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 
 export default function Sidebar({ isVisible, onClose, navigation }) {
+  const route = useRoute();
   const [menuItems, setMenuItems] = useState([]);
   const [unstoredCount, setUnstoredCount] = useState(0);
   const [disposeCount, setDisposeCount] = useState(0);
@@ -24,22 +25,22 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
     Staff: [
       {
         name: "Picking List",
-        icon: <LayoutDashboard size={22} color="#D4AF37" />,
+        icon: LayoutDashboard,
         screen: "Picking",
       },
       {
         name: "Putaway List",
-        icon: <ClipboardList size={22} color="#D4AF37" />,
+        icon: ClipboardList,
         screen: "Putaway",
       },
       {
         name: "Inventory",
-        icon: <Package size={22} color="#D4AF37" />,
+        icon: Package,
         screen: "Inventory",
       },
       {
         name: "To Dispose",
-        icon: <PackageX size={22} color="#D4AF37" />,
+        icon: PackageX,
         screen: "To Dispose",
       },
     ],
@@ -47,12 +48,12 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
     Driver: [
       {
         name: "Pending Delivery List",
-        icon: <LayoutDashboard size={22} color="#D4AF37" />,
+        icon: LayoutDashboard,
         screen: "DeliveryList",
       },
       {
         name: "Completed Delivery List",
-        icon: <ClipboardList size={22} color="#D4AF37" />,
+        icon: ClipboardList,
         screen: "DeliveryListComplete",
       },
     ],
@@ -77,9 +78,11 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
   };
 
   const handleNavigation = (screen) => {
-    onClose();
     navigation.navigate(screen);
+    onClose();
   };
+
+  const activeRoute = route.name;
 
   const fetchUnstoredCount = async () => {
     try {
@@ -133,41 +136,56 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
               onPress={onClose}
               style={pickingStyles.closeButton}
             >
-              <XCircle size={24} color="#6B7280" />
+              <XCircle size={24} color="#EF4444" />
             </TouchableOpacity>
           </View>
 
           <View style={{ flex: 1, justifyContent: "space-between" }}>
             {/* Main Menus */}
             <View>
-              {menuItems.map((item, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={pickingStyles.menuItem}
-                  onPress={() => handleNavigation(item.screen)}
-                >
-                  {item.icon}
-                  <View style={pickingStyles.menuContent}>
-                    <Text style={pickingStyles.menuItemText}>{item.name}</Text>
+              {menuItems.map((item, index) => {
+                const Icon = item.icon;
+                const isActive = activeRoute === item.screen;
 
-                    {item.name === "Putaway List" && unstoredCount > 0 && (
-                      <View style={pickingStyles.notificationBadge}>
-                        <Text style={pickingStyles.notificationBadgeText}>
-                          {unstoredCount > 99 ? "99+" : unstoredCount}
-                        </Text>
-                      </View>
-                    )}
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      pickingStyles.menuItem,
+                      isActive && pickingStyles.menuItemActive,
+                    ]}
+                    onPress={() => handleNavigation(item.screen)}
+                  >
+                    <Icon size={22} color={isActive ? "#9A6700" : "#D4AF37"} />
+                    <View style={pickingStyles.menuContent}>
+                      <Text
+                        style={[
+                          pickingStyles.menuItemText,
+                          isActive && pickingStyles.menuItemTextActive,
+                        ]}
+                      >
+                        {item.name}
+                      </Text>
 
-                    {item.name === "To Dispose" && disposeCount > 0 && (
-                      <View style={pickingStyles.notificationBadge}>
-                        <Text style={pickingStyles.notificationBadgeText}>
-                          {disposeCount > 99 ? "99+" : disposeCount}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              ))}
+                      {item.name === "Putaway List" && unstoredCount > 0 && (
+                        <View style={pickingStyles.notificationBadge}>
+                          <Text style={pickingStyles.notificationBadgeText}>
+                            {unstoredCount > 99 ? "99+" : unstoredCount}
+                          </Text>
+                        </View>
+                      )}
+
+                      {item.name === "To Dispose" && disposeCount > 0 && (
+                        <View style={pickingStyles.notificationBadge}>
+                          <Text style={pickingStyles.notificationBadgeText}>
+                            {disposeCount > 99 ? "99+" : disposeCount}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             {/* Bottom Menu */}
@@ -175,11 +193,25 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
               <View style={{ height: 1, backgroundColor: "#E5E7EB" }} />
 
               <TouchableOpacity
-                style={pickingStyles.menuItem}
+                style={[
+                  pickingStyles.menuItem,
+                  activeRoute === "Settings" && pickingStyles.menuItemActive,
+                ]}
                 onPress={() => handleNavigation("Settings")}
               >
-                <Settings size={22} color="#D4AF37" />
-                <Text style={pickingStyles.menuItemText}>Settings</Text>
+                <Settings
+                  size={22}
+                  color={activeRoute === "Settings" ? "#9A6700" : "#D4AF37"}
+                />
+                <Text
+                  style={[
+                    pickingStyles.menuItemText,
+                    activeRoute === "Settings" &&
+                      pickingStyles.menuItemTextActive,
+                  ]}
+                >
+                  Settings
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

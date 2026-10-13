@@ -175,6 +175,7 @@ export default function InventoryList({ navigation }) {
       <View style={styles.container}>
         <ScrollView
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 70 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

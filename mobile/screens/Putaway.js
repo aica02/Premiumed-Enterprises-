@@ -183,7 +183,8 @@ export default function PutawayList({ navigation }) {
           setExpiredBatchNotice({
             batchCode: batch.batchCode,
             expirationDate: expiryDate.toISOString().split("T")[0],
-            message: "This batch has expired and cannot be stored. Please discard it.",
+            message:
+              "This batch has expired and cannot be stored. Please discard it.",
           });
           setStoringBatchId(null);
           isProcessingRef.current = false;
@@ -258,34 +259,35 @@ export default function PutawayList({ navigation }) {
     let hasAnyBatch = false;
 
     items.forEach((item) => {
-      const itemReorder = Number(item.reorderLevel);
+      const itemReorder = Number(item.reorderLevel) || 50;
+      let totalInRack = 0;
+      let hasBatchInRack = false;
 
       (item.batches || []).forEach((batch) => {
+        const qty = Number(batch.quantity) || 0;
         if (
           batch.storageLocation !== rackId ||
           batch.status === "disposed" ||
-          batch.quantity <= 0
+          qty <= 0
         )
           return;
 
+        hasBatchInRack = true;
         hasAnyBatch = true;
-
-        const qty = Number(batch.quantity || 0);
-
-        if (qty <= itemReorder) {
-          hasLowStock = true;
-        }
+        totalInRack += qty;
 
         const expDate = new Date(batch.expirationDate);
         expDate.setHours(0, 0, 0, 0);
-
         const daysLeft = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
 
-        // tinanggal ko  && batch.FEFOstatus !== "Safe"
         if (daysLeft <= NEAR_EXPIRY_DAYS) {
           hasNearExpiry = true;
         }
       });
+
+      if (hasBatchInRack && totalInRack <= itemReorder) {
+        hasLowStock = true;
+      }
     });
 
     if (!hasAnyBatch) return "no-items";
@@ -297,13 +299,26 @@ export default function PutawayList({ navigation }) {
   const getStatusColor = (status) => {
     switch (status) {
       case "good":
-        return "#22C55E"; // green
+        return "#22C55E";
       case "lowStock":
-        return "#F59E0B"; // orange
+        return "#F59E0B";
       case "nearExpiry":
-        return "#EF4444"; // red
+        return "#EF4444";
       default:
-        return "#E5E7EB"; // gray / empty
+        return "#E5E7EB";
+    }
+  };
+
+  const getPalletStatusColor = (status) => {
+    switch (status) {
+      case "good":
+        return "#3BB143";
+      case "lowStock":
+        return "#ED7117";
+      case "nearExpiry":
+        return "#C21A09";
+      default:
+        return "#E5E7EB";
     }
   };
 
@@ -317,6 +332,7 @@ export default function PutawayList({ navigation }) {
       />
       <View style={pickingStyles.container}>
         <ScrollView
+          contentContainerStyle={{ paddingBottom: 70 }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={fetchData} />
           }
@@ -420,25 +436,39 @@ export default function PutawayList({ navigation }) {
             {/* PALLETS */}
             {pallets.map((pallet, index) => {
               const status = computeDynamicStatus(pallet.id, inventory);
+              const selectedRackId = highlightedRack?.trim();
+              const isHighlighted = selectedRackId === pallet.id;
 
               return (
                 <View
                   key={`${pallet.id}-${index}`}
                   style={[
-                    warehouseMapStyles.rack,
+                    warehouseMapStyles.pallet,
                     {
                       top: pallet.top,
                       left: pallet.left,
                       width: pallet.width,
                       height: pallet.height,
-                      backgroundColor: getStatusColor(status),
+                      backgroundColor: highlightedRack
+                        ? isHighlighted
+                          ? "#D4AF37"
+                          : "#E5E7EB"
+                        : getPalletStatusColor(status),
                     },
                   ]}
                 >
                   <Text
                     style={[
                       warehouseMapStyles.rackLabel,
-                      { color: status === "no-items" ? "#111827" : "#FFFFFF" },
+                      {
+                        color: highlightedRack
+                          ? isHighlighted
+                            ? "#FFFFFF"
+                            : "#111827"
+                          : status === "no-items"
+                            ? "#111827"
+                            : "#FFFFFF",
+                      },
                     ]}
                   >
                     {pallet.id}
@@ -629,7 +659,9 @@ export default function PutawayList({ navigation }) {
                 {storeSuccess.queued ? "PUTAWAY QUEUED" : "PUTAWAY COMPLETE"}
               </Text>
               <Text style={pickingStyles.putawaySuccessTitle}>
-                {storeSuccess.queued ? "Waiting to sync" : "Batch stored successfully"}
+                {storeSuccess.queued
+                  ? "Waiting to sync"
+                  : "Batch stored successfully"}
               </Text>
               <Text style={pickingStyles.putawaySuccessMessage}>
                 {storeSuccess.queued
@@ -676,7 +708,9 @@ export default function PutawayList({ navigation }) {
                 style={pickingStyles.putawaySuccessButton}
                 onPress={() => setStoreSuccess(null)}
               >
-                <Text style={pickingStyles.feedbackButtonText}>BACK TO PENDING</Text>
+                <Text style={pickingStyles.feedbackButtonText}>
+                  BACK TO PENDING
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -45,7 +45,22 @@ export const warehouseMapStyles = StyleSheet.create({
     alignItems: "center",
   },
 
+  pallet: {
+    position: "absolute",
+    backgroundColor: "#E5E7EB",
+    borderTopLeftRadius: 1,
+    borderBottomRightRadius: 1,
+    borderLeftWidth: 1,
+    borderLeftColor: "rgba(0,0,0,0.25)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 2,
+  },
+
   rackTypeA: {
+    // backgroundColor: "#E5E7EB",
     borderTopLeftRadius: 3,
     borderBottomRightRadius: 3,
     borderLeftWidth: 3,

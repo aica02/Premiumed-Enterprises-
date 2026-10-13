@@ -398,22 +398,34 @@ export default function DisposeSupplies({ navigation }) {
                 />
               ))}
 
-              {pallets.map((pallet, index) => (
-                <View
-                  key={`${pallet.id}-${index}`}
-                  style={[
-                    warehouseMapStyles.rack,
-                    {
-                      top: pallet.top,
-                      left: pallet.left,
-                      width: pallet.width,
-                      height: pallet.height,
-                    },
-                  ]}
-                >
-                  <Text style={warehouseMapStyles.rackLabel}>{pallet.id}</Text>
-                </View>
-              ))}
+              {pallets.map((pallet, index) => {
+                const isHighlighted = highlightedRack === pallet.id;
+
+                return (
+                  <View
+                    key={`${pallet.id}-${index}`}
+                    style={[
+                      warehouseMapStyles.pallet,
+                      {
+                        top: pallet.top,
+                        left: pallet.left,
+                        width: pallet.width,
+                        height: pallet.height,
+                        backgroundColor: isHighlighted ? "#EF4444" : "#E5E7EB",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        warehouseMapStyles.rackLabel,
+                        { color: isHighlighted ? "#FFFFFF" : "#111827" },
+                      ]}
+                    >
+                      {pallet.id}
+                    </Text>
+                  </View>
+                );
+              })}
 
               {racks.map((rack, index) => {
                 const rackStyle =
@@ -643,6 +655,10 @@ const styles = StyleSheet.create({
 
   scrollView: {
     flex: 1,
+  },
+
+  scrollContent: {
+    paddingBottom: 70,
   },
 
   loader: {

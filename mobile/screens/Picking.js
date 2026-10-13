@@ -237,7 +237,7 @@ export default function DeliveryList({ navigation }) {
           ? "This supply has not been stored yet and cannot be picked."
           : scannedBatch.status === "for disposal"
             ? "This supply is marked for disposal and cannot be picked."
-          : `Batch status is ${scannedBatch.status}.`;
+            : `Batch status is ${scannedBatch.status}.`;
       setBatchBlockedNotice({
         batchCode: scannedBatch.batchCode,
         status: scannedBatch.status,
@@ -578,6 +578,7 @@ export default function DeliveryList({ navigation }) {
 
       <View style={pickingStyles.container}>
         <ScrollView
+          contentContainerStyle={{ paddingBottom: 70 }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={fetchData} />
           }
@@ -664,29 +665,40 @@ export default function DeliveryList({ navigation }) {
             ))}
 
             {/* PALLETS */}
-            {pallets.map((pallet, index) => (
-              <View
-                key={`${pallet.id}-${index}`}
-                style={[
-                  warehouseMapStyles.rack,
-                  {
-                    top: pallet.top,
-                    left: pallet.left,
-                    width: pallet.width,
-                    height: pallet.height,
-                  },
-                ]}
-              >
-                <Text style={warehouseMapStyles.rackLabel}>{pallet.id}</Text>
-              </View>
-            ))}
+            {pallets.map((pallet, index) => {
+              const isHighlighted = highlightedLocations.has(pallet.id);
+
+              return (
+                <View
+                  key={`${pallet.id}-${index}`}
+                  style={[
+                    warehouseMapStyles.pallet,
+                    {
+                      top: pallet.top,
+                      left: pallet.left,
+                      width: pallet.width,
+                      height: pallet.height,
+                      backgroundColor: isHighlighted ? "#D4AF37" : "#E5E7EB",
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      warehouseMapStyles.rackLabel,
+                      { color: isHighlighted ? "#FFFFFF" : "#111827" },
+                    ]}
+                  >
+                    {pallet.id}
+                  </Text>
+                </View>
+              );
+            })}
 
             {/* RACKS */}
             {racks.map((rack, index) => {
               const rackStyle =
-                ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9"].includes(
-                  rack.className,
-                ) && warehouseMapStyles.rackTypeA;
+                ["R1", "R2", "R3", "R4", "R5", "R6"].includes(rack.className) &&
+                warehouseMapStyles.rackTypeA;
               const isHighlighted = highlightedLocations.has(rack.id);
 
               return (
