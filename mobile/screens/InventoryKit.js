@@ -1146,21 +1146,14 @@ export default function InventoryKit({
 
   const isMedicalKit = (item) => item.category === "Medical Kits";
 
-  const getFilteredItems = () => {
-    const searchLower = searchTerm.toLowerCase();
-    return items.filter(
-      (item) =>
-        isMedicalKit(item) &&
-        item.name.toLowerCase().includes(searchLower) &&
-        batches.some(
-          (batch) =>
-            batch.itemCode === item.itemCode &&
-            COUNTED_BATCH_STATUSES.includes(batch.status) &&
-            Number(batch.quantity) > 0,
-        ),
-    );
-  };
-
+const getFilteredItems = () => {
+  const searchLower = searchTerm.toLowerCase();
+  return items.filter(
+    (item) =>
+      !isMedicalKit(item) &&
+      item.name.toLowerCase().includes(searchLower),
+  );
+};
   const getKitInclusionItems = () => {
     return items
       .filter(
