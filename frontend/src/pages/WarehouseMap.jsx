@@ -69,7 +69,11 @@ const WarehouseMap = () => {
       }))
       .filter(({ batches }) => batches.length > 0);
 
-    setSelectedLocationDetails({ locationId, locationType, items: locationItems });
+    setSelectedLocationDetails({
+      locationId,
+      locationType,
+      items: locationItems,
+    });
   };
 
   const nearExpiryData = useMemo(() => {
@@ -241,8 +245,7 @@ const WarehouseMap = () => {
     items.forEach((item) => {
       const locationBatches = (item.batches || []).filter(
         (batch) =>
-          batch.storageLocation === locationId &&
-          batch.status !== "disposed",
+          batch.storageLocation === locationId && batch.status !== "disposed",
       );
       if (locationBatches.length === 0) return;
 
@@ -597,47 +600,48 @@ const WarehouseMap = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedLocationDetails.items.flatMap(({ item, batches }) =>
-                      batches.map((batch) => {
-                        const fefo = getFefoStatus(batch.expirationDate);
-                        const quantityStock = getStockStatus(
-                          Number(batch.quantity) || 0,
-                          Number(item.reorderLevel) || 50,
-                        );
-                        const stock =
-                          batch.status === "for disposal"
-                            ? {
-                                label: "For Disposal",
-                                className: "for-disposal",
-                              }
-                            : {
-                                ...quantityStock,
-                                className: quantityStock.label
-                                  .replace(/\s+/g, "-")
-                                  .toLowerCase(),
-                              };
+                    {selectedLocationDetails.items.flatMap(
+                      ({ item, batches }) =>
+                        batches.map((batch) => {
+                          const fefo = getFefoStatus(batch.expirationDate);
+                          const quantityStock = getStockStatus(
+                            Number(batch.quantity) || 0,
+                            Number(item.reorderLevel) || 50,
+                          );
+                          const stock =
+                            batch.status === "for disposal"
+                              ? {
+                                  label: "For Disposal",
+                                  className: "for-disposal",
+                                }
+                              : {
+                                  ...quantityStock,
+                                  className: quantityStock.label
+                                    .replace(/\s+/g, "-")
+                                    .toLowerCase(),
+                                };
 
-                        return (
-                          <tr key={`${item.itemCode}-${batch.batchCode}`}>
-                            <td>{batch.batchCode}</td>
-                            <td>{batch.quantity}</td>
-                            <td>
-                              <span
-                                className={`status-capsule status-${fefo.className}`}
-                              >
-                                {fefo.label}
-                              </span>
-                            </td>
-                            <td>
-                              <span
-                                className={`status-capsule status-${stock.className}`}
-                              >
-                                {stock.label}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      }),
+                          return (
+                            <tr key={`${item.itemCode}-${batch.batchCode}`}>
+                              <td>{batch.batchCode}</td>
+                              <td>{batch.quantity}</td>
+                              <td>
+                                <span
+                                  className={`status-capsule status-${fefo.className}`}
+                                >
+                                  {fefo.label}
+                                </span>
+                              </td>
+                              <td>
+                                <span
+                                  className={`status-capsule status-${stock.className}`}
+                                >
+                                  {stock.label}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        }),
                     )}
                   </tbody>
                 </table>
