@@ -21,8 +21,9 @@ import { warehouseMapStyles } from "../styles/warehouseMapStyles";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { CheckCircle, PackageCheck } from "lucide-react-native";
+import { AlertTriangle, CheckCircle, PackageCheck } from "lucide-react-native";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
+import { offlineFetch as fetch } from "../shared/offlineApi";
 
 export default function PutawayList({ navigation }) {
   const [batches, setBatches] = useState([]);
@@ -33,6 +34,7 @@ export default function PutawayList({ navigation }) {
   const [highlightedRack, setHighlightedRack] = useState(null);
   const [storingBatchId, setStoringBatchId] = useState(null);
   const [storeSuccess, setStoreSuccess] = useState(null);
+  const [expiredBatchNotice, setExpiredBatchNotice] = useState(null);
 
   const [staffName, setStaffName] = useState("");
   const [staffPosition, setStaffPosition] = useState("");
@@ -40,7 +42,7 @@ export default function PutawayList({ navigation }) {
 
   const isProcessingRef = useRef(false);
 
-  const { tables, labels, lines, areas, racks } = warehouseMapLayout;
+  const { tables, labels, lines, areas, pallets, racks } = warehouseMapLayout;
 
   const API_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage/batches/pending`;
   const INVENTORY_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage/stored`;
@@ -178,11 +180,11 @@ export default function PutawayList({ navigation }) {
         expiryDate.setHours(0, 0, 0, 0);
 
         if (expiryDate < today) {
-          Alert.alert(
-            "Cannot Store",
-            `This batch has expired on ${expiryDate.toISOString().split("T")[0]}. Please discard this batch.`,
-            [{ text: "OK" }],
-          );
+          setExpiredBatchNotice({
+            batchCode: batch.batchCode,
+            expirationDate: expiryDate.toISOString().split("T")[0],
+            message: "This batch has expired and cannot be stored. Please discard it.",
+          });
           setStoringBatchId(null);
           isProcessingRef.current = false;
           return;
@@ -220,6 +222,7 @@ export default function PutawayList({ navigation }) {
         setHighlightedRack(null);
         setStoreSuccess({
           isKit,
+          queued: result.queued,
           itemName: batch.itemName,
           batchCode: batch.batchCode,
           storageLocation: batch.storageLocation,
@@ -230,7 +233,10 @@ export default function PutawayList({ navigation }) {
           result.message &&
           result.message.toLowerCase().includes("expired")
         ) {
-          Alert.alert("Cannot Store", result.message, [{ text: "OK" }]);
+          setExpiredBatchNotice({
+            batchCode: batch.batchCode,
+            message: result.message,
+          });
         } else {
           Alert.alert("Error", result.message || "Failed to store batch");
         }
@@ -411,6 +417,36 @@ export default function PutawayList({ navigation }) {
               />
             ))}
 
+            {/* PALLETS */}
+            {pallets.map((pallet, index) => {
+              const status = computeDynamicStatus(pallet.id, inventory);
+
+              return (
+                <View
+                  key={`${pallet.id}-${index}`}
+                  style={[
+                    warehouseMapStyles.rack,
+                    {
+                      top: pallet.top,
+                      left: pallet.left,
+                      width: pallet.width,
+                      height: pallet.height,
+                      backgroundColor: getStatusColor(status),
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      warehouseMapStyles.rackLabel,
+                      { color: status === "no-items" ? "#111827" : "#FFFFFF" },
+                    ]}
+                  >
+                    {pallet.id}
+                  </Text>
+                </View>
+              );
+            })}
+
             {/* RACKS */}
             {racks.map((rack, index) => {
               const rackStyle = [
@@ -590,15 +626,17 @@ export default function PutawayList({ navigation }) {
                 <PackageCheck size={38} color="#047857" />
               </View>
               <Text style={pickingStyles.putawaySuccessEyebrow}>
-                PUTAWAY COMPLETE
+                {storeSuccess.queued ? "PUTAWAY QUEUED" : "PUTAWAY COMPLETE"}
               </Text>
               <Text style={pickingStyles.putawaySuccessTitle}>
-                Batch stored successfully
+                {storeSuccess.queued ? "Waiting to sync" : "Batch stored successfully"}
               </Text>
               <Text style={pickingStyles.putawaySuccessMessage}>
-                {storeSuccess.isKit
-                  ? "The kit was stored and its inventory components were deducted."
-                  : "The batch is now available in stored inventory."}
+                {storeSuccess.queued
+                  ? "The putaway update is saved on this device and will sync when you reconnect."
+                  : storeSuccess.isKit
+                    ? "The kit was stored and its inventory components were deducted."
+                    : "The batch is now available in stored inventory."}
               </Text>
 
               <View style={pickingStyles.putawayStatusRow}>
@@ -610,7 +648,9 @@ export default function PutawayList({ navigation }) {
                     {storeSuccess.itemName}
                   </Text>
                   <Text style={pickingStyles.putawayStatusText}>
-                    Batch {storeSuccess.batchCode}
+                    {storeSuccess.queued
+                      ? `Batch ${storeSuccess.batchCode} - pending sync`
+                      : `Batch ${storeSuccess.batchCode}`}
                   </Text>
                 </View>
               </View>
@@ -623,9 +663,11 @@ export default function PutawayList({ navigation }) {
                     Stored at {storeSuccess.storageLocation}
                   </Text>
                   <Text style={pickingStyles.putawayStatusText}>
-                    {storeSuccess.isKit
-                      ? "Kit inventory updated"
-                      : "Inventory location updated"}
+                    {storeSuccess.queued
+                      ? "Server inventory has not changed yet"
+                      : storeSuccess.isKit
+                        ? "Kit inventory updated"
+                        : "Inventory location updated"}
                   </Text>
                 </View>
               </View>
@@ -635,6 +677,56 @@ export default function PutawayList({ navigation }) {
                 onPress={() => setStoreSuccess(null)}
               >
                 <Text style={pickingStyles.feedbackButtonText}>BACK TO PENDING</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {expiredBatchNotice && (
+        <Modal
+          transparent
+          visible={Boolean(expiredBatchNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setExpiredBatchNotice(null)}
+        >
+          <View style={pickingStyles.putawayExpiredOverlay}>
+            <View style={pickingStyles.putawayExpiredCard}>
+              <View style={pickingStyles.putawayExpiredIcon}>
+                <AlertTriangle size={36} color="#B91C1C" />
+              </View>
+              <Text style={pickingStyles.putawayExpiredEyebrow}>
+                PUTAWAY BLOCKED
+              </Text>
+              <Text style={pickingStyles.putawayExpiredTitle}>
+                Batch has expired
+              </Text>
+              <Text style={pickingStyles.putawayExpiredMessage}>
+                {expiredBatchNotice.message}
+              </Text>
+
+              <View style={pickingStyles.putawayExpiredDetails}>
+                <Text style={pickingStyles.putawayExpiredLabel}>BATCH</Text>
+                <Text style={pickingStyles.putawayExpiredBatchCode}>
+                  {expiredBatchNotice.batchCode}
+                </Text>
+                {expiredBatchNotice.expirationDate && (
+                  <>
+                    <Text style={pickingStyles.putawayExpiredLabel}>
+                      EXPIRED ON
+                    </Text>
+                    <Text style={pickingStyles.putawayExpiredDate}>
+                      {expiredBatchNotice.expirationDate}
+                    </Text>
+                  </>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={pickingStyles.putawayExpiredButton}
+                onPress={() => setExpiredBatchNotice(null)}
+              >
+                <Text style={pickingStyles.feedbackButtonText}>GOT IT</Text>
               </TouchableOpacity>
             </View>
           </View>

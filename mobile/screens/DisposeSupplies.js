@@ -17,6 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { pickingStyles } from "../styles/PickingStyles";
 import { warehouseMapStyles } from "../styles/warehouseMapStyles";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
+import { offlineFetch as fetch } from "../shared/offlineApi";
 
 export default function DisposeSupplies({ navigation }) {
   const [disposalBatches, setDisposalBatches] = useState([]);
@@ -34,7 +35,7 @@ export default function DisposeSupplies({ navigation }) {
 
   const isProcessing = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
-  const { tables, labels, lines, areas, racks } = warehouseMapLayout;
+  const { tables, labels, lines, areas, pallets, racks } = warehouseMapLayout;
   const INVENTORY_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage`;
   const USER_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/login/profile`;
 
@@ -190,9 +191,12 @@ export default function DisposeSupplies({ navigation }) {
       );
 
       if (response.ok) {
+        const result = await response.json();
         Alert.alert(
-          "Success",
-          `Batch ${batch.batchCode} has been disposed successfully.`,
+          result.queued ? "Saved Offline" : "Success",
+          result.queued
+            ? `Disposal of batch ${batch.batchCode} is saved on this device and will sync when you reconnect.`
+            : `Batch ${batch.batchCode} has been disposed successfully.`,
           [
             {
               text: "OK",
@@ -392,6 +396,23 @@ export default function DisposeSupplies({ navigation }) {
                     },
                   ]}
                 />
+              ))}
+
+              {pallets.map((pallet, index) => (
+                <View
+                  key={`${pallet.id}-${index}`}
+                  style={[
+                    warehouseMapStyles.rack,
+                    {
+                      top: pallet.top,
+                      left: pallet.left,
+                      width: pallet.width,
+                      height: pallet.height,
+                    },
+                  ]}
+                >
+                  <Text style={warehouseMapStyles.rackLabel}>{pallet.id}</Text>
+                </View>
               ))}
 
               {racks.map((rack, index) => {

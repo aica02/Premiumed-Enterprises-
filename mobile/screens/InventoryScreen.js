@@ -16,6 +16,7 @@ import Header from "./Header";
 import InventorySupply from "./InventorySupply";
 import InventoryKit from "./InventoryKit";
 import { styles } from "../styles/InventoryStyles";
+import { offlineFetch as fetch } from "../shared/offlineApi";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const USER_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/login/profile`;

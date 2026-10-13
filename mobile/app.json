@@ -9,7 +9,7 @@
     "extra": {
       "apiUrl": "http://192.168.1.25:5000",
       "eas": {
-        "projectId": "d1f6f12d-3268-4159-b6e4-b6639af05692"
+        "projectId": "570698c0-c8eb-4442-8eae-c35f4820b3a7"
       }
     },
     "ios": {
@@ -20,6 +20,18 @@
         "foregroundImage": "./assets/Premiumed logo.png",
         "backgroundColor": "#000000"
       },
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
       "package": "com.premiumedmobile"
     },
     "web": {
@@ -27,6 +39,14 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Premiumed Warehouse to select supply photos from your library.",
+          "cameraPermission": "Allow Premiumed Warehouse to take photos of supplies.",
+          "microphonePermission": false
+        }
+      ],
       "expo-status-bar",
       [
         "expo-splash-screen",
@@ -44,7 +64,27 @@
             "usesCleartextTraffic": true
           }
         }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": [
+            "peripheral",
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "Allow to connect to bluetooth devices."
+        }
       ]
-    ]
+    ],
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/570698c0-c8eb-4442-8eae-c35f4820b3a7",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }

@@ -5,6 +5,7 @@ import { detailStyles } from '../styles/DeliveryDetailStyles';
 import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin } from 'lucide-react-native';
 import Header from './Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineFetch as fetch } from '../shared/offlineApi';
 
 export default function DeliveryList({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
@@ -135,7 +136,13 @@ export default function DeliveryList({ navigation }) {
       });
 
       if (response.ok) {
-        Alert.alert("Success", "Order marked as Delivered");
+        const result = await response.json();
+        Alert.alert(
+          result.queued ? "Saved Offline" : "Success",
+          result.queued
+            ? "Delivery update saved on this device and will sync when you reconnect."
+            : "Order marked as Delivered",
+        );
         setModalVisible(false);
         setSearchQuery(''); 
         fetchConfirmedOrders(); 

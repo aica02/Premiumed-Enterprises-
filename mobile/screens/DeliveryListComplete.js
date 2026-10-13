@@ -5,6 +5,7 @@ import { detailStyles } from '../styles/DeliveryDetailStyles';
 import { Search, MapPin, Truck, X, Menu, UserCircle, User, ArrowLeft } from 'lucide-react-native';
 import Header from './Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineFetch as fetch } from '../shared/offlineApi';
 
 export default function DeliveryListComplete({ navigation }) {
   const [menuVisible, setMenuVisible] = useState(false);
