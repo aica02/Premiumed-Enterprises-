@@ -1082,7 +1082,42 @@ router.get("/", async (req, res) => {
     const { status } = req.query;
     const filter = status ? { status } : {};
     const orders = await Order.find(filter).sort({ createdAt: -1 });
-    res.json(await addUnitTypesToOrders(orders));
+    const orderData = await addUnitTypesToOrders(orders);
+    const orderIds = orderData.map((order) => order.orderId);
+    const legacyPartialOrderIds = orderIds.map((orderId) => `${orderId}-P`);
+    const partialOrders = orderIds.length
+      ? await Order.find({
+          $or: [
+            { originalOrderId: { $in: orderIds } },
+            { orderId: { $in: legacyPartialOrderIds } },
+          ],
+          status: { $in: ["PENDING", "APPROVED", "PARTIAL", "TO SHIP"] },
+        })
+          .select("orderId originalOrderId items")
+          .lean()
+      : [];
+    const backordersByOrderId = new Map();
+
+    partialOrders.forEach((partialOrder) => {
+      const parentOrderId =
+        partialOrder.originalOrderId ||
+        partialOrder.orderId.replace(/-P$/, "");
+      const existingItems = backordersByOrderId.get(parentOrderId) || [];
+      backordersByOrderId.set(parentOrderId, [
+        ...existingItems,
+        ...partialOrder.items.map((item) => ({
+          ...item,
+          backorderOrderId: partialOrder.orderId,
+        })),
+      ]);
+    });
+
+    res.json(
+      orderData.map((order) => ({
+        ...order,
+        backorders: backordersByOrderId.get(order.orderId) || [],
+      })),
+    );
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
