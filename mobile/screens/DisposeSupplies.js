@@ -14,6 +14,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { XCircle, Scan, TriangleAlert } from "lucide-react-native";
 import Header from "./Header";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { styles as inventoryStyles } from "../styles/InventoryStyles";
 import { pickingStyles } from "../styles/PickingStyles";
 import { warehouseMapStyles } from "../styles/warehouseMapStyles";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
@@ -32,6 +33,7 @@ export default function DisposeSupplies({ navigation }) {
 
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [batchToConfirm, setBatchToConfirm] = useState(null);
+  const [invalidBatchNotice, setInvalidBatchNotice] = useState(null);
 
   const isProcessing = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -131,6 +133,17 @@ export default function DisposeSupplies({ navigation }) {
     setScanned(false);
   };
 
+  const closeInvalidBatchNotice = () => {
+    setInvalidBatchNotice(null);
+    resetScanner();
+  };
+
+  const cancelDisposalConfirmation = () => {
+    setConfirmModalVisible(false);
+    setScannerModalVisible(true);
+    resetScanner();
+  };
+
   const handleBarCodeScanned = ({ data }) => {
     if (isProcessing.current) return;
     isProcessing.current = true;
@@ -148,11 +161,12 @@ export default function DisposeSupplies({ navigation }) {
       !batchToDispose ||
       batchToDispose.batchCode !== selectedBatch?.batchCode
     ) {
-      Alert.alert(
-        "Invalid Batch",
-        "This batch is not marked for disposal or does not exist.",
-        [{ text: "OK", onPress: resetScanner }],
-      );
+      setInvalidBatchNotice({
+        batchCode: scannedBatchCode,
+        status: batchToDispose
+          ? "Different from selected batch"
+          : "Not marked for disposal",
+      });
       return;
     }
 
@@ -556,64 +570,161 @@ export default function DisposeSupplies({ navigation }) {
         </View>
       )}
 
-      <Modal visible={confirmModalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.confirmModal}>
-            <Text style={styles.modalTitle}>Confirm Disposal</Text>
-            <View style={styles.modalDetails}>
-              <Text style={styles.modalLabel}>Batch Code</Text>
-              <Text style={styles.modalValue}>{batchToConfirm?.batchCode}</Text>
-
-              <Text style={styles.modalLabel}>Supply Name</Text>
-              <Text style={styles.modalValue}>{batchToConfirm?.itemName}</Text>
-              <Text style={styles.modalLabel}>Category</Text>
-              <Text style={styles.modalValue}>
-                {batchToConfirm?.category || "N/A"}
+      {invalidBatchNotice && (
+        <Modal
+          transparent
+          visible={Boolean(invalidBatchNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={closeInvalidBatchNotice}
+        >
+          <View style={pickingStyles.putawayExpiredOverlay}>
+            <View style={pickingStyles.putawayExpiredCard}>
+              <View style={pickingStyles.putawayExpiredIcon}>
+                <TriangleAlert size={36} color="#B91C1C" />
+              </View>
+              <Text style={pickingStyles.putawayExpiredEyebrow}>
+                DISPOSAL BLOCKED
+              </Text>
+              <Text style={pickingStyles.putawayExpiredTitle}>
+                Batch cannot be disposed
+              </Text>
+              <Text style={pickingStyles.putawayExpiredMessage}>
+                This batch is not marked for disposal or does not match the
+                batch selected for disposal.
               </Text>
 
-              <Text style={styles.modalLabel}>Quantity</Text>
-              <Text style={styles.modalValue}>{batchToConfirm?.quantity}</Text>
+              <View style={pickingStyles.putawayExpiredDetails}>
+                <Text style={pickingStyles.putawayExpiredLabel}>
+                  SCANNED BATCH
+                </Text>
+                <Text style={pickingStyles.putawayExpiredBatchCode}>
+                  {invalidBatchNotice.batchCode}
+                </Text>
+                <Text style={pickingStyles.putawayExpiredLabel}>STATUS</Text>
+                <Text style={pickingStyles.putawayExpiredDate}>
+                  {invalidBatchNotice.status}
+                </Text>
+              </View>
 
-              <Text style={styles.modalLabel}>Location</Text>
-              <Text style={styles.modalValue}>
-                {batchToConfirm?.storageLocation || "N/A"}
-              </Text>
-
-              <Text style={styles.modalLabel}>Expiry Date</Text>
-              <Text style={styles.modalValue}>
-                {batchToConfirm?.expirationDate
-                  ? new Date(batchToConfirm.expirationDate).toLocaleDateString()
-                  : "N/A"}
-              </Text>
-            </View>
-
-            <View style={styles.modalWarning}>
-              <TriangleAlert size={18} color="#EF4444" />
-              <Text style={styles.modalWarningText}>
-                This action cannot be undone!
-              </Text>
-            </View>
-
-            <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => {
-                  setConfirmModalVisible(false);
-                  setScannerModalVisible(true);
-                  resetScanner();
-                }}
+                style={pickingStyles.putawayExpiredButton}
+                onPress={closeInvalidBatchNotice}
               >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN CORRECT BATCH
+                </Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
+      <Modal
+        visible={confirmModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelDisposalConfirmation}
+      >
+        <View style={inventoryStyles.confirmOverlay}>
+          <View style={inventoryStyles.confirmModal}>
+            <View style={inventoryStyles.confirmHeader}>
+              <View
+                style={[
+                  inventoryStyles.supplyIcon,
+                  { backgroundColor: "#FEF2F2" },
+                ]}
+              >
+                <TriangleAlert size={25} color="#DC2626" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={inventoryStyles.confirmTitle}>
+                  Confirm Disposal
+                </Text>
+                <Text style={inventoryStyles.confirmSubtitle}>
+                  Please review the details before continuing.
+                </Text>
+              </View>
               <TouchableOpacity
-                style={styles.disposeButton}
+                onPress={cancelDisposalConfirmation}
+                style={inventoryStyles.confirmClose}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel disposal"
+              >
+                <XCircle size={28} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={inventoryStyles.supplyPreview}>
+              <View style={{ flex: 1 }}>
+                <Text style={inventoryStyles.supplyName}>
+                  {batchToConfirm?.itemName}
+                </Text>
+                <Text style={[inventoryStyles.itemCode, { color: "#B91C1C" }]}>
+                  {batchToConfirm?.batchCode}
+                </Text>
+                <Text style={inventoryStyles.categoryText}>
+                  {batchToConfirm?.category || "Uncategorized"}
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView
+              style={inventoryStyles.confirmDetails}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={inventoryStyles.detailRow}>
+                <Text style={inventoryStyles.detailLabel}>Quantity</Text>
+                <Text style={inventoryStyles.detailValue}>
+                  {batchToConfirm?.quantity}
+                </Text>
+              </View>
+              <View style={inventoryStyles.detailRow}>
+                <Text style={inventoryStyles.detailLabel}>Location</Text>
+                <Text style={inventoryStyles.detailValue}>
+                  {batchToConfirm?.storageLocation || "N/A"}
+                </Text>
+              </View>
+              <View style={inventoryStyles.detailRow}>
+                <Text style={inventoryStyles.detailLabel}>Expiry Date</Text>
+                <Text style={inventoryStyles.detailValue}>
+                  {batchToConfirm?.expirationDate
+                    ? new Date(
+                        batchToConfirm.expirationDate,
+                      ).toLocaleDateString()
+                    : "N/A"}
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={inventoryStyles.confirmErrorBox}>
+              <TriangleAlert size={16} color="#B91C1C" />
+              <Text style={inventoryStyles.confirmErrorText}>
+                This action cannot be undone.
+              </Text>
+            </View>
+
+            <View style={inventoryStyles.confirmActions}>
+              <TouchableOpacity
+                style={inventoryStyles.cancelButton}
+                onPress={cancelDisposalConfirmation}
+              >
+                <Text style={inventoryStyles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  inventoryStyles.confirmButton,
+                  { backgroundColor: "#DC2626" },
+                ]}
                 onPress={() => {
                   setConfirmModalVisible(false);
                   handleDisposeBatch(batchToConfirm);
                 }}
               >
-                <Text style={styles.disposeButtonText}>Confirm Disposal</Text>
+                <TriangleAlert size={18} color="#FFFFFF" />
+                <Text style={inventoryStyles.confirmButtonText}>
+                  Confirm Disposal
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -789,90 +900,5 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     marginTop: 10,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  confirmModal: {
-    width: "88%",
-    backgroundColor: "#FFF",
-    borderRadius: 14,
-    padding: 22,
-  },
-
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 8,
-  },
-
-  modalWarning: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 10,
-  },
-
-  modalWarningText: {
-    color: "#EF4444",
-    fontSize: 14,
-    marginLeft: 8,
-    fontWeight: "600",
-  },
-
-  modalDetails: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 10,
-    padding: 14,
-  },
-
-  modalLabel: {
-    color: "#6B7280",
-    fontSize: 12,
-    marginTop: 8,
-  },
-
-  modalValue: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
-  },
-
-  cancelButton: {
-    flex: 1,
-    backgroundColor: "#E5E7EB",
-    paddingVertical: 14,
-    borderRadius: 8,
-    marginRight: 8,
-    alignItems: "center",
-  },
-
-  disposeButton: {
-    flex: 1,
-    backgroundColor: "#DC2626",
-    paddingVertical: 14,
-    borderRadius: 8,
-    marginLeft: 8,
-    alignItems: "center",
-  },
-
-  cancelButtonText: {
-    color: "#111827",
-    fontWeight: "700",
-  },
-
-  disposeButtonText: {
-    color: "#FFF",
-    fontWeight: "700",
   },
 });

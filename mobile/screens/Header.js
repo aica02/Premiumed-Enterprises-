@@ -15,6 +15,7 @@ import {
   Menu,
   Check,
   X,
+  CheckCircle,
 } from "lucide-react-native";
 import {
   View,
@@ -50,8 +51,10 @@ export default function Header({
 
   const [dropdownVisible, setDropdownVisible] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [successFeedback, setSuccessFeedback] = useState(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
+  const [currentPasswordError, setCurrentPasswordError] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -151,6 +154,8 @@ export default function Header({
       return;
     }
 
+    setCurrentPasswordError("");
+
     if (newPassword !== confirmPassword) {
       Alert.alert("Error", "New passwords do not match.");
       return;
@@ -191,13 +196,9 @@ export default function Header({
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert(
-          "Success",
-          data.message || "Password changed successfully!",
-        );
-
         setShowPasswordModal(false);
         setCurrentPassword("");
+        setCurrentPasswordError("");
         setNewPassword("");
         setConfirmPassword("");
         setShowCurrentPassword(false);
@@ -209,11 +210,22 @@ export default function Header({
           newPasswordStrength: "WEAK",
           confirmPasswordStrength: "WEAK",
         });
+        setSuccessFeedback({
+          title: "Password Changed",
+          message: data.message || "Your password was changed successfully.",
+        });
       } else {
-        if (data.details) {
+        const errorMessage = data.error || data.message || "";
+        if (
+          /current password.*incorrect|incorrect.*current password/i.test(
+            errorMessage,
+          )
+        ) {
+          setCurrentPasswordError("Current password is incorrect.");
+        } else if (data.details) {
           Alert.alert("Password Validation Failed", data.details.join("\n"));
         } else {
-          Alert.alert("Error", data.error || "Failed to change password.");
+          Alert.alert("Error", errorMessage || "Failed to change password.");
         }
       }
     } catch (err) {
@@ -278,16 +290,26 @@ export default function Header({
 
       const data = await response.json();
 
-      setResetMessage(
-        data.message || "A new password has been sent to your email!",
-      );
+      if (!response.ok || data.success === false) {
+        setResetMessage(
+          data.error || data.message || "Failed to reset password.",
+        );
+        setTimeout(() => {
+          setResetMessage("");
+          setSendingReset(false);
+        }, 3000);
+        return;
+      }
 
-      setTimeout(() => {
-        setShowForgotPasswordModal(false);
-        setResetEmail("");
-        setResetMessage("");
-        setSendingReset(false);
-      }, 3000);
+      setShowForgotPasswordModal(false);
+      setResetEmail("");
+      setResetMessage("");
+      setSendingReset(false);
+      setSuccessFeedback({
+        title: "Password Reset",
+        message:
+          data.message || "A new password has been sent to your email address.",
+      });
     } catch (error) {
       console.error("Forgot Password Error:", error);
       setResetMessage("Failed to process request. Please try again later.");
@@ -414,6 +436,7 @@ export default function Header({
                 style={headerStyles.dropdownItem}
                 onPress={() => {
                   setDropdownVisible(false);
+                  setCurrentPasswordError("");
                   setShowPasswordModal(true);
                 }}
               >
@@ -460,12 +483,20 @@ export default function Header({
               {/* Current Password Input */}
               <View style={headerStyles.inputGroup}>
                 <Text style={headerStyles.label}>Current Password</Text>
-                <View style={headerStyles.passwordInputContainer}>
+                <View
+                  style={[
+                    headerStyles.passwordInputContainer,
+                    currentPasswordError && { borderColor: "#DC2626" },
+                  ]}
+                >
                   <TextInput
                     style={headerStyles.passwordInput}
                     secureTextEntry={!showCurrentPassword}
                     value={currentPassword}
-                    onChangeText={setCurrentPassword}
+                    onChangeText={(value) => {
+                      setCurrentPassword(value);
+                      if (currentPasswordError) setCurrentPasswordError("");
+                    }}
                     placeholder="Enter current password"
                     placeholderTextColor="#9CA3AF"
                     editable={!changingPassword}
@@ -481,6 +512,14 @@ export default function Header({
                     )}
                   </TouchableOpacity>
                 </View>
+                {currentPasswordError ? (
+                  <Text
+                    style={[headerStyles.errorText, { marginTop: 6 }]}
+                    accessibilityRole="alert"
+                  >
+                    {currentPasswordError}
+                  </Text>
+                ) : null}
               </View>
 
               {/* New Password Input */}
@@ -767,6 +806,35 @@ export default function Header({
                 <Text style={headerStyles.logoutConfirmButtonText}>Logout</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={Boolean(successFeedback)}
+        onRequestClose={() => setSuccessFeedback(null)}
+      >
+        <View style={headerStyles.passwordSuccessOverlay}>
+          <View style={headerStyles.passwordSuccessCard}>
+            <View style={headerStyles.passwordSuccessIcon}>
+              <CheckCircle size={38} color="#047857" />
+            </View>
+            <Text style={headerStyles.passwordSuccessTitle}>
+              {successFeedback?.title}
+            </Text>
+            <Text style={headerStyles.passwordSuccessMessage}>
+              {successFeedback?.message}
+            </Text>
+            <TouchableOpacity
+              style={headerStyles.passwordSuccessButton}
+              onPress={() => setSuccessFeedback(null)}
+            >
+              <Text style={headerStyles.passwordSuccessButtonText}>
+                CONTINUE
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

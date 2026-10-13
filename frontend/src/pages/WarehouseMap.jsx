@@ -5,6 +5,7 @@ import "../styles/capsules.css";
 import "../styles/Modals.css";
 import { Toaster, toast } from "react-hot-toast";
 import { FaTimes } from "react-icons/fa";
+import EmptyState from "../components/EmptyState";
 import { warehouseMapLayout } from "../../../mobile/shared/warehouseMapLayout";
 
 const BACKEND_URL =
@@ -98,60 +99,26 @@ const WarehouseMap = () => {
   }, [items]);
 
   const lowStockData = useMemo(() => {
-    const productMap = new Map();
+    return items.flatMap((item) =>
+      (item.batches || [])
+        .filter((batch) => {
+          const quantity = Number(batch.quantity) || 0;
+          const reorderLevel = Number(item.reorderLevel) || 50;
 
-    items.forEach((item) => {
-      let totalQuantity = 0;
-      const batchDetails = [];
-
-      (item.batches || []).forEach((batch) => {
-        if (batch.status !== "disposed" && batch.quantity > 0) {
-          totalQuantity += batch.quantity || 0;
-          batchDetails.push({
-            batchCode: batch.batchCode,
-            rack: batch.storageLocation,
-            quantity: batch.quantity,
-            expirationDate: batch.expirationDate,
-          });
-        }
-      });
-
-      if (totalQuantity > 0) {
-        productMap.set(item.itemCode || item._id, {
+          return (
+            batch.status !== "disposed" &&
+            quantity > 0 &&
+            getStockStatus(quantity, reorderLevel).label === "Low Stock"
+          );
+        })
+        .map((batch) => ({
           itemName: item.name,
-          itemCode: item.itemCode,
-          totalQuantity: totalQuantity,
-          reorderLevel: item.reorderLevel || 50,
-          batches: batchDetails,
-          racks: [...new Set(batchDetails.map((b) => b.rack))],
-        });
-      }
-    });
-
-    const lowStockProducts = [];
-    productMap.forEach((product) => {
-      const stockStatus = getStockStatus(
-        product.totalQuantity,
-        product.reorderLevel,
-      );
-
-      if (stockStatus.label === "Low Stock") {
-        product.batches.forEach((batch) => {
-          lowStockProducts.push({
-            itemName: product.itemName,
-            batchCode: batch.batchCode,
-            rack: batch.rack,
-            quantity: batch.quantity,
-            totalQuantity: product.totalQuantity,
-            reorderLevel: product.reorderLevel,
-            stockStatus: stockStatus.label,
-            expirationDate: batch.expirationDate,
-          });
-        });
-      }
-    });
-
-    return lowStockProducts;
+          batchCode: batch.batchCode,
+          rack: batch.storageLocation,
+          quantity: Number(batch.quantity) || 0,
+          stockStatus: "Low Stock",
+        })),
+    );
   }, [items]);
 
   const computeDynamicStatus = (rackId, items) => {
@@ -491,6 +458,17 @@ const WarehouseMap = () => {
                       </tr>
                     ))}
 
+                  {activeTab === "nearExpiry" && nearExpiryData.length === 0 && (
+                    <tr>
+                      <td colSpan={5}>
+                        <EmptyState
+                          title="No near-expiry or expired batches"
+                          message="There are no batches expiring within 30 days or past their expiration date."
+                        />
+                      </td>
+                    </tr>
+                  )}
+
                   {activeTab === "lowStock" &&
                     lowStockData.map((item, index) => (
                       <tr
@@ -510,6 +488,16 @@ const WarehouseMap = () => {
                         </td>
                       </tr>
                     ))}
+                  {activeTab === "lowStock" && lowStockData.length === 0 && (
+                    <tr>
+                      <td colSpan={5}>
+                        <EmptyState
+                          title="No low-stock batches"
+                          message="There are no batches at or below their item's reorder level."
+                        />
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

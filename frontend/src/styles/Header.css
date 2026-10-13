@@ -102,6 +102,18 @@ a .header .title {
   color: black;
 }
 
+.modal-card .password-input.input-error {
+  border-color: #ff3333;
+}
+
+.modal-card .inline-error-message {
+  color: #ff3333;
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin: -8px 0 12px 20px;
+  text-align: left;
+}
+
 /* client side alone */
 .left .client-logo-icon {
   height: 50px;

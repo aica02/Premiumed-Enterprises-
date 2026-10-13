@@ -74,6 +74,8 @@ function ClientNavbar() {
     newPassword: "",
     confirmPassword: "",
   });
+  const [oldPasswordError, setOldPasswordError] = useState("");
+  const [passwordChangeError, setPasswordChangeError] = useState("");
 
   const clientName = localStorage.getItem("username");
   const clientEmail = localStorage.getItem("email");
@@ -155,7 +157,7 @@ function ClientNavbar() {
     const username = localStorage.getItem("username");
 
     if (!username) {
-      toast.error("User not logged in. Please log in again.");
+      setPasswordChangeError("User not logged in. Please log in again.");
       return;
     }
 
@@ -164,25 +166,23 @@ function ClientNavbar() {
       !passwords.newPassword ||
       !passwords.confirmPassword
     ) {
-      toast.error("Please fill in all fields.");
+      setPasswordChangeError("Please fill in all fields.");
       return;
     }
 
     if (passwords.newPassword !== passwords.confirmPassword) {
-      toast.error("New passwords do not match.");
       return;
     }
 
     const validation = validatePassword(passwords.newPassword);
 
     if (!validation.isValid) {
-      toast.error(
-        `Password validation failed:\n${validation.errors.join("\n")}`,
-      );
+      setPasswordChangeError(validation.errors.join(" "));
       return;
     }
 
-    const toastId = toast.loading("Changing password...");
+    setOldPasswordError("");
+    setPasswordChangeError("");
 
     try {
       const response = await axios.post(
@@ -203,9 +203,7 @@ function ClientNavbar() {
         },
       );
 
-      toast.success(response.data.message || "Password changed successfully!", {
-        id: toastId,
-      });
+      toast.success(response.data.message || "Password changed successfully!");
 
       setShowPasswordModal(false);
 
@@ -214,6 +212,8 @@ function ClientNavbar() {
         newPassword: "",
         confirmPassword: "",
       });
+      setOldPasswordError("");
+      setPasswordChangeError("");
 
       setPasswordValidation({
         newPasswordErrors: [],
@@ -229,31 +229,26 @@ function ClientNavbar() {
       console.error("Error response status:", err.response?.status);
 
       if (err.code === "ECONNABORTED") {
-        toast.error("Request timed out. Please try again.", {
-          id: toastId,
-        });
+        setPasswordChangeError("Request timed out. Please try again.");
         return;
       }
 
-      if (err.response?.data?.details) {
-        toast.error(
-          `Password validation failed:\n${err.response.data.details.join("\n")}`,
-          {
-            id: toastId,
-          },
-        );
+      const errorMessage =
+        err.response?.data?.error || err.response?.data?.message || "";
+      if (
+        /current password.*incorrect|incorrect.*current password/i.test(
+          errorMessage,
+        )
+      ) {
+        setOldPasswordError("Current password is incorrect.");
+      } else if (err.response?.data?.details) {
+        setPasswordChangeError(err.response.data.details.join(" "));
       } else if (err.response?.data?.error) {
-        toast.error(err.response.data.error, {
-          id: toastId,
-        });
+        setPasswordChangeError(err.response.data.error);
       } else if (err.message) {
-        toast.error(err.message, {
-          id: toastId,
-        });
+        setPasswordChangeError(err.message);
       } else {
-        toast.error("Failed to change password. Please try again.", {
-          id: toastId,
-        });
+        setPasswordChangeError("Failed to change password. Please try again.");
       }
     }
   };
@@ -453,6 +448,8 @@ function ClientNavbar() {
                 className="dropdown-item"
                 onClick={() => {
                   setActiveMenu(null);
+                  setOldPasswordError("");
+                  setPasswordChangeError("");
                   setShowPasswordModal(true);
                 }}
                 style={{ cursor: "pointer" }}
@@ -485,14 +482,22 @@ function ClientNavbar() {
             <div className="password-input-wrapper">
               <input
                 type={showPasswords.oldPassword ? "text" : "password"}
-                className="password-input"
+                className={`password-input${
+                  oldPasswordError ? " input-error" : ""
+                }`}
                 placeholder="Old Password"
                 value={passwords.oldPassword}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setOldPasswordError("");
+                  setPasswordChangeError("");
                   setPasswords({
                     ...passwords,
                     oldPassword: e.target.value,
-                  })
+                  });
+                }}
+                aria-invalid={Boolean(oldPasswordError)}
+                aria-describedby={
+                  oldPasswordError ? "old-password-error" : undefined
                 }
               />
 
@@ -508,6 +513,15 @@ function ClientNavbar() {
                 />
               )}
             </div>
+            {oldPasswordError && (
+              <div
+                id="old-password-error"
+                className="inline-error-message"
+                role="alert"
+              >
+                {oldPasswordError}
+              </div>
+            )}
 
             <div className="password-input-wrapper">
               <input
@@ -515,12 +529,13 @@ function ClientNavbar() {
                 className="password-input"
                 placeholder="New Password"
                 value={passwords.newPassword}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setPasswordChangeError("");
                   setPasswords({
                     ...passwords,
                     newPassword: e.target.value,
-                  })
-                }
+                  });
+                }}
               />
 
               {showPasswords.newPassword ? (
@@ -583,12 +598,13 @@ function ClientNavbar() {
                 className="password-input"
                 placeholder="Confirm New Password"
                 value={passwords.confirmPassword}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setPasswordChangeError("");
                   setPasswords({
                     ...passwords,
                     confirmPassword: e.target.value,
-                  })
-                }
+                  });
+                }}
               />
 
               {showPasswords.confirmPassword ? (
@@ -615,6 +631,11 @@ function ClientNavbar() {
                 )}
               </div>
             )}
+            {passwordChangeError && (
+              <div className="inline-error-message" role="alert">
+                {passwordChangeError}
+              </div>
+            )}
 
             <div className="forgot-password-link">
               <button
@@ -622,6 +643,8 @@ function ClientNavbar() {
                 type="button"
                 onClick={() => {
                   setShowPasswordModal(false);
+                  setOldPasswordError("");
+                  setPasswordChangeError("");
                   setShowForgotPasswordModal(true);
                   setResetMessage("");
 
@@ -641,6 +664,8 @@ function ClientNavbar() {
                 className="btn-cancel"
                 onClick={() => {
                   setShowPasswordModal(false);
+                  setOldPasswordError("");
+                  setPasswordChangeError("");
 
                   setPasswords({
                     oldPassword: "",
@@ -670,7 +695,7 @@ function ClientNavbar() {
                   passwordValidation.confirmPasswordErrors.length > 0
                 }
               >
-                Update
+                Change Password
               </button>
             </div>
           </div>
@@ -699,6 +724,8 @@ function ClientNavbar() {
                   if (!isLoading) {
                     setShowForgotPasswordModal(false);
                     setShowPasswordModal(true);
+                    setOldPasswordError("");
+                    setPasswordChangeError("");
                     setResetMessage("");
                     setResetEmail("");
                   }
@@ -763,7 +790,7 @@ function ClientNavbar() {
                 disabled={isLoading || !resetEmail.trim()}
               >
                 {" "}
-                {isLoading ? "Sending..." : "Send Reset Link"}{" "}
+                {isLoading ? "Sending..." : "Reset Password"}{" "}
               </button>
             </div>
           </div>

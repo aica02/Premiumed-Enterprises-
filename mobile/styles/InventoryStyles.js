@@ -26,7 +26,7 @@ export const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     borderRadius: 6,
     backgroundColor: "#FFF",
-    height: 15,
+    height: 25,
     justifyContent: "center",
     overflow: "hidden",
   }, // Tab Styles - Add to your styles object
@@ -68,6 +68,8 @@ export const styles = StyleSheet.create({
     width: "200%",
     marginLeft: "-50%",
     transform: [{ scaleX: 0.5 }, { scaleY: 0.5 }],
+    fontSize: 24,
+    fontWeight: "600",
   },
   headerNav: {
     flexDirection: "row",
@@ -120,7 +122,7 @@ export const styles = StyleSheet.create({
     padding: 5,
     flexDirection: "row",
     alignItems: "center",
-    marginLeft: 15,
+    marginLeft: 10,
   },
 
   // LIST CARDS
@@ -148,6 +150,8 @@ export const styles = StyleSheet.create({
     padding: 10,
     position: "relative",
     borderRadius: 8,
+    minWidth: 45,
+    alignItems: "center",
   },
   qtyText: {
     color: "#D4AF37",

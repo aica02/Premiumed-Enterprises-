@@ -72,6 +72,8 @@ const Header = () => {
     newPassword: "",
     confirmPassword: "",
   });
+  const [oldPasswordError, setOldPasswordError] = useState("");
+  const [passwordChangeError, setPasswordChangeError] = useState("");
 
   const toggleMenu = (menu) => {
     setActiveMenu(visibleMenu === menu ? null : menu);
@@ -154,20 +156,23 @@ const Header = () => {
       !passwords.newPassword ||
       !passwords.confirmPassword
     ) {
-      return toast.error("Please fill in all fields.");
+      setPasswordChangeError("Please fill in all fields.");
+      return;
     }
 
     if (passwords.newPassword !== passwords.confirmPassword) {
-      return toast.error("New passwords do not match.");
+      return;
     }
 
     const validation = validatePassword(passwords.newPassword);
 
     if (!validation.isValid) {
-      return toast.error(
-        `Password validation failed:\n${validation.errors.join("\n")}`,
-      );
+      setPasswordChangeError(validation.errors.join(" "));
+      return;
     }
+
+    setOldPasswordError("");
+    setPasswordChangeError("");
 
     try {
       const response = await axios.post(
@@ -188,6 +193,8 @@ const Header = () => {
         newPassword: "",
         confirmPassword: "",
       });
+      setOldPasswordError("");
+      setPasswordChangeError("");
 
       setPasswordValidation({
         newPasswordErrors: [],
@@ -197,17 +204,21 @@ const Header = () => {
       });
     } catch (err) {
       console.error("Change Password Error:", err);
+      const errorMessage =
+        err.response?.data?.error || err.response?.data?.message || "";
 
-      if (err.response?.data?.details) {
-        toast.error(
-          `Password validation failed:\n${err.response.data.details.join(
-            "\n",
-          )}`,
-        );
-      } else if (err.response?.data?.error) {
-        toast.error(err.response.data.error);
+      if (
+        /current password.*incorrect|incorrect.*current password/i.test(
+          errorMessage,
+        )
+      ) {
+        setOldPasswordError("Current password is incorrect.");
+      } else if (err.response?.data?.details) {
+        setPasswordChangeError(err.response.data.details.join(" "));
+      } else if (errorMessage) {
+        setPasswordChangeError(errorMessage);
       } else {
-        toast.error("Failed to change password. Please try again.");
+        setPasswordChangeError("Failed to change password. Please try again.");
       }
     }
   };
@@ -363,6 +374,8 @@ const Header = () => {
                   <div
                     className="dropdown-item"
                     onClick={() => {
+                      setOldPasswordError("");
+                      setPasswordChangeError("");
                       setShowPasswordModal(true);
                       setActiveMenu(null);
                     }}
@@ -396,14 +409,22 @@ const Header = () => {
             <div className="password-input-wrapper">
               <input
                 type={showPasswords.oldPassword ? "text" : "password"}
-                className="password-input"
+                className={`password-input${
+                  oldPasswordError ? " input-error" : ""
+                }`}
                 placeholder="Old Password"
                 value={passwords.oldPassword}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setOldPasswordError("");
+                  setPasswordChangeError("");
                   setPasswords({
                     ...passwords,
                     oldPassword: e.target.value,
-                  })
+                  });
+                }}
+                aria-invalid={Boolean(oldPasswordError)}
+                aria-describedby={
+                  oldPasswordError ? "old-password-error" : undefined
                 }
               />
 
@@ -419,6 +440,15 @@ const Header = () => {
                 />
               )}
             </div>
+            {oldPasswordError && (
+              <div
+                id="old-password-error"
+                className="inline-error-message"
+                role="alert"
+              >
+                {oldPasswordError}
+              </div>
+            )}
 
             <div className="password-input-wrapper">
               <input
@@ -426,12 +456,13 @@ const Header = () => {
                 className="password-input"
                 placeholder="New Password"
                 value={passwords.newPassword}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setPasswordChangeError("");
                   setPasswords({
                     ...passwords,
                     newPassword: e.target.value,
-                  })
-                }
+                  });
+                }}
               />
 
               {showPasswords.newPassword ? (
@@ -496,12 +527,13 @@ const Header = () => {
                 className="password-input"
                 placeholder="Confirm New Password"
                 value={passwords.confirmPassword}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setPasswordChangeError("");
                   setPasswords({
                     ...passwords,
                     confirmPassword: e.target.value,
-                  })
-                }
+                  });
+                }}
               />
 
               {showPasswords.confirmPassword ? (
@@ -529,6 +561,11 @@ const Header = () => {
                 )}
               </div>
             )}
+            {passwordChangeError && (
+              <div className="inline-error-message" role="alert">
+                {passwordChangeError}
+              </div>
+            )}
 
             {/* Forgot Password */}
             <div className="forgot-password-link">
@@ -537,6 +574,8 @@ const Header = () => {
                 type="button"
                 onClick={() => {
                   setShowPasswordModal(false);
+                  setOldPasswordError("");
+                  setPasswordChangeError("");
                   setShowForgotPasswordModal(true);
                   setResetMessage("");
 
@@ -557,6 +596,8 @@ const Header = () => {
                 className="btn-cancel"
                 onClick={() => {
                   setShowPasswordModal(false);
+                  setOldPasswordError("");
+                  setPasswordChangeError("");
 
                   setPasswords({
                     oldPassword: "",
@@ -586,7 +627,7 @@ const Header = () => {
                   passwordValidation.confirmPasswordErrors.length > 0
                 }
               >
-                Update
+                Change Password
               </button>
             </div>
           </div>
@@ -615,6 +656,7 @@ const Header = () => {
                   if (!isLoading) {
                     setShowForgotPasswordModal(false);
                     setShowPasswordModal(true);
+                    setOldPasswordError("");
                     setResetMessage("");
                     setResetEmail("");
                   }
@@ -679,7 +721,7 @@ const Header = () => {
                 disabled={isLoading || !resetEmail.trim()}
               >
                 {" "}
-                {isLoading ? "Sending..." : "Send Reset Link"}{" "}
+                {isLoading ? "Sending..." : "Reset Password"}{" "}
               </button>
             </div>
           </div>
