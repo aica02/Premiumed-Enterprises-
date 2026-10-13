@@ -4,6 +4,8 @@ export const detailStyles = StyleSheet.create({
   container: {
     flex: 1, 
     backgroundColor: '#F5F5F5',
+    top: '5%',
+    bottom: '5%',
   },
   header: { 
     flexDirection: 'row', 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, StyleSheet } from 'react-native';
 import { deliveryStyles } from '../styles/DeliveryStyles';
 import { detailStyles } from '../styles/DeliveryDetailStyles';
-import { Search, MapPin, Truck, X, Menu, UserCircle, User, ArrowLeft } from 'lucide-react-native';
+import { Search, MapPin, Truck, X, Menu, UserCircle, User, ArrowLeft, PackageX } from 'lucide-react-native';
 import Header from './Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { offlineFetch as fetch } from '../shared/offlineApi';
@@ -133,6 +133,25 @@ export default function DeliveryListComplete({ navigation }) {
       day: 'numeric', 
       year: 'numeric' 
     });
+  };
+
+  const getBackorders = (order) => {
+    if (!order) return [];
+    return (
+      order.backorders ||
+      order.backorderItems ||
+      order.partialOrderItems ||
+      order.partialItems ||
+      order.pendingItems ||
+      order.items?.filter(item => item.status === 'BACKORDER' || item.isBackordered) ||
+      []
+    );
+  };
+
+  const isPartialOrder = (order) => {
+    if (!order) return false;
+    if (order.isPartial === true || order.status === 'PARTIAL') return true;
+    return getBackorders(order).length > 0;
   };
 
   return (
@@ -269,6 +288,50 @@ export default function DeliveryListComplete({ navigation }) {
                 ))}
               </View>
 
+              {isPartialOrder(selectedOrder) && (
+                <View style={detailStyles.card}>
+                  <View style={localStyles.backorderHeader}>
+                    <PackageX size={18} color="#92400E" />
+                    <Text style={[detailStyles.cardTitle, { marginLeft: 8, color: '#92400E' }]}>
+                      Backorders from partial orders
+                    </Text>
+                  </View>
+                  <View style={localStyles.backorderDivider} />
+
+                  {getBackorders(selectedOrder).length === 0 ? (
+                    <Text style={localStyles.noBackorderText}>
+                      No backorder items — this order is fully shipped.
+                    </Text>
+                  ) : (
+                    getBackorders(selectedOrder).map((item, index) => (
+                      <View key={index} style={detailStyles.supplyRow}>
+                        <View style={{ flex: 2 }}>
+                          <Text style={detailStyles.supplyName}>{item.name}</Text>
+                          {item.backorderOrderId ? (
+                            <Text style={localStyles.backorderNote}>
+                              Partial order #{item.backorderOrderId}
+                            </Text>
+                          ) : null}
+                          {item.note ? (
+                            <Text style={localStyles.backorderNote}>{item.note}</Text>
+                          ) : null}
+                        </View>
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                          <Text style={[detailStyles.qtyText, { color: '#92400E' }]}>
+                            {item.quantity}
+                          </Text>
+                          <Text style={detailStyles.qtySubText}>Pcs</Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+
+                  <Text style={localStyles.backorderFootnote}>
+                    These items are pending and will be delivered separately.
+                  </Text>
+                </View>
+              )}
+
               <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#F0FDF4', margin: 20, borderRadius: 10 }}>
                  <Text style={{ color: '#059669', fontWeight: 'bold' }}>TRANSACTION COMPLETED</Text>
                  {selectedOrder?.updatedAt && (
@@ -285,3 +348,34 @@ export default function DeliveryListComplete({ navigation }) {
     </>
   );
 }
+
+const localStyles = StyleSheet.create({
+  backorderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backorderDivider: {
+    height: 2,
+    backgroundColor: '#F59E0B',
+    marginVertical: 8,
+    borderRadius: 2,
+  },
+  noBackorderText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginVertical: 6,
+  },
+  backorderNote: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  backorderFootnote: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
+});

@@ -13,6 +13,11 @@ const orderSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+    originalOrderId: {
+      type: String,
+      trim: true,
+      index: true,
+    },
     name: {
       type: String,
       required: true,

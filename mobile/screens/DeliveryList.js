@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert } from 'react-native';
 import { deliveryStyles } from '../styles/DeliveryStyles';
 import { detailStyles } from '../styles/DeliveryDetailStyles';
-import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin } from 'lucide-react-native';
+import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin, PackageX } from 'lucide-react-native';
 import Header from './Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { offlineFetch as fetch } from '../shared/offlineApi';
@@ -47,22 +47,18 @@ export default function DeliveryList({ navigation }) {
   const loadUserData = async () => {
     try {
       setLoading(true);
-      
       const token = await AsyncStorage.getItem('userToken');
       const storedUserId = await AsyncStorage.getItem('userId');
       const storedUserName = await AsyncStorage.getItem('userName');
     
       if (storedUserId) {
         setUserId(storedUserId);
-        
         if (storedUserName) {
           setStaffName(storedUserName);
           setStaffPosition('Warehouse Staff');
         }
-        
         await fetchUserProfile(storedUserId, token);
       } else {
-        console.log('No userId found in storage');
         setStaffName('Staff');
         setStaffPosition('Warehouse Staff');
       }
@@ -84,17 +80,12 @@ export default function DeliveryList({ navigation }) {
           'Authorization': `Bearer ${token}`
         }
       });
-      
       const data = await response.json();
-      
       if (data.success && data.user) {
         const fullName = data.user.fullName || data.user.username || 'Staff';
         setStaffName(fullName);
         setStaffPosition(data.user.position || 'Warehouse Staff');
-        
         await AsyncStorage.setItem('userName', fullName);
-      } else {
-        console.log('Could not fetch profile, using stored name');
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -156,8 +147,26 @@ export default function DeliveryList({ navigation }) {
     }
   };
 
-  const clearSearch = () => {
-    setSearchQuery('');
+  const clearSearch = () => setSearchQuery('');
+
+  // ─── Helper: detect partial / backorder data on an order ───
+  const getBackorders = (order) => {
+    if (!order) return [];
+    return (
+      order.backorders ||
+      order.backorderItems ||
+      order.partialOrderItems ||
+      order.partialItems ||
+      order.pendingItems ||
+      order.items?.filter(i => i.status === 'BACKORDER' || i.isBackordered) ||
+      []
+    );
+  };
+
+  const isPartialOrder = (order) => {
+    if (!order) return false;
+    if (order.isPartial === true || order.status === 'PARTIAL') return true;
+    return getBackorders(order).length > 0;
   };
 
   return (
@@ -174,7 +183,7 @@ export default function DeliveryList({ navigation }) {
         <Text style={deliveryStyles.headerTitle}>DELIVERY LIST</Text>
       </View>
 
-      {/* SEARCH SECTION - Enhanced */}
+      {/* SEARCH SECTION */}
       <View style={deliveryStyles.searchSection}>
         <Search size={20} color="#666" />
         <TextInput 
@@ -193,7 +202,6 @@ export default function DeliveryList({ navigation }) {
           </TouchableOpacity>
         )}
       </View>
-
 
       {/* LIST SECTION */}
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -221,6 +229,15 @@ export default function DeliveryList({ navigation }) {
                   <Text style={deliveryStyles.pendingText}>TO SHIP</Text>
                 </View>
               </View>
+
+              {/* Show a "PARTIAL" badge on the card if applicable */}
+              {isPartialOrder(item) && (
+                <View style={localStyles.partialBadge}>
+                  <PackageX size={14} color="#92400E" />
+                  <Text style={localStyles.partialBadgeText}>PARTIAL DELIVERY</Text>
+                </View>
+              )}
+
               <Text style={deliveryStyles.clientName}>{item.name}</Text>
               <View style={deliveryStyles.addressContainer}>
                 <MapPin size={16} color="#6B7280" />
@@ -249,6 +266,7 @@ export default function DeliveryList({ navigation }) {
             </View>
 
             <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+              {/* CLIENT INFO */}
               <View style={detailStyles.card}>
                 <Text style={detailStyles.cardTitle}>Client Information</Text>
                 <View style={detailStyles.goldDivider} />
@@ -262,6 +280,7 @@ export default function DeliveryList({ navigation }) {
                 </View>
               </View>
 
+              {/* ITEMS ORDERED */}
               <View style={detailStyles.card}>
                 <Text style={detailStyles.cardTitle}>Items Ordered</Text>
                 <View style={detailStyles.goldDivider} />
@@ -278,6 +297,52 @@ export default function DeliveryList({ navigation }) {
                 ))}
               </View>
 
+              {/* ─── BACKORDERS / PARTIAL DELIVERY SECTION ─── */}
+              {isPartialOrder(selectedOrder) && (
+                <View style={detailStyles.card}>
+                  <View style={localStyles.backorderHeader}>
+                    <PackageX size={18} color="#92400E" />
+                    <Text style={[detailStyles.cardTitle, { marginLeft: 8, color: '#92400E' }]}>
+                      Backorders from partial orders
+                    </Text>
+                  </View>
+                  <View style={localStyles.backorderDivider} />
+
+                  {getBackorders(selectedOrder).length === 0 ? (
+                    <Text style={localStyles.noBackorderText}>
+                      No backorder items — this order is fully shipped.
+                    </Text>
+                  ) : (
+                    getBackorders(selectedOrder).map((item, index) => (
+                      <View key={index} style={detailStyles.supplyRow}>
+                        <View style={{ flex: 2 }}>
+                          <Text style={detailStyles.supplyName}>{item.name}</Text>
+                          {item.backorderOrderId ? (
+                            <Text style={localStyles.backorderNote}>
+                              Partial order #{item.backorderOrderId}
+                            </Text>
+                          ) : null}
+                          {item.note ? (
+                            <Text style={localStyles.backorderNote}>{item.note}</Text>
+                          ) : null}
+                        </View>
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                          <Text style={[detailStyles.qtyText, { color: '#92400E' }]}>
+                            {item.quantity}
+                          </Text>
+                          <Text style={detailStyles.qtySubText}>Pcs</Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+
+                  <Text style={localStyles.backorderFootnote}>
+                    These items are pending and will be delivered separately.
+                  </Text>
+                </View>
+              )}
+
+              {/* MARK DELIVERED */}
               <TouchableOpacity 
                 style={[detailStyles.updateBtn, { marginHorizontal: 20, marginTop: 10 }]}
                 onPress={() => handleUpdateStatus(selectedOrder?.orderId)}
@@ -292,3 +357,56 @@ export default function DeliveryList({ navigation }) {
     </>
   );
 }
+
+/* ─── Local styles for the new partial / backorder UI ─── */
+import { StyleSheet } from 'react-native';
+const localStyles = StyleSheet.create({
+  partialBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  partialBadgeText: {
+    color: '#92400E',
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
+    letterSpacing: 0.5,
+  },
+  backorderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backorderDivider: {
+    height: 2,
+    backgroundColor: '#F59E0B',
+    marginVertical: 8,
+    borderRadius: 2,
+  },
+  noBackorderText: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginVertical: 6,
+  },
+  backorderNote: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  backorderFootnote: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
+});

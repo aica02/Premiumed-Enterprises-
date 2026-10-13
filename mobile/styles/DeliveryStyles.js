@@ -2,16 +2,17 @@ import { StyleSheet } from 'react-native';
 
 export const deliveryStyles = StyleSheet.create({
   container: {
-    top: '2%', 
     flex: 1, 
     backgroundColor: '#F5F5F5',
     marginHorizontal: 10,
+    
   },
   headerRow: {
     flexDirection: 'row', 
     alignItems: 'center', 
     justifyContent: 'center', 
     marginVertical: '2%', 
+    
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', marginLeft: 10,},
   searchSection: {
