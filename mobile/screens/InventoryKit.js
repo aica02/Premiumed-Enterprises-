@@ -94,6 +94,7 @@ export default function InventoryKit({
   const [availablePrinters, setAvailablePrinters] = useState([]);
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [successFeedback, setSuccessFeedback] = useState(null);
   const [errorFeedback, setErrorFeedback] = useState(null);
 
   const [kitItems, setKitItems] = useState([]);
@@ -206,10 +207,16 @@ export default function InventoryKit({
         restockSuccessData.expirationDate,
         quantity,
       );
-      Alert.alert("Success", "Label sent to Xprinter!");
+      setSuccessFeedback({
+        title: "Print Successful!",
+        message: "Your label was sent to Xprinter.",
+      });
     } catch (error) {
       console.error("Barcode printing failed:", error);
-      Alert.alert("Print Error", error.message || "Failed to print barcode.");
+      setErrorFeedback({
+        title: "Print Error",
+        message: error?.message || "Failed to print barcode.",
+      });
     } finally {
       setIsPrinting(false);
     }
@@ -1146,14 +1153,13 @@ export default function InventoryKit({
 
   const isMedicalKit = (item) => item.category === "Medical Kits";
 
-const getFilteredItems = () => {
-  const searchLower = searchTerm.toLowerCase();
-  return items.filter(
-    (item) =>
-      !isMedicalKit(item) &&
-      item.name.toLowerCase().includes(searchLower),
-  );
-};
+  const getFilteredItems = () => {
+    const searchLower = searchTerm.toLowerCase();
+    return items.filter(
+      (item) =>
+        isMedicalKit(item) && item.name.toLowerCase().includes(searchLower),
+    );
+  };
   const getKitInclusionItems = () => {
     return items
       .filter(
@@ -1547,7 +1553,7 @@ const getFilteredItems = () => {
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>
-                    Box <Text style={{ color: "#EF4444" }}>*</Text>
+                    Case <Text style={{ color: "#EF4444" }}>*</Text>
                   </Text>
                   <TextInput
                     style={styles.input}
@@ -2850,7 +2856,7 @@ const getFilteredItems = () => {
                 style={styles.errorButton}
                 onPress={() => setErrorFeedback(null)}
               >
-                <Text style={styles.errorButtonText}>TRY AGAIN</Text>
+                <Text style={styles.errorButtonText}>GOT IT</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2858,22 +2864,40 @@ const getFilteredItems = () => {
       )}
 
       {/* Success Modal */}
-      <Modal visible={showSuccessModal} transparent animationType="slide">
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowSuccessModal(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={styles.successModalContainer}>
-            <CheckCircle size={60} color="#10B981" />
+            <View style={styles.successIconContainer}>
+              <CheckCircle size={38} color="#059669" />
+            </View>
+            <Text style={styles.successEyebrow}>
+              {restockSuccessData?.queued
+                ? "SAVED OFFLINE"
+                : "KIT RESTOCK COMPLETE"}
+            </Text>
             <Text style={styles.successTitle}>
               {restockSuccessData?.queued
                 ? "Saved Offline"
                 : "Save Successful!"}
             </Text>
             {restockSuccessData?.queued && (
-              <Text style={styles.detailValue}>
+              <Text style={styles.successMessage}>
                 This kit change will sync when you reconnect. The server will
                 assign the batch code after syncing.
                 {restockSuccessData?.imageNotSynced
                   ? " The selected image was not uploaded and must be added after reconnecting."
                   : ""}
+              </Text>
+            )}
+            {!restockSuccessData?.queued && (
+              <Text style={styles.successMessage}>
+                Your kit inventory has been updated successfully.
               </Text>
             )}
 
@@ -2967,6 +2991,31 @@ const getFilteredItems = () => {
           </View>
         </View>
       </Modal>
+
+      {successFeedback && (
+        <Modal
+          visible={Boolean(successFeedback)}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setSuccessFeedback(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.successModalContainer}>
+              <CheckCircle size={60} color="#10B981" />
+              <Text style={styles.successTitle}>{successFeedback.title}</Text>
+              <Text style={styles.detailValue}>{successFeedback.message}</Text>
+              <TouchableOpacity
+                onPress={() => setSuccessFeedback(null)}
+                style={styles.dismissBtn}
+              >
+                <Text style={styles.dismissBtnText}>DISMISS</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
     </>
   );
 }

@@ -97,6 +97,7 @@ export default function InventorySupply({
 
   const [restockSuccessData, setRestockSuccessData] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successFeedback, setSuccessFeedback] = useState(null);
   const [errorFeedback, setErrorFeedback] = useState(null);
   const [printQty, setPrintQty] = useState("1");
   const [printerDevice, setPrinterDevice] = useState(null);
@@ -125,6 +126,9 @@ export default function InventorySupply({
     supplierName: "Supplier A",
     reorderLevel: "50",
   });
+
+  const boxFieldLabel = formData.unitType === "Box" ? "Case" : "Box";
+  const quantityFieldLabel = `No. of ${formData.unitType} per ${boxFieldLabel}`;
 
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
@@ -461,7 +465,7 @@ export default function InventorySupply({
       itemCode: "",
       itemName: "",
       category: "Cardiovascular & Emergency Medications",
-      unitType: "Piece",
+      unitType: "Box",
       quantity: "",
       box: "",
       expirationDate: new Date(),
@@ -485,10 +489,10 @@ export default function InventorySupply({
     if (!formData.unitType) errors.unitType = "Unit type is required.";
 
     if (!isRestock && !formData.quantity) {
-      errors.quantity = "Quantity per box is required.";
+      errors.quantity = `${quantityFieldLabel} is required.`;
     }
 
-    if (!formData.box) errors.box = "Box is required.";
+    if (!formData.box) errors.box = `${boxFieldLabel} is required.`;
 
     if (!isRestock && !formData.reorderLevel) {
       errors.reorderLevel = "Reorder level is required.";
@@ -503,7 +507,7 @@ export default function InventorySupply({
 
     const box = Number(formData.box);
     if (!Number.isFinite(box) || box <= 0) {
-      setFieldErrors({ box: "Box must be greater than 0." });
+      setFieldErrors({ box: `${boxFieldLabel} must be greater than 0.` });
       return;
     }
 
@@ -682,9 +686,16 @@ export default function InventorySupply({
         restockSuccessData.expirationDate,
         quantity,
       );
-      Alert.alert("Success", "Sent to Xprinter!");
+      setSuccessFeedback({
+        title: "Print Successful!",
+        message: "Your label was sent to Xprinter.",
+      });
     } catch (error) {
-      Alert.alert("Print Error", error.message || "Failed to print barcode.");
+      console.error("Barcode printing failed:", error);
+      setErrorFeedback({
+        title: "Print Error",
+        message: error?.message || "Failed to print barcode.",
+      });
     } finally {
       setIsPrinting(false);
     }
@@ -828,14 +839,13 @@ export default function InventorySupply({
     return item.category === "Medical Kits";
   };
 
-const getFilteredItems = () => {
-  const searchLower = searchTerm.toLowerCase();
-  return items.filter(
-    (item) =>
-      !isMedicalKit(item) &&
-      item.name.toLowerCase().includes(searchLower),
-  );
-};
+  const getFilteredItems = () => {
+    const searchLower = searchTerm.toLowerCase();
+    return items.filter(
+      (item) =>
+        !isMedicalKit(item) && item.name.toLowerCase().includes(searchLower),
+    );
+  };
 
   const renderInventoryCard = (item) => {
     const itemBatches = batches.filter(
@@ -1000,6 +1010,7 @@ const getFilteredItems = () => {
           </Text>
         </View>
       )}
+
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1045,6 +1056,7 @@ const getFilteredItems = () => {
           </View>
         </View>
       </Modal>
+
       {/* Add/Restock Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -1246,9 +1258,11 @@ const getFilteredItems = () => {
                     </Text>
                   ) : null}
                 </View>
+
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.label}>
-                    Box <Text style={{ color: "#EF4444" }}>*</Text>
+                    No. of {boxFieldLabel}{" "}
+                    <Text style={{ color: "#EF4444" }}>*</Text>
                   </Text>
                   <TextInput
                     style={[
@@ -1269,7 +1283,8 @@ const getFilteredItems = () => {
               <View style={styles.row}>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.label}>
-                    Quantity <Text style={{ color: "#EF4444" }}>*</Text>
+                    {quantityFieldLabel}{" "}
+                    <Text style={{ color: "#EF4444" }}>*</Text>
                   </Text>
                   <TextInput
                     style={[
@@ -1288,7 +1303,7 @@ const getFilteredItems = () => {
                     <Text
                       style={{ fontSize: 10, color: "#6B7280", marginTop: 2 }}
                     >
-                      Units per box (locked)
+                      {quantityFieldLabel} (locked)
                     </Text>
                   )}
                   {fieldErrors.quantity || quantityError ? (
@@ -1937,6 +1952,30 @@ const getFilteredItems = () => {
         </View>
       </Modal>
 
+      {successFeedback && (
+        <Modal
+          visible={Boolean(successFeedback)}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setSuccessFeedback(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.successModalContainer}>
+              <CheckCircle size={60} color="#10B981" />
+              <Text style={styles.successTitle}>{successFeedback.title}</Text>
+              <Text style={styles.detailValue}>{successFeedback.message}</Text>
+              <TouchableOpacity
+                onPress={() => setSuccessFeedback(null)}
+                style={styles.dismissBtn}
+              >
+                <Text style={styles.dismissBtnText}>DISMISS</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {errorFeedback && (
         <Modal
           visible={Boolean(errorFeedback)}
@@ -1950,7 +1989,7 @@ const getFilteredItems = () => {
               <View style={styles.errorIconContainer}>
                 <AlertTriangle size={34} color="#B91C1C" />
               </View>
-              <Text style={styles.errorEyebrow}>SAVE NOT COMPLETED</Text>
+              <Text style={styles.errorEyebrow}>ACTION NOT COMPLETED</Text>
               <Text style={styles.errorTitle}>{errorFeedback.title}</Text>
               <Text style={styles.errorMessage}>{errorFeedback.message}</Text>
               <TouchableOpacity
