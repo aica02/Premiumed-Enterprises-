@@ -382,3 +382,6 @@
     right: 8px;
   }
 }
+.inventory-status-detail .field-box {
+  text-transform: capitalize;
+}

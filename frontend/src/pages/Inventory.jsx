@@ -309,27 +309,27 @@ const Inventory = () => {
     );
 
     const columns =
-  type === "disposed"
-    ? [
-        "Supply Name",
-        "Unit Type",
-        "Category",
-        "Qty",
-        "Location",
-        "Expiration Date",
-        "FEFO Status",
-        "Price",
-      ]
-    : [
-        "Supply Name",
-        "Unit Type",
-        "Category",
-        "Qty",
-        "Location",
-        "Expiration Date",
-        "FEFO Status",
-        "Stock Status",
-      ];
+      type === "disposed"
+        ? [
+            "Supply Name",
+            "Unit Type",
+            "Category",
+            "Qty",
+            "Location",
+            "Expiration Date",
+            "FEFO Status",
+            "Price",
+          ]
+        : [
+            "Supply Name",
+            "Unit Type",
+            "Category",
+            "Qty",
+            "Location",
+            "Expiration Date",
+            "FEFO Status",
+            "Stock Status",
+          ];
 
     const tableData = uniqueRows.map(({ item, batch }) => {
       const expiration = batch.expirationDate
@@ -339,10 +339,10 @@ const Inventory = () => {
       const unitType = batch.unitType || item.unitType || "N/A";
       const fefo = getFefoStatus(batch.expirationDate);
 
-    if (type === "disposed") {
-      const price = Number(item.price || 0);
+      if (type === "disposed") {
+        const price = Number(item.price || 0);
 
-      return [
+        return [
           item.name,
           unitType,
           item.category,
@@ -357,20 +357,19 @@ const Inventory = () => {
         ];
       }
 
-    // FULL INVENTORY
-    const stock = getStockStatus(batch.quantity, item.reorderLevel);
+      // FULL INVENTORY
+      const stock = getStockStatus(batch.quantity, item.reorderLevel);
 
-    return [
-      item.name,
-      unitType,
-      item.category,
-      batch.quantity,
-      batch.storageLocation || "N/A",
-      expiration,
-      fefo.label,
-      stock.label,
-    ];
-
+      return [
+        item.name,
+        unitType,
+        item.category,
+        batch.quantity,
+        batch.storageLocation || "N/A",
+        expiration,
+        fefo.label,
+        stock.label,
+      ];
     });
 
     const totalInventoryValue = uniqueRows.reduce(
@@ -714,10 +713,6 @@ const Inventory = () => {
                     <h4>Supply Information</h4>
                   </div>
                   <DetailItem
-                    label="BOX"
-                    value={selectedBatch.batch?.box || "N/A"}
-                  />
-                  <DetailItem
                     label="Item Name"
                     value={selectedBatch.item?.name}
                   />
@@ -744,13 +739,33 @@ const Inventory = () => {
                   />
 
                   <DetailItem
-                    label="Quantity"
-                    value={selectedBatch.batch.quantity}
+                    label={
+                      (selectedBatch.batch.unitType ||
+                        selectedBatch.item?.unitType) === "Box"
+                        ? "No. of Case"
+                        : "No. of Box"
+                    }
+                    value={selectedBatch.batch?.box || "N/A"}
+                  />
+
+                  <DetailItem
+                    label={`No. of ${
+                      selectedBatch.batch.unitType ||
+                      selectedBatch.item?.unitType ||
+                      "N/A"
+                    } per ${
+                      (selectedBatch.batch.unitType ||
+                        selectedBatch.item?.unitType) === "Box"
+                        ? "Case"
+                        : "Box"
+                    }`}
+                    value={selectedBatch.item?.quantityPerBox}
                   />
 
                   <DetailItem
                     label="Status"
                     value={selectedBatch.batch.status || "N/A"}
+                    className="inventory-status-detail"
                   />
 
                   <div className="detail-group full title">
@@ -869,8 +884,8 @@ const Inventory = () => {
   );
 };
 
-const DetailItem = ({ label, value, fullWidth }) => (
-  <div className={`field-group ${fullWidth ? "full-width" : ""}`}>
+const DetailItem = ({ label, value, fullWidth, className = "" }) => (
+  <div className={`field-group ${fullWidth ? "full-width" : ""} ${className}`}>
     <label className="field-label">{label}</label>
     <div className="field-box">{value || "N/A"}</div>
   </div>

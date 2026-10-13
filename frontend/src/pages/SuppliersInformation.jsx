@@ -82,18 +82,40 @@ const getSupplierPhoneParts = (phone = "") => {
   };
 };
 
-const getBatchUnitType = (batch, items) => {
-  if (batch.unitType) return batch.unitType;
-
+const getBatchProduct = (batch, items) => {
   const itemCode =
     batch.itemCode?.itemCode || batch.itemCode?._id || batch.itemCode;
-  const item = items.find(
+  return items.find(
     (product) =>
       String(product.itemCode || product._id) === String(itemCode) ||
       product.name === batch.itemName,
   );
+};
 
-  return item?.unitType || "N/A";
+const getBatchUnitType = (batch, items) =>
+  batch.unitType || getBatchProduct(batch, items)?.unitType || "N/A";
+
+const getBatchQuantityPerBox = (batch, items) => {
+  const quantityPerBox = Number(getBatchProduct(batch, items)?.quantityPerBox);
+  return Number.isFinite(quantityPerBox) && quantityPerBox > 0
+    ? quantityPerBox
+    : "N/A";
+};
+
+const getBatchTotalQuantityDisplay = (batch, items) => {
+  const boxCount = Number(batch.box);
+  const quantityPerBox = Number(getBatchQuantityPerBox(batch, items));
+
+  if (
+    Number.isFinite(boxCount) &&
+    boxCount > 0 &&
+    Number.isFinite(quantityPerBox) &&
+    quantityPerBox > 0
+  ) {
+    return `${boxCount * quantityPerBox}`;
+  }
+
+  return batch.quantity ?? "N/A";
 };
 
 const SuppliersInformation = () => {
@@ -1363,6 +1385,35 @@ const SuppliersInformation = () => {
                     value={getBatchUnitType(selectedBatch, itemsData)}
                   />
                   <DetailItem
+                    label={
+                      getBatchUnitType(selectedBatch, itemsData) === "Box"
+                        ? "No. of Case"
+                        : "No. of Box"
+                    }
+                    value={selectedBatch.box}
+                  />
+                  <DetailItem
+                    label={`No. of ${getBatchUnitType(
+                      selectedBatch,
+                      itemsData,
+                    )} per ${
+                      getBatchUnitType(selectedBatch, itemsData) === "Box"
+                        ? "Case"
+                        : "Box"
+                    }`}
+                    value={getBatchQuantityPerBox(selectedBatch, itemsData)}
+                  />
+                  <DetailItem
+                    label={`Total number of ${getBatchUnitType(
+                      selectedBatch,
+                      itemsData,
+                    )}`}
+                    value={getBatchTotalQuantityDisplay(
+                      selectedBatch,
+                      itemsData,
+                    )}
+                  />
+                  <DetailItem
                     label="Location"
                     value={selectedBatch.storageLocation}
                   />
@@ -1374,16 +1425,10 @@ const SuppliersInformation = () => {
                         : "N/A"
                     }
                   />
-                  <DetailItem label="Quantity" value={selectedBatch.quantity} />
-
                   <DetailItem
                     label="Status"
-                    value={
-                      selectedBatch.status
-                        ? selectedBatch.status.charAt(0).toUpperCase() +
-                          selectedBatch.status.slice(1)
-                        : "Pending"
-                    }
+                    value={selectedBatch.status?.toLowerCase() || "Pending"}
+                    className="batch-status-detail"
                   />
                   <div className="detail-group full title">
                     <h4>Supplier Source</h4>

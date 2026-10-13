@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import "../styles/InformationLayout.css";
+import "../styles/Modals.css";
 import "../styles/ActivityLogs.css";
 import { FaPlusCircle, FaPrint, FaSearch, FaTimes } from "react-icons/fa";
 import { MdAutorenew } from "react-icons/md";
@@ -228,7 +229,10 @@ const ActivityLogs = () => {
 
       {showLogsFilters && (
         <div className="order-modal-overlay">
-          <div className="order-modal-container" style={{ maxWidth: "500px" }}>
+          <div
+            className="order-modal-container activity-logs-filter-modal"
+            style={{ maxWidth: "500px" }}
+          >
             <div className="order-modal-header">
               <h3>Filter Reports</h3>
               <FaTimes
@@ -321,6 +325,7 @@ const ActivityLogs = () => {
       <div className="info-card activities-table">
         <div className="activity-filters">
           <select
+            className="logs-user-filter"
             value={selectedUser}
             onChange={(e) => setSelectedUser(e.target.value)}
           >

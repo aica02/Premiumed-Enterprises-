@@ -785,7 +785,8 @@ const ClientsOrder = () => {
                   <DetailItem label="Client" value={selectedOrder.name} />
                   <DetailItem
                     label="Current Status"
-                    value={selectedOrder.status.toUpperCase()}
+                    value={selectedOrder.status?.toLowerCase()}
+                    className="order-status-detail"
                   />
                   <DetailItem
                     label="Address"
@@ -997,8 +998,8 @@ const ClientsOrder = () => {
   );
 };
 
-const DetailItem = ({ label, value, fullWidth }) => (
-  <div className={`field-group ${fullWidth ? "full-width" : ""}`}>
+const DetailItem = ({ label, value, fullWidth, className = "" }) => (
+  <div className={`field-group ${fullWidth ? "full-width" : ""} ${className}`}>
     <label className="field-label">{label}</label>
     <div className="field-box">{value || "N/A"}</div>
   </div>
