@@ -28,9 +28,7 @@ import {
   Check,
   Wifi,
   WifiOff,
-  /* Bluetooth printer UI temporarily disabled.
   Printer,
-  */
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -39,7 +37,6 @@ import NetInfo from "@react-native-community/netinfo";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
-/* Bluetooth printer integration temporarily disabled.
 import {
   autoConnectPrinter,
   connectToPrinter,
@@ -47,7 +44,6 @@ import {
   scanForPrinters,
   stopPrinterScan,
 } from "../utils/PrinterService";
-*/
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
@@ -94,13 +90,12 @@ export default function InventoryKit({
   const [restockSuccessData, setRestockSuccessData] = useState(null);
   const [printQty, setPrintQty] = useState("1");
 
-  /* Bluetooth printer state temporarily disabled.
   const [printerDevice, setPrinterDevice] = useState(null);
   const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
   const [availablePrinters, setAvailablePrinters] = useState([]);
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
-  */
+  
   const [successFeedback, setSuccessFeedback] = useState(null);
   const [errorFeedback, setErrorFeedback] = useState(null);
 
@@ -127,7 +122,6 @@ export default function InventoryKit({
 
   const [permission, requestPermission] = useCameraPermissions();
 
-  /* Bluetooth printer auto-connect and device-scan flow temporarily disabled.
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
@@ -229,7 +223,6 @@ export default function InventoryKit({
       setIsPrinting(false);
     }
   };
-  */
 
   const [kitFormData, setKitFormData] = useState({
     itemCode: "",
@@ -1289,7 +1282,7 @@ export default function InventoryKit({
 
   return (
     <>
-      {/* <View
+      <View
         style={{
           flexDirection: "row",
           justifyContent: "space-between",
@@ -1330,7 +1323,7 @@ export default function InventoryKit({
             {printerDevice ? "CHANGE PRINTER" : "CONNECT PRINTER"}
           </Text>
         </TouchableOpacity>
-      </View> */}
+      </View> 
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1364,7 +1357,6 @@ export default function InventoryKit({
           </Text>
         </View>
       )}
-      {/*      
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1413,7 +1405,8 @@ export default function InventoryKit({
             </ScrollView>
           </View>
         </View>
-      </Modal> */}
+      </Modal> 
+
       {/* Add / Restock Kit Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -2948,7 +2941,7 @@ export default function InventoryKit({
               </Text>
             </View>
 
-            {/* {!restockSuccessData?.queued && (
+            {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
                 <TextInput
@@ -2975,7 +2968,7 @@ export default function InventoryKit({
                 )}
               </TouchableOpacity>
             )}
-             */}
+            
             <TouchableOpacity
               onPress={() => {
                 setShowSuccessModal(false);

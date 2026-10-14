@@ -38,18 +38,14 @@ const Login = () => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showCheckEmailModal, setShowCheckEmailModal] = useState(false);
-
-  // success signup
   const [showApplicationSuccessModal, setShowApplicationSuccessModal] =
     useState(false);
 
-  // Forgot Password Modal
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetMessage, setResetMessage] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
 
-  // signup state
   const [currentStep, setCurrentStep] = useState(1);
   const [registerLoading, setRegisterLoading] = useState(false);
 
