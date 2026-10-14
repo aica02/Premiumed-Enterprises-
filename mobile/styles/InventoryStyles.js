@@ -533,6 +533,21 @@ export const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 14,
   },
+  successButton: {
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#059669",
+    borderRadius: 10,
+    paddingVertical: 14,
+    marginTop: 10,
+  },
+  successButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
   successDetailBox: {
     backgroundColor: "#F3F4F6",
     width: "100%",

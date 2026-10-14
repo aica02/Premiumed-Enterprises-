@@ -1168,7 +1168,7 @@ const Login = () => {
                 disabled={resetLoading || !resetEmail.trim()}
               >
                 {" "}
-                {resetLoading ? "Sending..." : "Send Temporary Password"}{" "}
+                {resetLoading ? "Sending..." : "Reset Password"}{" "}
               </button>
             </div>
           </div>

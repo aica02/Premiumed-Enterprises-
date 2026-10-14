@@ -1289,8 +1289,7 @@ export default function InventoryKit({
 
   return (
     <>
-      /* Bluetooth printer status section temporarily disabled.
-      <View
+      {/* <View
         style={{
           flexDirection: "row",
           justifyContent: "space-between",
@@ -1331,8 +1330,7 @@ export default function InventoryKit({
             {printerDevice ? "CHANGE PRINTER" : "CONNECT PRINTER"}
           </Text>
         </TouchableOpacity>
-      </View>
-      */
+      </View> */}
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1355,7 +1353,6 @@ export default function InventoryKit({
           <Text style={styles.addBtnText}>ADD</Text>
         </TouchableOpacity>
       </View>
-
       {loading ? (
         <ActivityIndicator size="large" color="#D4AF37" />
       ) : filteredItems.length > 0 ? (
@@ -1367,8 +1364,7 @@ export default function InventoryKit({
           </Text>
         </View>
       )}
-
-      /* Bluetooth printer scan modal temporarily disabled.
+      {/*      
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1417,9 +1413,7 @@ export default function InventoryKit({
             </ScrollView>
           </View>
         </View>
-      </Modal>
-      */
-
+      </Modal> */}
       {/* Add / Restock Kit Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
@@ -2051,7 +2045,6 @@ export default function InventoryKit({
           </KeyboardAvoidingView>
         </View>
       </Modal>
-
       {/* Confirmation Modal */}
       <Modal
         visible={showConfirmKitModal}
@@ -2271,7 +2264,6 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
-
       {/* SCANNING MODAL  */}
       <Modal
         visible={scanningModalVisible}
@@ -2444,7 +2436,6 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
-
       <Modal
         visible={showIncompleteScanConfirm}
         transparent
@@ -2526,7 +2517,6 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
-
       <Modal
         visible={showCancelScanConfirm}
         transparent
@@ -2570,7 +2560,6 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
-
       {/* FEFO Warning Modal (mirrors picking) */}
       {scanFeedback && (
         <Modal
@@ -2704,7 +2693,6 @@ export default function InventoryKit({
           </View>
         </Modal>
       )}
-
       {/* Batch Modal */}
       <Modal visible={showBatchModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -2848,7 +2836,6 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
-
       {errorFeedback && (
         <Modal
           visible={Boolean(errorFeedback)}
@@ -2875,7 +2862,6 @@ export default function InventoryKit({
           </View>
         </Modal>
       )}
-
       {/* Success Modal */}
       <Modal
         visible={showSuccessModal}
@@ -2913,7 +2899,6 @@ export default function InventoryKit({
                 Your kit inventory has been updated successfully.
               </Text>
             )}
-
             {restockSuccessData?.batchCode && (
               <View
                 style={{
@@ -2942,7 +2927,6 @@ export default function InventoryKit({
                 </Text>
               </View>
             )}
-
             <View style={styles.successDetailBox}>
               <Text style={styles.detailLabel}>
                 Kit Name:{" "}
@@ -2964,8 +2948,7 @@ export default function InventoryKit({
               </Text>
             </View>
 
-            /* Bluetooth printer label section temporarily disabled.
-            {!restockSuccessData?.queued && (
+            {/* {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
                 <TextInput
@@ -2976,7 +2959,6 @@ export default function InventoryKit({
                 />
               </View>
             )}
-
             {!restockSuccessData?.queued && (
               <TouchableOpacity
                 style={[styles.saveBtn, styles.printButton]}
@@ -2993,8 +2975,7 @@ export default function InventoryKit({
                 )}
               </TouchableOpacity>
             )}
-            */
-
+             */}
             <TouchableOpacity
               onPress={() => {
                 setShowSuccessModal(false);
@@ -3006,7 +2987,6 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
-
       {successFeedback && (
         <Modal
           visible={Boolean(successFeedback)}
@@ -3030,7 +3010,6 @@ export default function InventoryKit({
           </View>
         </Modal>
       )}
-
     </>
   );
 }

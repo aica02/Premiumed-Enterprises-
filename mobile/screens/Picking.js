@@ -41,6 +41,7 @@ export default function DeliveryList({ navigation }) {
   const [completingOrder, setCompletingOrder] = useState(false);
   const [scanFeedback, setScanFeedback] = useState(null);
   const [batchBlockedNotice, setBatchBlockedNotice] = useState(null);
+  const [invalidBarcodeNotice, setInvalidBarcodeNotice] = useState(null);
   const [completionSuccess, setCompletionSuccess] = useState(null);
   const isProcessing = useRef(false);
   const [pickedCounts, setPickedCounts] = useState({});
@@ -220,9 +221,7 @@ export default function DeliveryList({ navigation }) {
     }
 
     if (!scannedBatch) {
-      showScanAlert("Invalid Barcode", "Batch not found in inventory.", [
-        { text: "OK", onPress: resetScanner },
-      ]);
+      setInvalidBarcodeNotice({ batchCode: scannedBatchCode });
       return;
     }
 
@@ -1097,6 +1096,56 @@ export default function DeliveryList({ navigation }) {
                 style={pickingStyles.putawayExpiredButton}
                 onPress={() => {
                   setBatchBlockedNotice(null);
+                  resetScanner();
+                }}
+              >
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN ANOTHER BATCH
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {invalidBarcodeNotice && (
+        <Modal
+          transparent
+          visible={Boolean(invalidBarcodeNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            setInvalidBarcodeNotice(null);
+            resetScanner();
+          }}
+        >
+          <View style={pickingStyles.putawayExpiredOverlay}>
+            <View style={pickingStyles.putawayExpiredCard}>
+              <View style={pickingStyles.putawayExpiredIcon}>
+                <AlertTriangle size={36} color="#B91C1C" />
+              </View>
+              <Text style={pickingStyles.putawayExpiredEyebrow}>
+                INVALID BARCODE
+              </Text>
+              <Text style={pickingStyles.putawayExpiredTitle}>
+                Batch not found
+              </Text>
+              <Text style={pickingStyles.putawayExpiredMessage}>
+                This barcode does not match any batch in the inventory. Check
+                the label and try scanning again.
+              </Text>
+              <View style={pickingStyles.putawayExpiredDetails}>
+                <Text style={pickingStyles.putawayExpiredLabel}>
+                  SCANNED BARCODE
+                </Text>
+                <Text style={pickingStyles.putawayExpiredBatchCode}>
+                  {invalidBarcodeNotice.batchCode}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={pickingStyles.putawayExpiredButton}
+                onPress={() => {
+                  setInvalidBarcodeNotice(null);
                   resetScanner();
                 }}
               >

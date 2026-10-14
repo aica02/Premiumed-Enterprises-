@@ -11,7 +11,12 @@ import {
   Modal,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { XCircle, Scan, TriangleAlert } from "lucide-react-native";
+import {
+  XCircle,
+  Scan,
+  TriangleAlert,
+  CheckCircle,
+} from "lucide-react-native";
 import Header from "./Header";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { styles as inventoryStyles } from "../styles/InventoryStyles";
@@ -34,6 +39,7 @@ export default function DisposeSupplies({ navigation }) {
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [batchToConfirm, setBatchToConfirm] = useState(null);
   const [invalidBatchNotice, setInvalidBatchNotice] = useState(null);
+  const [disposalFeedback, setDisposalFeedback] = useState(null);
 
   const isProcessing = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -144,6 +150,14 @@ export default function DisposeSupplies({ navigation }) {
     resetScanner();
   };
 
+  const closeDisposalFeedback = () => {
+    setDisposalFeedback(null);
+    setScannerModalVisible(false);
+    setSelectedBatch(null);
+    fetchDisposalBatches();
+    resetScanner();
+  };
+
   const handleBarCodeScanned = ({ data }) => {
     if (isProcessing.current) return;
     isProcessing.current = true;
@@ -206,23 +220,10 @@ export default function DisposeSupplies({ navigation }) {
 
       if (response.ok) {
         const result = await response.json();
-        Alert.alert(
-          result.queued ? "Saved Offline" : "Success",
-          result.queued
-            ? `Disposal of batch ${batch.batchCode} is saved on this device and will sync when you reconnect.`
-            : `Batch ${batch.batchCode} has been disposed successfully.`,
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                setScannerModalVisible(false);
-                setSelectedBatch(null);
-                fetchDisposalBatches();
-                resetScanner();
-              },
-            },
-          ],
-        );
+        setDisposalFeedback({
+          queued: Boolean(result.queued),
+          batchCode: batch.batchCode,
+        });
       } else {
         const errorData = await response.json();
         Alert.alert("Error", errorData.message || "Failed to dispose batch", [
@@ -730,6 +731,41 @@ export default function DisposeSupplies({ navigation }) {
           </View>
         </View>
       </Modal>
+
+      {disposalFeedback && (
+        <Modal
+          visible={Boolean(disposalFeedback)}
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={closeDisposalFeedback}
+        >
+          <View style={inventoryStyles.modalOverlay}>
+            <View style={inventoryStyles.successModalContainer}>
+              <View style={inventoryStyles.successIconContainer}>
+                <CheckCircle size={38} color="#059669" />
+              </View>
+              <Text style={inventoryStyles.successEyebrow}>
+                {disposalFeedback.queued ? "SAVED OFFLINE" : "DISPOSAL COMPLETE"}
+              </Text>
+              <Text style={inventoryStyles.successTitle}>
+                {disposalFeedback.queued ? "Saved Offline" : "Success"}
+              </Text>
+              <Text style={inventoryStyles.successMessage}>
+                {disposalFeedback.queued
+                  ? `Disposal of batch ${disposalFeedback.batchCode} is saved on this device and will sync when you reconnect.`
+                  : `Batch ${disposalFeedback.batchCode} has been disposed successfully.`}
+              </Text>
+              <TouchableOpacity
+                style={inventoryStyles.successButton}
+                onPress={closeDisposalFeedback}
+              >
+                <Text style={inventoryStyles.successButtonText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </>
   );
 }

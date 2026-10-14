@@ -945,7 +945,7 @@ export default function InventorySupply({
 
   return (
     <>
-      /* Bluetooth printer status section temporarily disabled.
+      {/*     
       <View
         style={{
           flexDirection: "row",
@@ -987,8 +987,7 @@ export default function InventorySupply({
             {printerDevice ? "CHANGE PRINTER" : "CONNECT PRINTER"}
           </Text>
         </TouchableOpacity>
-      </View>
-      */
+      </View> */}
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1024,8 +1023,7 @@ export default function InventorySupply({
         </View>
       )}
 
-      /* Bluetooth printer scan modal temporarily disabled.
-      <Modal visible={showPrinterModal} transparent animationType="slide">
+      {/* <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
             <View style={styles.modalHeader}>
@@ -1069,8 +1067,7 @@ export default function InventorySupply({
             </ScrollView>
           </View>
         </View>
-      </Modal>
-      */
+      </Modal> */}
 
       {/* Add/Restock Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
@@ -1862,7 +1859,6 @@ export default function InventorySupply({
         <View style={styles.modalOverlay}>
           <View style={styles.successModalContainer}>
             <CheckCircle size={60} color="#10B981" />
-
             <Text style={styles.successTitle}>
               {restockSuccessData?.queued
                 ? "Saved Offline"
@@ -1877,7 +1873,6 @@ export default function InventorySupply({
                   : ""}
               </Text>
             )}
-
             {restockSuccessData?.batchCode && (
               <View
                 style={{
@@ -1906,7 +1901,6 @@ export default function InventorySupply({
                 </Text>
               </View>
             )}
-
             <View style={styles.successDetailBox}>
               <Text style={styles.detailLabel}>
                 Item Name:{" "}
@@ -1928,8 +1922,7 @@ export default function InventorySupply({
               </Text>
             </View>
 
-            /* Bluetooth printer label section temporarily disabled.
-            {!restockSuccessData?.queued && (
+            {/* {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
                 <TextInput
@@ -1940,7 +1933,6 @@ export default function InventorySupply({
                 />
               </View>
             )}
-
             {!restockSuccessData?.queued && (
               <TouchableOpacity
                 style={[styles.saveBtn, styles.printButton]}
@@ -1957,8 +1949,7 @@ export default function InventorySupply({
                 )}
               </TouchableOpacity>
             )}
-            */
-
+            */}
             <TouchableOpacity
               onPress={() => setShowSuccessModal(false)}
               style={styles.dismissBtn}
