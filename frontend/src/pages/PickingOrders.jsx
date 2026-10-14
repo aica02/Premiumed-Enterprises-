@@ -61,7 +61,7 @@ const PickingOrders = () => {
   };
 
   const handleViewClick = (order, e) => {
-    e.stopPropagation(); // prevent rack highlight trigger
+    e.stopPropagation(); 
     setSelectedOrder(order);
     setShowModal(true);
   };
