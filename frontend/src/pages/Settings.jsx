@@ -295,7 +295,8 @@ const Settings = () => {
                   className={`attachment-file-name${attachmentUrl ? " upload-success" : ""}`}
                   title={attachmentFileName || undefined}
                   aria-label={
-                    attachmentFileName || "No pricing and policy document uploaded"
+                    attachmentFileName ||
+                    "No pricing and policy document uploaded"
                   }
                 >
                   {attachmentUrl ? (
@@ -436,7 +437,7 @@ const Settings = () => {
             </div>
           </div>
 
-          <div className="settings-group">
+          {/* <div className="settings-group">
             <h3>Backup & Recovery</h3>
             <div className="checked-group">
               <input type="checkbox" checked readOnly />
@@ -448,7 +449,7 @@ const Settings = () => {
               <p className="status-text">Last Restored: 2026-03-09 (Cloud)</p>
             </div>
             <button className="restore-btn">Restore from Cloud</button>
-          </div>
+          </div> */}
         </div>
 
         {/* Confirmation Modal - Updated for Settings */}

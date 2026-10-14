@@ -86,13 +86,7 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
 
   const fetchUnstoredCount = async () => {
     try {
-      const token = await AsyncStorage.getItem("userToken");
-
-      const res = await offlineFetch(`${API_URL}/api/putaway/count`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await offlineFetch(`${API_URL}/api/putaway/count`);
 
       setUnstoredCount((await res.json()).count);
     } catch (error) {
@@ -102,13 +96,7 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
 
   const fetchDisposeCount = async () => {
     try {
-      const token = await AsyncStorage.getItem("userToken");
-
-      const res = await offlineFetch(`${API_URL}/api/putaway/disposeCount`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await offlineFetch(`${API_URL}/api/putaway/disposeCount`);
 
       setDisposeCount((await res.json()).count);
     } catch (error) {
@@ -189,7 +177,7 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
             </View>
 
             {/* Bottom Menu */}
-            <View>
+            {/* <View>
               <View style={{ height: 1, backgroundColor: "#E5E7EB" }} />
 
               <TouchableOpacity
@@ -213,7 +201,7 @@ export default function Sidebar({ isVisible, onClose, navigation }) {
                   Settings
                 </Text>
               </TouchableOpacity>
-            </View>
+            </View> */}
           </View>
         </View>
       </TouchableOpacity>
