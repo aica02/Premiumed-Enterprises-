@@ -30,7 +30,9 @@ import {
   Check,
   Wifi,
   WifiOff,
+  /* Bluetooth printer UI temporarily disabled.
   Printer,
+  */
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -42,6 +44,7 @@ import { UNITTYPES } from "../components/UnitType";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
+/* Bluetooth printer integration temporarily disabled.
 import {
   autoConnectPrinter,
   scanForPrinters,
@@ -49,6 +52,7 @@ import {
   printBarcodeTSPL,
   stopPrinterScan,
 } from "../utils/PrinterService";
+*/
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
@@ -100,11 +104,14 @@ export default function InventorySupply({
   const [successFeedback, setSuccessFeedback] = useState(null);
   const [errorFeedback, setErrorFeedback] = useState(null);
   const [printQty, setPrintQty] = useState("1");
+
+  /* Bluetooth printer state temporarily disabled.
   const [printerDevice, setPrinterDevice] = useState(null);
   const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
   const [availablePrinters, setAvailablePrinters] = useState([]);
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  */
 
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -130,6 +137,7 @@ export default function InventorySupply({
   const boxFieldLabel = formData.unitType === "Box" ? "Case" : "Box";
   const quantityFieldLabel = `No. of ${formData.unitType} per ${boxFieldLabel}`;
 
+  /* Bluetooth printer auto-connect flow temporarily disabled.
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
@@ -144,6 +152,7 @@ export default function InventorySupply({
       stopPrinterScan();
     };
   }, []);
+  */
 
   const getFefoStatus = (expirationDate) => {
     const today = new Date();
@@ -607,6 +616,7 @@ export default function InventorySupply({
     );
   };
 
+  /* Bluetooth printer discovery, pairing, and label-print sequence temporarily disabled.
   const handleScanPrinters = async () => {
     setAvailablePrinters([]);
     setShowPrinterModal(true);
@@ -700,6 +710,7 @@ export default function InventorySupply({
       setIsPrinting(false);
     }
   };
+  */
 
   const performSave = async () => {
     try {
@@ -934,6 +945,7 @@ export default function InventorySupply({
 
   return (
     <>
+      /* Bluetooth printer status section temporarily disabled.
       <View
         style={{
           flexDirection: "row",
@@ -976,6 +988,7 @@ export default function InventorySupply({
           </Text>
         </TouchableOpacity>
       </View>
+      */
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1011,6 +1024,7 @@ export default function InventorySupply({
         </View>
       )}
 
+      /* Bluetooth printer scan modal temporarily disabled.
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1056,6 +1070,7 @@ export default function InventorySupply({
           </View>
         </View>
       </Modal>
+      */
 
       {/* Add/Restock Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
@@ -1913,6 +1928,7 @@ export default function InventorySupply({
               </Text>
             </View>
 
+            /* Bluetooth printer label section temporarily disabled.
             {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
@@ -1941,6 +1957,7 @@ export default function InventorySupply({
                 )}
               </TouchableOpacity>
             )}
+            */
 
             <TouchableOpacity
               onPress={() => setShowSuccessModal(false)}
