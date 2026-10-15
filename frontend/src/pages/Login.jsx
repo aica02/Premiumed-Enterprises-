@@ -96,13 +96,11 @@ const Login = () => {
 
   const [touchedFields, setTouchedFields] = useState({});
 
-  // signup field change
   const handleRegisterChange = (e) => {
     const { name } = e.target;
 
     let value = e.target.value;
 
-    // country code
     if (
       name === "mobileCountryCode" ||
       name === "landlineCountryCode" ||
