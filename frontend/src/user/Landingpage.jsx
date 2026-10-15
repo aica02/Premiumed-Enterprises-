@@ -4,6 +4,7 @@ import {
   MdKeyboardArrowDown,
   MdKeyboardArrowUp,
   MdAutorenew,
+  MdInventory,
   MdOutlineExitToApp,
 } from "react-icons/md";
 import { FaSearch, FaShoppingCart } from "react-icons/fa";
@@ -16,6 +17,7 @@ import { Toaster, toast } from "react-hot-toast";
 import cartService from "./CartService";
 import EmptyState from "../components/EmptyState";
 import { CATEGORIES } from "../components/Categories";
+import usePolling from "../hooks/usePolling";
 
 function FilterSidebar({ selectedCategories, onCategoryChange }) {
   return (
@@ -37,12 +39,38 @@ function FilterSidebar({ selectedCategories, onCategoryChange }) {
   );
 }
 
+function ProductImage({ src, alt, className }) {
+  const imageSrc = typeof src === "string" ? src.trim() : "";
+  const [failedImageSrc, setFailedImageSrc] = useState("");
+
+  if (!imageSrc || failedImageSrc === imageSrc) {
+    return (
+      <div
+        className={`${className} product-image-placeholder`}
+        role="img"
+        aria-label={`${alt} image unavailable`}
+      >
+        <MdInventory aria-hidden="true" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imageSrc}
+      alt={alt}
+      className={className}
+      onError={() => setFailedImageSrc(imageSrc)}
+    />
+  );
+}
+
 function ProductCard({ product, onClick }) {
   return (
     <div className="product-card" onClick={() => onClick(product)}>
       <div className="product-image-area">
-        <img
-          src={product.itemImage || "https://via.placeholder.com/150"}
+        <ProductImage
+          src={product.itemImage || product.image}
           alt={product.name}
           className="product-image"
         />
@@ -208,8 +236,8 @@ function ProductModal({ product, onClose }) {
         </div>
         <div className="modal-content">
           <div className="modal-image">
-            <img
-              src={product.itemImage || "https://via.placeholder.com/150"}
+            <ProductImage
+              src={product.itemImage || product.image}
               alt={product.name}
               className="modal-product-image"
             />
@@ -418,22 +446,26 @@ function LandingPageContent() {
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
 
+  const fetchProducts = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/products`, {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Failed to fetch products");
+      const data = await response.json();
+      setProducts(data);
+      setError(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`${BACKEND_URL}/api/products`);
-        if (!response.ok) throw new Error("Failed to fetch products");
-        const data = await response.json();
-        setProducts(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchProducts();
   }, []);
+  usePolling(fetchProducts);
 
   const handleCategoryChange = (category) => {
     setSelectedCategories((prev) =>

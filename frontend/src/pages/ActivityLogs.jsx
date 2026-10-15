@@ -8,6 +8,7 @@ import { generateActivityReport } from "../utils/pdf/ActivityLogReport";
 import logReportPrinted from "../utils/logReportPrinted";
 import { Toaster, toast } from "react-hot-toast";
 import EmptyState from "../components/EmptyState";
+import usePolling from "../hooks/usePolling";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -34,8 +35,11 @@ const ActivityLogs = () => {
   const [printEndDate, setPrintEndDate] = useState("");
   const [includeArchivedLogs, setIncludeArchivedLogs] = useState(true);
 
-  const fetchActivityLogs = async (includeArchived = true) => {
-    setLoading(true);
+  const fetchActivityLogs = async (
+    includeArchived = true,
+    showLoading = true,
+  ) => {
+    if (showLoading) setLoading(true);
     try {
       const response = await fetch(
         `${API_URL}/api/activitylogs?includeArchived=${includeArchived}`,
@@ -51,13 +55,14 @@ const ActivityLogs = () => {
     } catch (error) {
       console.error("Error fetching activity logs:", error);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchActivityLogs(true);
   }, []);
+  usePolling(() => fetchActivityLogs(true, false));
 
   const users = [...new Set(activityLogs.map((log) => displayRole(log.role)))];
   const modules = [...new Set(activityLogs.map((log) => log.module))];

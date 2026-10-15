@@ -22,6 +22,36 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   (window.location.hostname === "localhost" ? "http://localhost:5000" : "");
 
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const FULL_MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
 const mergeChartData = ({ delivered = [], toShip = [] } = {}) => {
   const merged = new Map();
 
@@ -50,21 +80,6 @@ const InventoryChart = () => {
 
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
 
-  const months = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec",
-  ];
-
   const currentYear = new Date().getFullYear();
 
   const years = Array.from(
@@ -72,24 +87,9 @@ const InventoryChart = () => {
     (_, i) => 2016 + i,
   );
 
-  const fullMonths = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
-
   const getFullMonthName = (month) => {
-    const index = months.indexOf(month);
-    return index !== -1 ? fullMonths[index] : month;
+    const index = MONTHS.indexOf(month);
+    return index !== -1 ? FULL_MONTHS[index] : month;
   };
 
   useEffect(() => {
@@ -115,7 +115,7 @@ const InventoryChart = () => {
         }
 
         if (selectedMonth) {
-          const monthIndex = months.indexOf(selectedMonth) + 1;
+          const monthIndex = MONTHS.indexOf(selectedMonth) + 1;
           params.append("month", monthIndex);
         }
 
@@ -138,6 +138,11 @@ const InventoryChart = () => {
     };
 
     fetchChartData();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") fetchChartData();
+    }, 5000);
+
+    return () => window.clearInterval(interval);
   }, [selectedDay, selectedMonth, selectedYear, selectedClient]);
 
   const fetchExcelData = async () => {
@@ -149,7 +154,7 @@ const InventoryChart = () => {
       }
 
       if (selectedMonth) {
-        const monthIndex = months.indexOf(selectedMonth) + 1;
+        const monthIndex = MONTHS.indexOf(selectedMonth) + 1;
         params.append("month", monthIndex);
       }
 
@@ -728,7 +733,7 @@ const InventoryChart = () => {
                     All
                   </div>
 
-                  {months.map((month) => (
+                  {MONTHS.map((month) => (
                     <div
                       key={month}
                       className={`calendar-item ${

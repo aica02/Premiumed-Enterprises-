@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import InventoryChart from "../components/InventoryChart";
 import "../styles/Dashboard.css";
@@ -7,6 +7,7 @@ import { BsFillCartCheckFill } from "react-icons/bs";
 import { PiWarningOctagonFill } from "react-icons/pi";
 import { IoIosWarning } from "react-icons/io";
 import { FaRunning } from "react-icons/fa";
+import usePolling from "../hooks/usePolling";
 
 const BACKEND_URL =
   import.meta.env.VITE_API_URL ||
@@ -27,7 +28,7 @@ const Dashboard = () => {
     pendingClientRequests: 0,
   });
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const res = await axios.get(
         `${BACKEND_URL}/api/dashboard/stats?range=${timeFilter}`,
@@ -37,17 +38,13 @@ const Dashboard = () => {
     } catch (err) {
       console.error("Error fetching dashboard stats", err);
     }
-  };
+  }, [timeFilter]);
 
   useEffect(() => {
-    fetchStats();
-
-    const interval = setInterval(() => {
-      fetchStats();
-    }, 5000); // refresh every 5 seconds instead of 1
-
-    return () => clearInterval(interval);
-  }, [timeFilter]);
+    const timeoutId = window.setTimeout(fetchStats, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchStats]);
+  usePolling(fetchStats);
 
   return (
     <>

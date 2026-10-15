@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { FaTimes, FaCheckCircle } from "react-icons/fa"; // Added Check icon
 import axios from "axios";
 import "../styles/OrdersAndPurchases.css";
+import usePolling from "../hooks/usePolling";
 
 const BACKEND_URL =
   import.meta.env.VITE_API_URL ||
@@ -40,6 +41,7 @@ const fetchPendingPutaways = async () => {
   useEffect(() => {
     Promise.resolve().then(fetchPendingPutaways);
   }, []);
+  usePolling(fetchPendingPutaways);
 
   const handlePutawayClick = (batch) => {
     setActiveRacks([batch.storageLocation]);

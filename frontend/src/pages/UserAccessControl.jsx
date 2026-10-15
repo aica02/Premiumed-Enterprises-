@@ -23,6 +23,7 @@ import {
   formatInternationalPhone,
 } from "../utils/fieldFormatting";
 import { validateField, validateFields } from "../utils/formValidation";
+import usePolling from "../hooks/usePolling";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -138,10 +139,6 @@ const UsersAccessControl = () => {
     }
   };
 
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
-
   const fetchEmployees = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/usersAccessControlPage`);
@@ -151,6 +148,10 @@ const UsersAccessControl = () => {
       toast.error("Failed to fetch employees");
     }
   };
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+  usePolling(fetchEmployees);
 
   const uploadImageToCloudinary = async (file, username) => {
     try {

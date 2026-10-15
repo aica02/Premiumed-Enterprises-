@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import "../styles/NotificationBell.css";
 import { FaBell } from "react-icons/fa6";
+import usePolling from "../hooks/usePolling";
 
 const BACKEND_URL =
   import.meta.env.VITE_API_URL ||
@@ -22,26 +23,24 @@ const NotificationBell = ({
   const [hasUnread, setHasUnread] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const previewLimit = 5;
+  const fetchNotifications = useCallback(async () => {
+    if (!userName || !fetchUrl) return;
+
+    try {
+      const res = await axios.get(fetchUrl);
+      const data = Array.isArray(res.data) ? res.data : [];
+      setNotifications(data);
+      setHasUnread(data.some((n) => !n.isRead));
+    } catch (err) {
+      console.error("Error fetching notifications", err);
+    }
+  }, [fetchUrl, userName]);
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      if (!userName || !fetchUrl) return;
-
-      try {
-        const res = await axios.get(fetchUrl);
-        const data = Array.isArray(res.data) ? res.data : [];
-        setNotifications(data);
-        setHasUnread(data.some((n) => !n.isRead));
-      } catch (err) {
-        console.error("Error fetching notifications", err);
-      }
-    };
-
-    fetchNotifications();
-    const refreshInterval = setInterval(fetchNotifications, 30000);
-
-    return () => clearInterval(refreshInterval);
-  }, [fetchUrl, userName]);
+    const timeoutId = window.setTimeout(fetchNotifications, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchNotifications]);
+  usePolling(fetchNotifications);
 
   const handleNotificationClick = async (e, notification) => {
     e?.stopPropagation();

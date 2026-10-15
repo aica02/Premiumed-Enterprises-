@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import usePolling from "../hooks/usePolling";
 import {
   FaCheck,
   FaExclamationCircle,
@@ -87,13 +88,8 @@ export default function OrderTrans() {
 
   useEffect(() => {
     fetchOrders(true);
-
-    const interval = setInterval(() => {
-      fetchOrders(false);
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, []);
+  usePolling(() => fetchOrders(false));
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {

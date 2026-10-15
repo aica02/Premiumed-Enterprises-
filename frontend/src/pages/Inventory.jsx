@@ -15,6 +15,7 @@ import logReportPrinted from "../utils/logReportPrinted";
 import { CATEGORIES } from "../components/Categories";
 import EmptyState from "../components/EmptyState";
 import PricingModal from "../components/PricingModal";
+import usePolling from "../hooks/usePolling";
 
 const BACKEND_URL =
   import.meta.env.VITE_API_URL ||
@@ -71,6 +72,7 @@ const Inventory = () => {
       console.error("Backend unreachable");
     }
   };
+  usePolling(fetchItems);
 
   const handleDispose = async () => {
     if (!batchToDispose) return;

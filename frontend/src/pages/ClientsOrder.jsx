@@ -23,6 +23,7 @@ import {
   generateFilteredReport,
 } from "../utils/pdf/reportEngine";
 import logReportPrinted from "../utils/logReportPrinted";
+import usePolling from "../hooks/usePolling";
 
 const ClientsOrder = () => {
   const [activeModal, setActiveModal] = useState(null);
@@ -117,6 +118,7 @@ const ClientsOrder = () => {
   useEffect(() => {
     fetchOrders();
   }, []);
+  usePolling(fetchOrders);
 
   const filteredOrders = useMemo(() => {
     return orders

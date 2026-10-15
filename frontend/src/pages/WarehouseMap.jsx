@@ -7,6 +7,7 @@ import { Toaster, toast } from "react-hot-toast";
 import { FaTimes } from "react-icons/fa";
 import EmptyState from "../components/EmptyState";
 import { warehouseMapLayout } from "../../../mobile/shared/warehouseMapLayout";
+import usePolling from "../hooks/usePolling";
 
 const BACKEND_URL =
   import.meta.env.VITE_API_URL ||
@@ -37,6 +38,7 @@ const WarehouseMap = () => {
   useEffect(() => {
     Promise.resolve().then(fetchInventory);
   }, []);
+  usePolling(fetchInventory);
 
   const getStockStatus = (totalQuantity, reorderLevel) => {
     if (totalQuantity === 0) return { label: "Out of Stock" };

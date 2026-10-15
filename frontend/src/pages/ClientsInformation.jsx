@@ -24,6 +24,7 @@ import {
   generateClientDirectoryReport,
 } from "../utils/pdf/clientProfileReports";
 import logReportPrinted from "../utils/logReportPrinted";
+import usePolling from "../hooks/usePolling";
 
 const ClientsInformation = () => {
   const [activeTab, setActiveTab] = useState("information");
@@ -34,10 +35,6 @@ const ClientsInformation = () => {
   const [statusFilter, setStatusFilter] = useState("All");
 
   const [confirmModal, setConfirmModal] = useState(null);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const fetchData = async () => {
     try {
@@ -56,6 +53,10 @@ const ClientsInformation = () => {
       });
     }
   };
+  useEffect(() => {
+    fetchData();
+  }, []);
+  usePolling(fetchData);
 
   const filteredClients = clients.filter(
     (c) =>

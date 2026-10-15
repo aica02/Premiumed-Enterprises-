@@ -22,6 +22,7 @@ import logo from "../assets/Premiumed logo.png";
 import EmptyState from "../components/EmptyState";
 import { generateSupplyFilteredReport } from "../utils/pdf/SupplierInfoReportEngine";
 import logReportPrinted from "../utils/logReportPrinted";
+import usePolling from "../hooks/usePolling";
 import {
   COUNTRY_CODES,
   FIELD_MAX_LENGTHS,
@@ -480,14 +481,6 @@ const SuppliersInformation = () => {
     return Object.values(nextErrors).every((fieldError) => !fieldError);
   };
 
-  useEffect(() => {
-    fetchSuppliers();
-    fetchBatches();
-    fetchItems();
-    fetchAllSuppliers();
-    fetchAllItems();
-  }, []);
-
   // Reset filter when changing tabs
   useEffect(() => {
     setStatusFilter("All");
@@ -640,6 +633,20 @@ const SuppliersInformation = () => {
       }
     }
   };
+  useEffect(() => {
+    fetchSuppliers();
+    fetchBatches();
+    fetchItems();
+    fetchAllSuppliers();
+    fetchAllItems();
+  }, []);
+  usePolling(() => {
+    fetchSuppliers();
+    fetchBatches();
+    fetchItems();
+    fetchAllSuppliers();
+    fetchAllItems();
+  });
 
   const handleSaveSupplier = async () => {
     const dataToSave = isEditing ? selectedSupplier : newSupplier;
