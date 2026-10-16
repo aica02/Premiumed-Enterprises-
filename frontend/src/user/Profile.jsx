@@ -12,6 +12,8 @@ import {
   formatInternationalPhone,
 } from "../utils/fieldFormatting";
 import { validateField, validateFields } from "../utils/formValidation";
+import { FaLongArrowAltLeft } from "react-icons/fa";
+import { useNavigate } from "react-router-dom";
 
 const PROFILE_VALIDATION_FIELDS = [
   "dialysisCenterName",
@@ -444,6 +446,9 @@ const Profile = () => {
     setError(null);
   };
 
+  const navigate = useNavigate();
+  const goToShopping = () => navigate("/");
+
   if (initialLoad) {
     return <div className="Profile-Client-container">Loading...</div>;
   }
@@ -452,6 +457,12 @@ const Profile = () => {
     <>
       <Toaster position="top-center" reverseOrder={false} />
       <div className="Profile-Client-container">
+        <div className="go-back-action">
+          <button className="back-link" onClick={goToShopping}>
+            <FaLongArrowAltLeft />
+            <span>Back to Shopping</span>
+          </button>
+        </div>
         <h2 className="Profile-Client-title">PROFILE</h2>
 
         <div className="Profile-Client-wrapper">

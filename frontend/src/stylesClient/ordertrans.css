@@ -44,7 +44,7 @@
 .main {
   padding: 30px 150px;
   font-family: var(--font-body);
-  background-color: var(--grey-bg);
+  background: var(--light-grey);
   min-height: calc(100vh - 170px);
 }
 

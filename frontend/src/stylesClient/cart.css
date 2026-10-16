@@ -28,7 +28,7 @@
 
 .cart-page {
   height: calc(100vh - 60px);
-  padding: 35px 24px 50px;
+  padding: 30px 150px;
   background: var(--light-grey);
   font-family: var(--font-body);
   color: var(--text);
@@ -38,7 +38,6 @@
 
 .cart-container {
   width: 100%;
-  max-width: 1200px;
   height: 100%;
   margin: 0 auto;
 }

@@ -263,15 +263,15 @@ a .header .title {
     gap: 7px;
   }
 
-  .client-navbar .client-nav-left .client-logo-icon {
-    height: 40px;
+  .client-logo-icon {
+    height: 35px;
   }
 
   .client-logo-container {
-    height: 40px;
+    height: 35px;
   }
 
-  .client-navbar .client-nav-left .client-brand-name {
+  .client-brand-name {
     display: none;
   }
 
@@ -327,16 +327,16 @@ a .header .title {
     gap: 5px;
   }
 
-  .client-navbar .client-nav-left .client-logo-icon {
-    height: 36px;
+  .client-logo-icon {
+    height: 35px;
   }
 
   .client-logo-container {
-    height: 36px;
+    height: 35px;
   }
 
-  .client-navbar .client-nav-left .client-brand-name {
-    font-size: 13px;
+  .client-brand-name {
+    display: none;
   }
 
   .client-navbar .client-nav-right {
@@ -395,16 +395,16 @@ a .header .title {
     gap: 4px;
   }
 
-  .client-navbar .client-nav-left .client-logo-icon {
-    height: 33px;
+  .client-logo-icon {
+    height: 30px;
   }
 
   .client-logo-container {
-    height: 33px;
+    height: 30px;
   }
 
-  .client-navbar .client-nav-left .client-brand-name {
-    font-size: 12px;
+  .client-brand-name {
+    display: none;
   }
 
   .client-navbar .client-nav-right {
@@ -456,17 +456,16 @@ a .header .title {
     gap: 3px;
   }
 
-  .client-navbar .client-nav-left .client-logo-icon {
-    height: 30px;
+  .client-logo-icon {
+    height: 25px;
   }
 
   .client-logo-container {
-    height: 30px;
+    height: 25px;
   }
 
-  .client-navbar .client-nav-left .client-brand-name {
-    font-size: 11px;
-    letter-spacing: 0;
+  .client-brand-name {
+    display: none;
   }
 
   .client-navbar .client-nav-right {
