@@ -131,7 +131,7 @@ export const autoConnectPrinter = async (onStatusChange) => {
     onStatusChange("Printer Connected");
     return device;
   } catch (error) {
-    onStatusChange("Auto-connect failed. Please select printer.");
+    onStatusChange("Auto-connect failed.");
     return null;
   }
 };

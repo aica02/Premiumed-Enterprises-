@@ -26,7 +26,7 @@ import {
   AlertTriangle,
   ScanLine,
   Check,
-  Wifi,
+  Wifi, //need icomment
   WifiOff,
   Printer,
 } from "lucide-react-native";
@@ -37,6 +37,8 @@ import NetInfo from "@react-native-community/netinfo";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
+
+//need icomment
 import {
   autoConnectPrinter,
   connectToPrinter,
@@ -88,21 +90,19 @@ export default function InventoryKit({
 
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [restockSuccessData, setRestockSuccessData] = useState(null);
-  const [printQty, setPrintQty] = useState("1");
 
+  //need icomment
+  const [printQty, setPrintQty] = useState("1");
   const [printerDevice, setPrinterDevice] = useState(null);
   const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
   const [availablePrinters, setAvailablePrinters] = useState([]);
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
-  
   const [successFeedback, setSuccessFeedback] = useState(null);
   const [errorFeedback, setErrorFeedback] = useState(null);
 
   const [kitItems, setKitItems] = useState([]);
-
   const [showConfirmKitModal, setShowConfirmKitModal] = useState(false);
-
   const [kitItemErrors, setKitItemErrors] = useState({});
   const [quantityError, setQuantityError] = useState("");
   const [kitFormErrors, setKitFormErrors] = useState({});
@@ -122,6 +122,7 @@ export default function InventoryKit({
 
   const [permission, requestPermission] = useCameraPermissions();
 
+  //need icomment
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
@@ -223,6 +224,7 @@ export default function InventoryKit({
       setIsPrinting(false);
     }
   };
+  //need icomment
 
   const [kitFormData, setKitFormData] = useState({
     itemCode: "",
@@ -1282,6 +1284,7 @@ export default function InventoryKit({
 
   return (
     <>
+      {/* need icomment */}
       <View
         style={{
           flexDirection: "row",
@@ -1323,7 +1326,7 @@ export default function InventoryKit({
             {printerDevice ? "CHANGE PRINTER" : "CONNECT PRINTER"}
           </Text>
         </TouchableOpacity>
-      </View> 
+      </View>
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1357,6 +1360,8 @@ export default function InventoryKit({
           </Text>
         </View>
       )}
+
+      {/* //need icomment */}
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1405,7 +1410,8 @@ export default function InventoryKit({
             </ScrollView>
           </View>
         </View>
-      </Modal> 
+      </Modal>
+      {/* //need icomment */}
 
       {/* Add / Restock Kit Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
@@ -1550,7 +1556,7 @@ export default function InventoryKit({
                 </Text>
               </View>
 
-              <View style={styles.row}>
+              <View style={[styles.row, { alignItems: "flex-start" }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>
                     Case <Text style={{ color: "#EF4444" }}>*</Text>
@@ -1589,7 +1595,7 @@ export default function InventoryKit({
                 </View>
               </View>
 
-              <View style={styles.row}>
+              <View style={[styles.row, { alignItems: "flex-start" }]}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.label}>Expiration Date</Text>
                   <View
@@ -2829,6 +2835,7 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
+      {/*
       {errorFeedback && (
         <Modal
           visible={Boolean(errorFeedback)}
@@ -2855,6 +2862,7 @@ export default function InventoryKit({
           </View>
         </Modal>
       )}
+      */}
       {/* Success Modal */}
       <Modal
         visible={showSuccessModal}
@@ -2941,6 +2949,7 @@ export default function InventoryKit({
               </Text>
             </View>
 
+            {/* //need icomment */}
             {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
@@ -2968,7 +2977,8 @@ export default function InventoryKit({
                 )}
               </TouchableOpacity>
             )}
-            
+            {/* //need icomment */}
+
             <TouchableOpacity
               onPress={() => {
                 setShowSuccessModal(false);
@@ -2980,6 +2990,8 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
+
+      {/* //need icomment */}
       {successFeedback && (
         <Modal
           visible={Boolean(successFeedback)}
@@ -3003,6 +3015,7 @@ export default function InventoryKit({
           </View>
         </Modal>
       )}
+      {/* //need icomment */}
     </>
   );
 }

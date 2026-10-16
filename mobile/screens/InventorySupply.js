@@ -28,10 +28,9 @@ import {
   Info,
   AlertTriangle,
   Check,
-  Wifi,
+  Wifi, //need icomment
   WifiOff,
   Printer,
-  
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
@@ -44,6 +43,7 @@ import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
 
+//need icomment
 import {
   autoConnectPrinter,
   scanForPrinters,
@@ -51,7 +51,6 @@ import {
   printBarcodeTSPL,
   stopPrinterScan,
 } from "../utils/PrinterService";
-
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
@@ -100,24 +99,23 @@ export default function InventorySupply({
 
   const [restockSuccessData, setRestockSuccessData] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  //need icomment
   const [successFeedback, setSuccessFeedback] = useState(null);
   const [errorFeedback, setErrorFeedback] = useState(null);
   const [printQty, setPrintQty] = useState("1");
-
   const [printerDevice, setPrinterDevice] = useState(null);
   const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
   const [availablePrinters, setAvailablePrinters] = useState([]);
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
- 
+
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [quantityError, setQuantityError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
-
   const [formData, setFormData] = useState({
     itemCode: "",
     itemName: "",
@@ -134,6 +132,7 @@ export default function InventorySupply({
   const boxFieldLabel = formData.unitType === "Box" ? "Case" : "Box";
   const quantityFieldLabel = `No. of ${formData.unitType} per ${boxFieldLabel}`;
 
+  //need icomment
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
@@ -148,6 +147,7 @@ export default function InventorySupply({
       stopPrinterScan();
     };
   }, []);
+  //need icomment
 
   const getFefoStatus = (expirationDate) => {
     const today = new Date();
@@ -611,6 +611,7 @@ export default function InventorySupply({
     );
   };
 
+  //need icomment
   const handleScanPrinters = async () => {
     setAvailablePrinters([]);
     setShowPrinterModal(true);
@@ -704,6 +705,7 @@ export default function InventorySupply({
       setIsPrinting(false);
     }
   };
+  //need icomment
 
   const performSave = async () => {
     try {
@@ -938,7 +940,7 @@ export default function InventorySupply({
 
   return (
     <>
-           
+      {/* //need icomment */}
       <View
         style={{
           flexDirection: "row",
@@ -980,7 +982,8 @@ export default function InventorySupply({
             {printerDevice ? "CHANGE PRINTER" : "CONNECT PRINTER"}
           </Text>
         </TouchableOpacity>
-      </View> 
+      </View>
+      {/* //need icomment */}
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1016,7 +1019,8 @@ export default function InventorySupply({
         </View>
       )}
 
-       <Modal visible={showPrinterModal} transparent animationType="slide">
+      {/* //need icomment */}
+      <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
             <View style={styles.modalHeader}>
@@ -1061,6 +1065,7 @@ export default function InventorySupply({
           </View>
         </View>
       </Modal>
+      {/* //need icomment */}
 
       {/* Add/Restock Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
@@ -1915,7 +1920,8 @@ export default function InventorySupply({
               </Text>
             </View>
 
-             {!restockSuccessData?.queued && (
+            {/* //need icomment */}
+            {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
                 <TextInput
@@ -1942,6 +1948,8 @@ export default function InventorySupply({
                 )}
               </TouchableOpacity>
             )}
+            {/* //need icomment */}
+
             <TouchableOpacity
               onPress={() => setShowSuccessModal(false)}
               style={styles.dismissBtn}
@@ -1952,6 +1960,7 @@ export default function InventorySupply({
         </View>
       </Modal>
 
+      {/* //need icomment */}
       {successFeedback && (
         <Modal
           visible={Boolean(successFeedback)}
@@ -2002,6 +2011,7 @@ export default function InventorySupply({
           </View>
         </Modal>
       )}
+      {/* //need icomment */}
     </>
   );
 }
