@@ -2835,7 +2835,8 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
-      {/*
+
+      {/* //need icomment */}
       {errorFeedback && (
         <Modal
           visible={Boolean(errorFeedback)}
@@ -2862,7 +2863,8 @@ export default function InventoryKit({
           </View>
         </Modal>
       )}
-      */}
+      {/* //need icomment */}
+
       {/* Success Modal */}
       <Modal
         visible={showSuccessModal}
