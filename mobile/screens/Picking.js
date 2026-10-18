@@ -92,7 +92,30 @@ export default function DeliveryList({ navigation }) {
       setRefreshing(false);
     }
   };
-
+const allItemsPicked = useMemo(() => {
+  if (!selectedOrder?.items?.length) return false;
+  return selectedOrder.items.every((orderItem) => {
+    const codeLc = (orderItem.itemCode || "").toLowerCase();
+    const productIdLc = (orderItem.productId || "").toLowerCase();
+    const nameLc = (orderItem.name || "").toLowerCase();
+    let picked = 0;
+    for (const [batchCode, qty] of Object.entries(pickedCounts)) {
+      const hit = batchIndex.get(batchCode);
+      if (!hit) continue;
+      const invItem = hit.item;
+      const invCodeLc = (invItem.itemCode || "").toLowerCase();
+      const invNameLc = (invItem.name || "").toLowerCase();
+      if (
+        (codeLc && invCodeLc === codeLc) ||
+        (productIdLc && invCodeLc === productIdLc) ||
+        (nameLc && invNameLc === nameLc)
+      ) {
+        picked += qty;
+      }
+    }
+    return picked >= (Number(orderItem.quantity) || 0);
+  });
+}, [selectedOrder, pickedCounts, batchIndex]);
   const loadUserData = async () => {
     try {
       setLoading(true);
@@ -409,8 +432,7 @@ export default function DeliveryList({ navigation }) {
         (prev[scannedBatch.batchCode] || 0) + amountToPick,
     }));
 
-    // Auto re-arm so the next sticker can be scanned immediately
-    armScanner(SCAN_COOLDOWN_MS);
+    // armScanner(SCAN_COOLDOWN_MS);
   };
 
   const handleCompleteOrder = async () => {
@@ -977,9 +999,10 @@ export default function DeliveryList({ navigation }) {
                   pickingStyles.scanBtn,
                   {
                     flex: 1,
-                    backgroundColor: "#059669",
+                    backgroundColor: allItemsPicked ? "#059669" : "#9CA3AF",
                   },
                 ]}
+                disabled={!allItemsPicked}
                 onPress={handleCompleteOrder}
               >
                 <Text style={pickingStyles.scanBtnText}>DONE</Text>
