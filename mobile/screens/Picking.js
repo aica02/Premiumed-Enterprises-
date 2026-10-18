@@ -45,6 +45,9 @@ export default function DeliveryList({ navigation }) {
   const [batchBlockedNotice, setBatchBlockedNotice] = useState(null);
   const [invalidBarcodeNotice, setInvalidBarcodeNotice] = useState(null);
   const [wrongItemNotice, setWrongItemNotice] = useState(null);
+  const [alreadyFilledNotice, setAlreadyFilledNotice] = useState(null);
+  const [noStockNotice, setNoStockNotice] = useState(null);
+  const [batchDepletedNotice, setBatchDepletedNotice] = useState(null);
   const [completionSuccess, setCompletionSuccess] = useState(null);
   const isProcessing = useRef(false);
   const [pickedCounts, setPickedCounts] = useState({});
@@ -316,11 +319,16 @@ export default function DeliveryList({ navigation }) {
     const remainingNeeded = orderedQuantity - totalAlreadyPicked;
 
     if (remainingNeeded <= 0) {
-      showScanAlert(
-        "Already Filled",
-        `This item requirement is already satisfied. (${orderedQuantity}/${orderedQuantity})`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
+      setAlreadyFilledNotice({
+        itemName:
+          orderItem.name ||
+          orderItem.itemCode ||
+          orderItem.productId ||
+          foundItem.name ||
+          foundItem.itemCode ||
+          "This item",
+        quantity: orderedQuantity,
+      });
       return;
     }
 
@@ -346,9 +354,15 @@ export default function DeliveryList({ navigation }) {
       .sort((a, b) => new Date(a.expirationDate) - new Date(b.expirationDate));
 
     if (validBatches.length === 0) {
-      showScanAlert("No Stock", "No valid batches available for this item.", [
-        { text: "OK", onPress: resetScanner },
-      ]);
+      setNoStockNotice({
+        itemName:
+          orderItem.name ||
+          orderItem.itemCode ||
+          orderItem.productId ||
+          foundItem.name ||
+          foundItem.itemCode ||
+          "This item",
+      });
       return;
     }
 
@@ -376,11 +390,10 @@ export default function DeliveryList({ navigation }) {
       scannedBatch.quantity - alreadyPickedFromThisBatch;
 
     if (remainingInThisBatch <= 0) {
-      showScanAlert(
-        "Batch Depleted",
-        `Batch ${scannedBatch.batchCode} has no remaining stock.`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
+      setBatchDepletedNotice({
+        batchCode: scannedBatch.batchCode,
+        itemName: foundItem.name || foundItem.itemCode || "Unknown item",
+      });
       return;
     }
 
@@ -1249,6 +1262,161 @@ export default function DeliveryList({ navigation }) {
                 <ScanLine size={18} color="#FFFFFF" />
                 <Text style={pickingStyles.feedbackButtonText}>
                   SCAN ANOTHER ITEM
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {alreadyFilledNotice && (
+        <Modal
+          transparent
+          visible={Boolean(alreadyFilledNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            setAlreadyFilledNotice(null);
+            resetScanner();
+          }}
+        >
+          <View style={pickingStyles.alreadyFilledOverlay}>
+            <View style={pickingStyles.alreadyFilledCard}>
+              <View style={pickingStyles.alreadyFilledIcon}>
+                <CheckCircle size={36} color="#047857" />
+              </View>
+              <Text style={pickingStyles.alreadyFilledEyebrow}>
+                PICKING REQUIREMENT MET
+              </Text>
+              <Text style={pickingStyles.alreadyFilledTitle}>
+                Item already filled
+              </Text>
+              <Text style={pickingStyles.alreadyFilledMessage}>
+                The required quantity for this item has already been picked.
+              </Text>
+
+              <View style={pickingStyles.alreadyFilledDetails}>
+                <Text style={pickingStyles.alreadyFilledLabel}>ITEM</Text>
+                <Text style={pickingStyles.alreadyFilledItemName}>
+                  {alreadyFilledNotice.itemName}
+                </Text>
+                <Text style={pickingStyles.alreadyFilledLabel}>QUANTITY</Text>
+                <Text style={pickingStyles.alreadyFilledQuantity}>
+                  {alreadyFilledNotice.quantity} /{" "}
+                  {alreadyFilledNotice.quantity} picked
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={pickingStyles.alreadyFilledButton}
+                onPress={() => {
+                  setAlreadyFilledNotice(null);
+                  resetScanner();
+                }}
+              >
+                <ScanLine size={18} color="#FFFFFF" />
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN ANOTHER ITEM
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {noStockNotice && (
+        <Modal
+          transparent
+          visible={Boolean(noStockNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            setNoStockNotice(null);
+            resetScanner();
+          }}
+        >
+          <View style={pickingStyles.noStockOverlay}>
+            <View style={pickingStyles.noStockCard}>
+              <View style={pickingStyles.noStockIcon}>
+                <AlertTriangle size={36} color="#B91C1C" />
+              </View>
+              <Text style={pickingStyles.noStockEyebrow}>STOCK UNAVAILABLE</Text>
+              <Text style={pickingStyles.noStockTitle}>
+                No eligible batches
+              </Text>
+              <Text style={pickingStyles.noStockMessage}>
+                There are no available, unexpired batches to pick for this item.
+              </Text>
+
+              <View style={pickingStyles.noStockDetails}>
+                <Text style={pickingStyles.noStockLabel}>ITEM</Text>
+                <Text style={pickingStyles.noStockItemName}>
+                  {noStockNotice.itemName}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={pickingStyles.noStockButton}
+                onPress={() => {
+                  setNoStockNotice(null);
+                  resetScanner();
+                }}
+              >
+                <ScanLine size={18} color="#FFFFFF" />
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN ANOTHER ITEM
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {batchDepletedNotice && (
+        <Modal
+          transparent
+          visible={Boolean(batchDepletedNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            setBatchDepletedNotice(null);
+            resetScanner();
+          }}
+        >
+          <View style={pickingStyles.noStockOverlay}>
+            <View style={pickingStyles.noStockCard}>
+              <View style={pickingStyles.noStockIcon}>
+                <AlertTriangle size={36} color="#B91C1C" />
+              </View>
+              <Text style={pickingStyles.noStockEyebrow}>BATCH UNAVAILABLE</Text>
+              <Text style={pickingStyles.noStockTitle}>Batch is depleted</Text>
+              <Text style={pickingStyles.noStockMessage}>
+                This batch has no remaining stock available to pick.
+              </Text>
+
+              <View style={pickingStyles.noStockDetails}>
+                <Text style={pickingStyles.noStockLabel}>ITEM</Text>
+                <Text style={pickingStyles.noStockItemName}>
+                  {batchDepletedNotice.itemName}
+                </Text>
+                <Text style={pickingStyles.noStockSecondaryLabel}>
+                  BATCH
+                </Text>
+                <Text style={pickingStyles.noStockItemName}>
+                  {batchDepletedNotice.batchCode}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={pickingStyles.noStockButton}
+                onPress={() => {
+                  setBatchDepletedNotice(null);
+                  resetScanner();
+                }}
+              >
+                <ScanLine size={18} color="#FFFFFF" />
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN ANOTHER BATCH
                 </Text>
               </TouchableOpacity>
             </View>
