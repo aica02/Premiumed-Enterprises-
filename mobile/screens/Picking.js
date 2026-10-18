@@ -28,8 +28,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 
-const SCAN_COOLDOWN_MS = 800;
-
 export default function DeliveryList({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -95,30 +93,7 @@ export default function DeliveryList({ navigation }) {
       setRefreshing(false);
     }
   };
-const allItemsPicked = useMemo(() => {
-  if (!selectedOrder?.items?.length) return false;
-  return selectedOrder.items.every((orderItem) => {
-    const codeLc = (orderItem.itemCode || "").toLowerCase();
-    const productIdLc = (orderItem.productId || "").toLowerCase();
-    const nameLc = (orderItem.name || "").toLowerCase();
-    let picked = 0;
-    for (const [batchCode, qty] of Object.entries(pickedCounts)) {
-      const hit = batchIndex.get(batchCode);
-      if (!hit) continue;
-      const invItem = hit.item;
-      const invCodeLc = (invItem.itemCode || "").toLowerCase();
-      const invNameLc = (invItem.name || "").toLowerCase();
-      if (
-        (codeLc && invCodeLc === codeLc) ||
-        (productIdLc && invCodeLc === productIdLc) ||
-        (nameLc && invNameLc === nameLc)
-      ) {
-        picked += qty;
-      }
-    }
-    return picked >= (Number(orderItem.quantity) || 0);
-  });
-}, [selectedOrder, pickedCounts, batchIndex]);
+
   const loadUserData = async () => {
     try {
       setLoading(true);
@@ -189,7 +164,7 @@ const allItemsPicked = useMemo(() => {
     return map;
   }, [inventory]);
 
-  // lowercased itemCode/productId/name -> orderItem
+  // lowercased itemCode/productId/name/_id -> orderItem
   const orderItemIndex = useMemo(() => {
     const map = new Map();
     if (!selectedOrder?.items) return map;
@@ -198,25 +173,39 @@ const allItemsPicked = useMemo(() => {
       if (i.itemCode) map.set(i.itemCode.toLowerCase(), i);
       if (i.productId) map.set(i.productId.toLowerCase(), i);
       if (i.name) map.set(i.name.toLowerCase(), i);
+      if (i._id) map.set(String(i._id).toLowerCase(), i);
     }
     return map;
   }, [selectedOrder]);
 
+  const allItemsPicked = useMemo(() => {
+    if (!selectedOrder?.items?.length) return false;
+    return selectedOrder.items.every((orderItem) => {
+      const codeLc = (orderItem.itemCode || "").toLowerCase();
+      const productIdLc = (orderItem.productId || "").toLowerCase();
+      const nameLc = (orderItem.name || "").toLowerCase();
+      let picked = 0;
+      for (const [batchCode, qty] of Object.entries(pickedCounts)) {
+        const hit = batchIndex.get(String(batchCode).trim());
+        if (!hit) continue;
+        const invItem = hit.item;
+        const invCodeLc = (invItem.itemCode || "").toLowerCase();
+        const invNameLc = (invItem.name || "").toLowerCase();
+        if (
+          (codeLc && invCodeLc === codeLc) ||
+          (productIdLc && invCodeLc === productIdLc) ||
+          (nameLc && invNameLc === nameLc)
+        ) {
+          picked += qty;
+        }
+      }
+      return picked >= (Number(orderItem.quantity) || 0);
+    });
+  }, [selectedOrder, pickedCounts, batchIndex]);
+
   const resetScanner = () => {
     isProcessing.current = false;
     setScanned(false);
-  };
-
-  const armScanner = (delayMs = 0) => {
-    if (delayMs > 0) {
-      setTimeout(() => {
-        isProcessing.current = false;
-        setScanned(false);
-      }, delayMs);
-    } else {
-      isProcessing.current = false;
-      setScanned(false);
-    }
   };
 
   const showScanAlert = (...args) => {
@@ -268,184 +257,192 @@ const allItemsPicked = useMemo(() => {
   };
 
   const processScannedBarcode = (data) => {
-    if (!selectedOrder) {
-      showScanAlert("Error", "Order data not available", [
-        { text: "OK", onPress: resetScanner },
-      ]);
-      return;
-    }
+    try {
+      if (!selectedOrder) {
+        showScanAlert("Error", "Order data not available", [
+          { text: "OK", onPress: resetScanner },
+        ]);
+        return;
+      }
 
-    const scannedBatchCode = String(data || "").trim();
-    if (!scannedBatchCode) {
-      setInvalidBarcodeNotice({ batchCode: scannedBatchCode });
-      return;
-    }
+      const scannedBatchCode = String(data || "").trim();
+      if (!scannedBatchCode) {
+        setInvalidBarcodeNotice({ batchCode: scannedBatchCode });
+        return;
+      }
 
-    // O(1) batch lookup
-    const hit = batchIndex.get(scannedBatchCode);
-    if (!hit) {
-      setInvalidBarcodeNotice({ batchCode: scannedBatchCode });
-      return;
-    }
+      // O(1) batch lookup
+      const hit = batchIndex.get(scannedBatchCode);
+      if (!hit) {
+        setInvalidBarcodeNotice({ batchCode: scannedBatchCode });
+        return;
+      }
 
-    const { item: foundItem, batch: scannedBatch } = hit;
+      const { item: foundItem, batch: scannedBatch } = hit;
 
-    // Blocked statuses
-    if (
-      scannedBatch.status === "pending" ||
-      scannedBatch.status === "disposed" ||
-      scannedBatch.status === "for disposal" ||
-      scannedBatch.status === "on-hold"
-    ) {
-      const reason =
-        scannedBatch.status === "pending"
-          ? "This supply has not been stored yet and cannot be picked."
-          : scannedBatch.status === "for disposal"
-            ? "This supply is marked for disposal and cannot be picked."
-            : `Batch status is ${scannedBatch.status}.`;
-      setBatchBlockedNotice({
-        batchCode: scannedBatch.batchCode,
-        status: scannedBatch.status,
-        message: reason,
-      });
-      return;
-    }
-
-    // O(1) order-item lookup
-    const orderItem =
-      orderItemIndex.get((foundItem.itemCode || "").toLowerCase()) ||
-      orderItemIndex.get((foundItem._id || "").toLowerCase()) ||
-      orderItemIndex.get((foundItem.name || "").toLowerCase());
-
-    if (!orderItem) {
-      setWrongItemNotice({
-        scannedItem: foundItem.name || foundItem.itemCode || "Unknown item",
-        orderItems: (selectedOrder.items || []).map(
-          (item) =>
-            item?.name || item?.itemCode || item?.productId || "Unnamed item",
-        ),
-      });
-      return;
-    }
-
-    // How much of this item is already picked across its batches
-    const itemBatches = new Set(
-      foundItem.batches.map((b) => b?.batchCode).filter(Boolean),
-    );
-
-    let totalAlreadyPicked = 0;
-    for (const [bCode, qty] of Object.entries(pickedCounts)) {
-      if (itemBatches.has(bCode)) totalAlreadyPicked += qty;
-    }
-
-    const orderedQuantity = Number(orderItem.quantity) || 0;
-    const remainingNeeded = orderedQuantity - totalAlreadyPicked;
-
-    if (remainingNeeded <= 0) {
-      setAlreadyFilledNotice({
-        itemName:
-          orderItem.name ||
-          orderItem.itemCode ||
-          orderItem.productId ||
-          foundItem.name ||
-          foundItem.itemCode ||
-          "This item",
-        quantity: orderedQuantity,
-      });
-      return;
-    }
-
-    const today = new Date();
-
-    const validBatches = foundItem.batches
-      .filter((b) => {
-        if (
-          !b ||
-          b.quantity <= 0 ||
-          b.status === "pending" ||
-          b.status === "disposed" ||
-          b.status === "for disposal"
-        ) {
-          return false;
-        }
-
-        const pickedFromThisBatch = pickedCounts[b.batchCode] || 0;
-        const remainingInBatch = b.quantity - pickedFromThisBatch;
-
-        return remainingInBatch > 0 && new Date(b.expirationDate) > today;
-      })
-      .sort((a, b) => new Date(a.expirationDate) - new Date(b.expirationDate));
-
-    if (validBatches.length === 0) {
-      setNoStockNotice({
-        itemName:
-          orderItem.name ||
-          orderItem.itemCode ||
-          orderItem.productId ||
-          foundItem.name ||
-          foundItem.itemCode ||
-          "This item",
-      });
-      return;
-    }
-
-    const earliestBatch = validBatches[0];
-
-    if (earliestBatch.batchCode !== scannedBatch.batchCode) {
-      const alreadyPickedFromThisBatch =
-        pickedCounts[scannedBatch.batchCode] || 0;
-      const remainingInScannedBatch =
-        scannedBatch.quantity - alreadyPickedFromThisBatch;
-
-      if (remainingInScannedBatch > 0) {
-        setScanFeedback({
-          type: "fefo",
-          earliestBatch,
-          scannedBatch,
+      // Blocked statuses
+      if (
+        scannedBatch.status === "pending" ||
+        scannedBatch.status === "disposed" ||
+        scannedBatch.status === "for disposal" ||
+        scannedBatch.status === "on-hold"
+      ) {
+        const reason =
+          scannedBatch.status === "pending"
+            ? "This supply has not been stored yet and cannot be picked."
+            : scannedBatch.status === "for disposal"
+              ? "This supply is marked for disposal and cannot be picked."
+              : `Batch status is ${scannedBatch.status}.`;
+        setBatchBlockedNotice({
+          batchCode: scannedBatch.batchCode,
+          status: scannedBatch.status,
+          message: reason,
         });
         return;
       }
-    }
 
-    const alreadyPickedFromThisBatch =
-      pickedCounts[scannedBatch.batchCode] || 0;
-    const remainingInThisBatch =
-      scannedBatch.quantity - alreadyPickedFromThisBatch;
+      // O(1) order-item lookup
+      const orderItem =
+        orderItemIndex.get((foundItem.itemCode || "").toLowerCase()) ||
+        orderItemIndex.get((foundItem._id || "").toLowerCase()) ||
+        orderItemIndex.get((foundItem.name || "").toLowerCase());
 
-    if (remainingInThisBatch <= 0) {
-      setBatchDepletedNotice({
-        batchCode: scannedBatch.batchCode,
-        itemName: foundItem.name || foundItem.itemCode || "Unknown item",
-      });
-      return;
-    }
+      if (!orderItem) {
+        setWrongItemNotice({
+          scannedItem: foundItem.name || foundItem.itemCode || "Unknown item",
+          orderItems: (selectedOrder.items || []).map(
+            (item) =>
+              item?.name || item?.itemCode || item?.productId || "Unnamed item",
+          ),
+        });
+        return;
+      }
 
-    const amountToPick = Math.min(remainingInThisBatch, remainingNeeded);
+      // How much of this item is already picked across its batches
+      const itemBatches = new Set(
+        foundItem.batches.map((b) => b?.batchCode).filter(Boolean),
+      );
 
-    if (amountToPick <= 0) {
-      showScanAlert("Error", "Unable to pick from this batch.", [
+      let totalAlreadyPicked = 0;
+      for (const [bCode, qty] of Object.entries(pickedCounts)) {
+        if (itemBatches.has(bCode)) totalAlreadyPicked += qty;
+      }
+
+      const orderedQuantity = Number(orderItem.quantity) || 0;
+      const remainingNeeded = orderedQuantity - totalAlreadyPicked;
+
+      if (remainingNeeded <= 0) {
+        setAlreadyFilledNotice({
+          itemName:
+            orderItem.name ||
+            orderItem.itemCode ||
+            orderItem.productId ||
+            foundItem.name ||
+            foundItem.itemCode ||
+            "This item",
+          quantity: orderedQuantity,
+        });
+        return;
+      }
+
+      const today = new Date();
+
+      const validBatches = foundItem.batches
+        .filter((b) => {
+          if (
+            !b ||
+            b.quantity <= 0 ||
+            b.status === "pending" ||
+            b.status === "disposed" ||
+            b.status === "for disposal"
+          ) {
+            return false;
+          }
+
+          const pickedFromThisBatch = pickedCounts[b.batchCode] || 0;
+          const remainingInBatch = b.quantity - pickedFromThisBatch;
+
+          return remainingInBatch > 0 && new Date(b.expirationDate) > today;
+        })
+        .sort((a, b) => new Date(a.expirationDate) - new Date(b.expirationDate));
+
+      if (validBatches.length === 0) {
+        setNoStockNotice({
+          itemName:
+            orderItem.name ||
+            orderItem.itemCode ||
+            orderItem.productId ||
+            foundItem.name ||
+            foundItem.itemCode ||
+            "This item",
+        });
+        return;
+      }
+
+      const earliestBatch = validBatches[0];
+
+      // FEFO: the scanned batch is not the earliest still-eligible one
+      if (earliestBatch.batchCode !== scannedBatch.batchCode) {
+        const alreadyPickedFromThisBatch =
+          pickedCounts[scannedBatch.batchCode] || 0;
+        const remainingInScannedBatch =
+          scannedBatch.quantity - alreadyPickedFromThisBatch;
+
+        if (remainingInScannedBatch > 0) {
+          setScanFeedback({
+            type: "fefo",
+            earliestBatch,
+            scannedBatch,
+          });
+          return;
+        }
+      }
+
+      // How much is left in the specifically scanned batch
+      const alreadyPickedFromThisBatch =
+        pickedCounts[scannedBatch.batchCode] || 0;
+      const remainingInThisBatch =
+        scannedBatch.quantity - alreadyPickedFromThisBatch;
+
+      if (remainingInThisBatch <= 0) {
+        setBatchDepletedNotice({
+          batchCode: scannedBatch.batchCode,
+          itemName: foundItem.name || foundItem.itemCode || "Unknown item",
+        });
+        return;
+      }
+
+      const amountToPick = Math.min(remainingInThisBatch, remainingNeeded);
+
+      if (amountToPick <= 0) {
+        showScanAlert("Error", "Unable to pick from this batch.", [
+          { text: "OK", onPress: resetScanner },
+        ]);
+        return;
+      }
+
+      const newTotalPicked = totalAlreadyPicked + amountToPick;
+      if (newTotalPicked > orderedQuantity) {
+        showScanAlert(
+          "Over-pick Prevention",
+          `Cannot pick ${amountToPick} pcs. Only ${remainingNeeded} pcs remaining to fulfill the order.`,
+          [{ text: "OK", onPress: resetScanner }],
+        );
+        return;
+      }
+
+      // ✅ Record the pick. NO auto re-arm — user must press SCAN NEXT SUPPLY.
+      setPickedCounts((prev) => ({
+        ...prev,
+        [scannedBatch.batchCode]:
+          (prev[scannedBatch.batchCode] || 0) + amountToPick,
+      }));
+    } catch (err) {
+      console.error("processScannedBarcode error:", err);
+      showScanAlert("Error", "Failed to process scan.", [
         { text: "OK", onPress: resetScanner },
       ]);
-      return;
     }
-
-    const newTotalPicked = totalAlreadyPicked + amountToPick;
-    if (newTotalPicked > orderedQuantity) {
-      showScanAlert(
-        "Over-pick Prevention",
-        `Cannot pick ${amountToPick} pcs. Only ${remainingNeeded} pcs remaining to fulfill the order.`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
-      return;
-    }
-
-    setPickedCounts((prev) => ({
-      ...prev,
-      [scannedBatch.batchCode]:
-        (prev[scannedBatch.batchCode] || 0) + amountToPick,
-    }));
-
-    // armScanner(SCAN_COOLDOWN_MS);
   };
 
   const handleCompleteOrder = async () => {
@@ -453,6 +450,45 @@ const allItemsPicked = useMemo(() => {
 
     if (Object.keys(pickedCounts).length === 0) {
       Alert.alert("Error", "No items have been scanned.");
+      return;
+    }
+
+    // Safeguard: block completion when any order item is under-picked
+    const orderItems = selectedOrder.items || [];
+    const shortItems = orderItems
+      .map((orderItem) => {
+        const codeLc = (orderItem.itemCode || "").toLowerCase();
+        const productIdLc = (orderItem.productId || "").toLowerCase();
+        const nameLc = (orderItem.name || "").toLowerCase();
+        let picked = 0;
+        for (const [batchCode, qty] of Object.entries(pickedCounts)) {
+          const hit = batchIndex.get(String(batchCode).trim());
+          if (!hit) continue;
+          const invItem = hit.item;
+          const invCodeLc = (invItem.itemCode || "").toLowerCase();
+          const invNameLc = (invItem.name || "").toLowerCase();
+          if (
+            (codeLc && invCodeLc === codeLc) ||
+            (productIdLc && invCodeLc === productIdLc) ||
+            (nameLc && invNameLc === nameLc)
+          ) {
+            picked += qty;
+          }
+        }
+        const ordered = Number(orderItem.quantity) || 0;
+        return { name: orderItem.name || "Unnamed item", picked, ordered };
+      })
+      .filter((r) => r.picked < r.ordered);
+
+    if (shortItems.length > 0) {
+      const lines = shortItems
+        .map((r) => `• ${r.name}: ${r.picked}/${r.ordered}`)
+        .join("\n");
+      Alert.alert(
+        "Insufficient Items",
+        `You cannot complete this order yet. The following items are not fully picked:\n\n${lines}`,
+        [{ text: "OK" }],
+      );
       return;
     }
 
@@ -474,7 +510,6 @@ const allItemsPicked = useMemo(() => {
         }
       });
 
-      const orderItems = selectedOrder.items || [];
       for (const [itemCode, pickedQty] of Object.entries(payload)) {
         const orderItem = orderItems.find(
           (item) => item.itemCode === itemCode || item.productId === itemCode,
@@ -921,21 +956,62 @@ const allItemsPicked = useMemo(() => {
                       justifyContent: "center",
                       alignItems: "center",
                       backgroundColor: "#000",
+                      paddingHorizontal: 16,
                     },
                   ]}
                 >
+                  {/* The button ALWAYS stays visible after a scan.
+                      If all items are picked, tapping it lets the user
+                      complete the order — it never auto-dismisses. */}
                   <TouchableOpacity
                     style={{
-                      backgroundColor: "#D4AF37",
+                      backgroundColor: allItemsPicked ? "#059669" : "#D4AF37",
                       padding: 15,
                       borderRadius: 10,
+                      width: "100%",
+                      alignItems: "center",
                     }}
-                    onPress={resetScanner}
+                    onPress={() => {
+                      if (allItemsPicked) {
+                        // All items are picked: prompt to complete instead of
+                        // silently re-arming. The button stays on screen.
+                        Alert.alert(
+                          "All items picked",
+                          "All quantities for this order have been scanned. Complete the order now?",
+                          [
+                            {
+                              text: "Scan More",
+                              style: "cancel",
+                              onPress: resetScanner,
+                            },
+                            {
+                              text: "Complete",
+                              onPress: handleCompleteOrder,
+                            },
+                          ],
+                        );
+                      } else {
+                        resetScanner();
+                      }
+                    }}
                   >
                     <Text style={{ color: "#FFF", fontWeight: "bold" }}>
-                      SCAN NEXT SUPPLY
+                      {allItemsPicked ? "COMPLETE ORDER" : "SCAN NEXT SUPPLY"}
                     </Text>
                   </TouchableOpacity>
+
+                  {allItemsPicked && (
+                    <Text
+                      style={{
+                        color: "#D1FAE5",
+                        marginTop: 12,
+                        fontSize: 12,
+                        textAlign: "center",
+                      }}
+                    >
+                      All items are picked. Tap COMPLETE ORDER to finish.
+                    </Text>
+                  )}
                 </View>
               )}
             </View>
@@ -952,7 +1028,7 @@ const allItemsPicked = useMemo(() => {
                   const nameLc = (item.name || "").toLowerCase();
 
                   for (const [batchCode, qty] of Object.entries(pickedCounts)) {
-                    const h = batchIndex.get(batchCode);
+                    const h = batchIndex.get(String(batchCode).trim());
                     if (!h) continue;
                     const invItem = h.item;
                     const invCodeLc = (invItem.itemCode || "").toLowerCase();
