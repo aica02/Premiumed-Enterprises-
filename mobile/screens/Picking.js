@@ -28,6 +28,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 
+const SCAN_COOLDOWN_MS = 800;
+
 export default function DeliveryList({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -146,9 +148,49 @@ export default function DeliveryList({ navigation }) {
     }
   };
 
+  // ===== FAST SCAN INDEXES =====
+  // batchCode -> { item, batch }
+  const batchIndex = useMemo(() => {
+    const map = new Map();
+    for (const item of inventory) {
+      if (!item?.batches) continue;
+      for (const b of item.batches) {
+        if (b?.batchCode) {
+          map.set(String(b.batchCode).trim(), { item, batch: b });
+        }
+      }
+    }
+    return map;
+  }, [inventory]);
+
+  // lowercased itemCode/productId/name -> orderItem
+  const orderItemIndex = useMemo(() => {
+    const map = new Map();
+    if (!selectedOrder?.items) return map;
+    for (const i of selectedOrder.items) {
+      if (!i) continue;
+      if (i.itemCode) map.set(i.itemCode.toLowerCase(), i);
+      if (i.productId) map.set(i.productId.toLowerCase(), i);
+      if (i.name) map.set(i.name.toLowerCase(), i);
+    }
+    return map;
+  }, [selectedOrder]);
+
   const resetScanner = () => {
     isProcessing.current = false;
     setScanned(false);
+  };
+
+  const armScanner = (delayMs = 0) => {
+    if (delayMs > 0) {
+      setTimeout(() => {
+        isProcessing.current = false;
+        setScanned(false);
+      }, delayMs);
+    } else {
+      isProcessing.current = false;
+      setScanned(false);
+    }
   };
 
   const showScanAlert = (...args) => {
@@ -193,39 +235,36 @@ export default function DeliveryList({ navigation }) {
     if (isProcessing.current) return;
     isProcessing.current = true;
     setScanned(true);
-    processScannedBarcode(data);
+    const payload = data;
+    requestAnimationFrame(() => {
+      processScannedBarcode(payload);
+    });
   };
 
   const processScannedBarcode = (data) => {
-    if (!selectedOrder || !inventory) {
-      showScanAlert("Error", "Order or inventory data not available");
-      resetScanner();
+    if (!selectedOrder) {
+      showScanAlert("Error", "Order data not available", [
+        { text: "OK", onPress: resetScanner },
+      ]);
       return;
     }
 
-    const scannedBatchCode = data.trim();
-
-    let foundItem = null;
-    let scannedBatch = null;
-
-    for (const item of inventory) {
-      if (item && item.batches) {
-        const batch = item.batches.find(
-          (b) => b && b.batchCode && b.batchCode.trim() === scannedBatchCode,
-        );
-        if (batch) {
-          foundItem = item;
-          scannedBatch = batch;
-          break;
-        }
-      }
-    }
-
-    if (!scannedBatch) {
+    const scannedBatchCode = String(data || "").trim();
+    if (!scannedBatchCode) {
       setInvalidBarcodeNotice({ batchCode: scannedBatchCode });
       return;
     }
 
+    // O(1) batch lookup
+    const hit = batchIndex.get(scannedBatchCode);
+    if (!hit) {
+      setInvalidBarcodeNotice({ batchCode: scannedBatchCode });
+      return;
+    }
+
+    const { item: foundItem, batch: scannedBatch } = hit;
+
+    // Blocked statuses
     if (
       scannedBatch.status === "pending" ||
       scannedBatch.status === "disposed" ||
@@ -246,36 +285,34 @@ export default function DeliveryList({ navigation }) {
       return;
     }
 
-    const orderItem = selectedOrder?.items?.find((i) => {
-      if (!i) return false;
-
-      return (
-        (i.itemCode && i.itemCode === foundItem.itemCode) ||
-        (i.productId && i.productId === foundItem.itemCode) ||
-        (i.productId && i.productId === foundItem._id) ||
-        (i.name && i.name === foundItem.name) ||
-        (i.name && i.name.toLowerCase() === foundItem.name?.toLowerCase()) ||
-        (i.itemCode &&
-          i.itemCode.toLowerCase() === foundItem.itemCode?.toLowerCase())
-      );
-    });
+    // O(1) order-item lookup
+    const orderItem =
+      orderItemIndex.get((foundItem.itemCode || "").toLowerCase()) ||
+      orderItemIndex.get((foundItem._id || "").toLowerCase()) ||
+      orderItemIndex.get((foundItem.name || "").toLowerCase());
 
     if (!orderItem) {
       setWrongItemNotice({
         scannedItem: foundItem.name || foundItem.itemCode || "Unknown item",
         orderItems: (selectedOrder.items || []).map(
-          (item) => item?.name || item?.itemCode || item?.productId || "Unnamed item",
+          (item) =>
+            item?.name || item?.itemCode || item?.productId || "Unnamed item",
         ),
       });
       return;
     }
 
-    const itemBatches = foundItem.batches.map((b) => b.batchCode);
-    const totalAlreadyPicked = Object.entries(pickedCounts)
-      .filter(([bCode]) => itemBatches.includes(bCode))
-      .reduce((sum, [, qty]) => sum + qty, 0);
+    // How much of this item is already picked across its batches
+    const itemBatches = new Set(
+      foundItem.batches.map((b) => b?.batchCode).filter(Boolean),
+    );
 
-    const orderedQuantity = orderItem.quantity;
+    let totalAlreadyPicked = 0;
+    for (const [bCode, qty] of Object.entries(pickedCounts)) {
+      if (itemBatches.has(bCode)) totalAlreadyPicked += qty;
+    }
+
+    const orderedQuantity = Number(orderItem.quantity) || 0;
     const remainingNeeded = orderedQuantity - totalAlreadyPicked;
 
     if (remainingNeeded <= 0) {
@@ -358,12 +395,6 @@ export default function DeliveryList({ navigation }) {
 
     const newTotalPicked = totalAlreadyPicked + amountToPick;
     if (newTotalPicked > orderedQuantity) {
-      console.warn("Preventing over-pick:", {
-        totalAlreadyPicked,
-        amountToPick,
-        newTotalPicked,
-        orderedQuantity,
-      });
       showScanAlert(
         "Over-pick Prevention",
         `Cannot pick ${amountToPick} pcs. Only ${remainingNeeded} pcs remaining to fulfill the order.`,
@@ -372,20 +403,16 @@ export default function DeliveryList({ navigation }) {
       return;
     }
 
-    setPickedCounts((prev) => {
-      const newCounts = {
-        ...prev,
-        [scannedBatch.batchCode]:
-          (prev[scannedBatch.batchCode] || 0) + amountToPick,
-      };
+    setPickedCounts((prev) => ({
+      ...prev,
+      [scannedBatch.batchCode]:
+        (prev[scannedBatch.batchCode] || 0) + amountToPick,
+    }));
 
-      const newTotal = Object.entries(newCounts)
-        .filter(([bCode]) => itemBatches.includes(bCode))
-        .reduce((sum, [, qty]) => sum + qty, 0);
-
-      return newCounts;
-    });
+    // Auto re-arm so the next sticker can be scanned immediately
+    armScanner(SCAN_COOLDOWN_MS);
   };
+
   const handleCompleteOrder = async () => {
     if (!selectedOrder) return;
 
@@ -479,7 +506,6 @@ export default function DeliveryList({ navigation }) {
   const handleUpdateStatus = async (newStatus) => {
     try {
       if (selectedOrder?.status === "APPROVED" && newStatus === "APPROVED") {
-        // Check permissions first
         if (!permission?.granted) {
           const result = await requestPermission();
           if (!result.granted) {
@@ -536,7 +562,6 @@ export default function DeliveryList({ navigation }) {
         setModalVisible(false);
 
         if (newStatus === "APPROVED") {
-          // Check permissions first
           if (!permission?.granted) {
             const result = await requestPermission();
             if (!result.granted) {
@@ -597,7 +622,6 @@ export default function DeliveryList({ navigation }) {
           </View>
 
           <View style={warehouseMapStyles.warehouseContainer}>
-            {/* TABLES */}
             {tables.map((table) => (
               <View
                 key={table.id}
@@ -613,7 +637,6 @@ export default function DeliveryList({ navigation }) {
               />
             ))}
 
-            {/* LABELS */}
             {labels.map((label) => (
               <Text
                 key={label.id}
@@ -629,7 +652,6 @@ export default function DeliveryList({ navigation }) {
               </Text>
             ))}
 
-            {/* WALL LINES */}
             {lines.map((line) => (
               <View
                 key={line.id}
@@ -646,7 +668,6 @@ export default function DeliveryList({ navigation }) {
               />
             ))}
 
-            {/* areas */}
             {areas.map((area) => (
               <View
                 key={area.id}
@@ -662,7 +683,6 @@ export default function DeliveryList({ navigation }) {
               />
             ))}
 
-            {/* PALLETS */}
             {pallets.map((pallet, index) => {
               const isHighlighted = highlightedLocations.has(pallet.id);
 
@@ -692,7 +712,6 @@ export default function DeliveryList({ navigation }) {
               );
             })}
 
-            {/* RACKS */}
             {racks.map((rack, index) => {
               const rackStyle =
                 ["R1", "R2", "R3", "R4", "R5", "R6"].includes(rack.className) &&
@@ -779,7 +798,6 @@ export default function DeliveryList({ navigation }) {
           )}
         </ScrollView>
 
-        {/* Details Modal */}
         <Modal animationType="slide" transparent={true} visible={modalVisible}>
           <View style={pickingStyles.overlay}>
             <View style={pickingStyles.detailModalContainer}>
@@ -852,9 +870,12 @@ export default function DeliveryList({ navigation }) {
               {!scanned ? (
                 <CameraView
                   style={StyleSheet.absoluteFill}
-                  onBarcodeScanned={handleBarCodeScanned}
+                  onBarcodeScanned={
+                    scanned ? undefined : handleBarCodeScanned
+                  }
                   barcodeSettings={{
                     barcodeTypes: ["qr", "ean13", "code128", "code39"],
+                    isPinchGestureEnabled: false,
                   }}
                 />
               ) : (
@@ -891,23 +912,25 @@ export default function DeliveryList({ navigation }) {
                 {selectedOrder?.items?.map((item, index) => {
                   let picked = 0;
 
-                  Object.entries(pickedCounts).forEach(([batchCode, qty]) => {
-                    const invItem = inventory.find(
-                      (inv) =>
-                        inv &&
-                        inv.batches &&
-                        inv.batches.some((b) => b && b.batchCode === batchCode),
-                    );
+                  const itemCodeLc = (item.itemCode || "").toLowerCase();
+                  const productIdLc = (item.productId || "").toLowerCase();
+                  const nameLc = (item.name || "").toLowerCase();
+
+                  for (const [batchCode, qty] of Object.entries(pickedCounts)) {
+                    const h = batchIndex.get(batchCode);
+                    if (!h) continue;
+                    const invItem = h.item;
+                    const invCodeLc = (invItem.itemCode || "").toLowerCase();
+                    const invNameLc = (invItem.name || "").toLowerCase();
 
                     if (
-                      invItem &&
-                      (invItem.itemCode === item.itemCode ||
-                        invItem.itemCode === item.productId ||
-                        invItem.name === item.name)
+                      invCodeLc === itemCodeLc ||
+                      invCodeLc === productIdLc ||
+                      invNameLc === nameLc
                     ) {
                       picked += qty;
                     }
-                  });
+                  }
 
                   const isPicked = picked >= Number(item.quantity);
 

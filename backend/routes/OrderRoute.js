@@ -1089,27 +1089,30 @@ router.get("/", async (req, res) => {
     const filter = status ? { status } : {};
     const orders = await Order.find(filter).sort({ createdAt: -1 });
     const orderData = await addUnitTypesToOrders(orders);
-    const orderIds = orderData.map((order) => order.orderId);
-    const legacyPartialOrderIds = orderIds.map((orderId) => `${orderId}-P`);
-    const partialOrders = orderIds.length
+
+    const baseOrderIds = [
+      ...new Set(
+        orderData
+          .map((o) => String(o.orderId || "").replace(/-P$/, ""))
+          .filter(Boolean),
+      ),
+    ];
+
+    const partialOrders = baseOrderIds.length
       ? await Order.find({
-          $or: [
-            { originalOrderId: { $in: orderIds } },
-            { orderId: { $in: legacyPartialOrderIds } },
-          ],
+          orderId: { $in: baseOrderIds.map((id) => `${id}-P`) },
           status: { $in: ["PENDING", "APPROVED", "PARTIAL", "TO SHIP"] },
         })
-          .select("orderId originalOrderId items")
+          .select("orderId items")
           .lean()
       : [];
-    const backordersByOrderId = new Map();
 
+    const backordersByOrderId = new Map();
     partialOrders.forEach((partialOrder) => {
-      const parentOrderId =
-        partialOrder.originalOrderId || partialOrder.orderId.replace(/-P$/, "");
-      const existingItems = backordersByOrderId.get(parentOrderId) || [];
+      const parentOrderId = partialOrder.orderId.replace(/-P$/, "");
+      const existing = backordersByOrderId.get(parentOrderId) || [];
       backordersByOrderId.set(parentOrderId, [
-        ...existingItems,
+        ...existing,
         ...partialOrder.items.map((item) => ({
           ...item,
           backorderOrderId: partialOrder.orderId,
@@ -1118,10 +1121,20 @@ router.get("/", async (req, res) => {
     });
 
     res.json(
-      orderData.map((order) => ({
-        ...order,
-        backorders: backordersByOrderId.get(order.orderId) || [],
-      })),
+      orderData.map((order) => {
+        const orderIdStr = String(order.orderId || "");
+        const isPartial = orderIdStr.endsWith("-P");
+        const parentKey = orderIdStr.replace(/-P$/, "");
+        const backorders = isPartial
+          ? [] // partial orders don't carry their own backorders
+          : backordersByOrderId.get(parentKey) || [];
+
+        return {
+          ...order,
+          isPartial,
+          backorders,
+        };
+      }),
     );
   } catch (err) {
     res.status(500).json({ message: err.message });
