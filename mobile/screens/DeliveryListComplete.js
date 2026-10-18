@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, StyleSheet } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, StyleSheet, RefreshControl } from 'react-native';
 import { deliveryStyles } from '../styles/DeliveryStyles';
 import { detailStyles } from '../styles/DeliveryDetailStyles';
 import { Search, MapPin, Truck, X, Menu, UserCircle, User, ArrowLeft, PackageX } from 'lucide-react-native';
@@ -22,7 +22,16 @@ export default function DeliveryListComplete({ navigation }) {
 
   const API_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/orders`;
   const USER_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/login/profile`;
+const [refreshing, setRefreshing] = useState(false);
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchCompletedOrders(false);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   useEffect(() => { 
     fetchCompletedOrders(); 
     loadUserData(); 
@@ -105,9 +114,9 @@ export default function DeliveryListComplete({ navigation }) {
     }
   };
 
-  const fetchCompletedOrders = async () => {
+  const fetchCompletedOrders = async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const response = await fetch(API_URL);
       const data = await response.json();
       const deliveredOrders = data.filter(o => o.status === 'DELIVERED');
@@ -116,7 +125,7 @@ export default function DeliveryListComplete({ navigation }) {
     } catch (error) {
       console.error("Fetch Error:", error);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   };
 
@@ -154,6 +163,7 @@ export default function DeliveryListComplete({ navigation }) {
     return getBackorders(order).length > 0;
   };
 
+
   return (
     <>
     <Header
@@ -172,7 +182,7 @@ export default function DeliveryListComplete({ navigation }) {
         <Search size={20} color="#666" />
         <TextInput 
           style={deliveryStyles.searchInput} 
-          placeholder="Search history by ID, client, address, or item..."
+          placeholder="Search by Order ID, Client, Address, or Item..."
           placeholderTextColor="#999"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -187,9 +197,17 @@ export default function DeliveryListComplete({ navigation }) {
         )}
       </View>
 
-    
+      <ScrollView
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#D4AF37']}
+          tintColor="#D4AF37"
+        />
+      }
+      showsVerticalScrollIndicator={false}>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
         {loading ? (
           <ActivityIndicator color="#059669" style={{ marginTop: 20 }} />
         ) : filteredOrders.length === 0 ? (
@@ -222,8 +240,8 @@ export default function DeliveryListComplete({ navigation }) {
               
               {/* Optional: Show delivery date */}
               {item.updatedAt && (
-                <View style={deliveryStyles.dateContainer}>
-                  <Text style={deliveryStyles.dateText}>
+                <View style={deliveryStyles.addressContainer}>
+                  <Text style={deliveryStyles.addressText}>
                     Delivered: {formatDate(item.updatedAt)}
                   </Text>
                 </View>

@@ -7,7 +7,10 @@ global.Buffer = global.Buffer || Buffer;
 const manager = new BleManager();
 const SAVED_PRINTER_KEY = "@xprinter_device_id";
 
-// Request Bluetooth permissions for Android 12+
+// Cache the writable characteristic per device so we don't rediscover on every print
+const writableCharCache = new Map(); // deviceId -> characteristic
+let labelSetupSent = new Set();       // deviceIds we've already sent SIZE/GAP/DIRECTION/CLS to
+
 export const requestBtPermissions = async () => {
   if (Platform.OS === "android") {
     if (Platform.Version >= 31) {
@@ -32,10 +35,9 @@ export const requestBtPermissions = async () => {
   return true;
 };
 
-// Scan and return available printer devices (NOW RETURNS BOOLEAN)
 export const scanForPrinters = async (onDeviceFound) => {
   const hasPerm = await requestBtPermissions();
-  if (!hasPerm) return false; // <-- FIX: return false when permission denied
+  if (!hasPerm) return false;
 
   manager.startDeviceScan(null, null, (error, device) => {
     if (error) {
@@ -52,10 +54,9 @@ export const scanForPrinters = async (onDeviceFound) => {
     }
   });
 
-  return true; // <-- FIX: return true when scan started
+  return true;
 };
 
-// Stop scanning (MISSING FUNCTION - ADDED)
 export const stopPrinterScan = () => {
   try {
     manager.stopDeviceScan();
@@ -64,53 +65,88 @@ export const stopPrinterScan = () => {
   }
 };
 
-// Connect to device and store ID for auto-reconnect
+// Negotiate a large MTU so chunks fit in one BLE packet
+const negotiateMtu = async (deviceId) => {
+  if (Platform.OS !== "android") return; // iOS auto-negotiates
+  try {
+    await manager.requestMTU(deviceId, 512);
+  } catch (e) {
+    // MTU request is best-effort; ignore failures
+    console.warn("MTU negotiation failed:", e?.message);
+  }
+};
+
+const discoverWritableCharacteristic = async (device) => {
+  const services = await device.services();
+  for (const service of services) {
+    const characteristics = await service.characteristics();
+    for (const char of characteristics) {
+      if (char.isWritableWithResponse || char.isWritableWithoutResponse) {
+        return char;
+      }
+    }
+  }
+  return null;
+};
+
+const getWritableCharacteristic = async (device) => {
+  const cached = writableCharCache.get(device.id);
+  if (cached) return cached;
+
+  const char = await discoverWritableCharacteristic(device);
+  if (!char) throw new Error("No writable characteristic found on printer.");
+
+  writableCharCache.set(device.id, char);
+  return char;
+};
+
 export const connectToPrinter = async (deviceId) => {
   try {
     manager.stopDeviceScan();
-    const device = await manager.connectToDevice(deviceId);
+    const device = await manager.connectToDevice(deviceId, { timeout: 10000 });
     await device.discoverAllServicesAndCharacteristics();
+    await negotiateMtu(deviceId);
 
-    // Save device ID for seamless future auto-connections
+    // Pre-warm the characteristic cache
+    await getWritableCharacteristic(device);
+
     await AsyncStorage.setItem(SAVED_PRINTER_KEY, deviceId);
     return device;
   } catch (error) {
     console.error("Connection failed:", error);
+    writableCharCache.delete(deviceId);
     throw error;
   }
 };
 
-// Connect to a scanned device object (MISSING FUNCTION - ADDED)
 export const connectToScannedPrinter = async (device) => {
   try {
     manager.stopDeviceScan();
 
-    // Cancel any existing connection to this device first
     try {
       const isConnected = await manager.isDeviceConnected(device.id);
       if (isConnected) {
         await manager.cancelDeviceConnection(device.id);
       }
-    } catch (_) {
-      // ignore if not connected
-    }
+    } catch (_) {}
 
     const connectedDevice = await manager.connectToDevice(device.id, {
       timeout: 10000,
     });
     await connectedDevice.discoverAllServicesAndCharacteristics();
+    await negotiateMtu(device.id);
 
-    // Save device ID for auto-reconnect
+    await getWritableCharacteristic(connectedDevice);
+
     await AsyncStorage.setItem(SAVED_PRINTER_KEY, device.id);
-
     return connectedDevice;
   } catch (error) {
     console.error("connectToScannedPrinter failed:", error);
+    writableCharCache.delete(device.id);
     throw error;
   }
 };
 
-// Auto-connect on app startup using stored device ID
 export const autoConnectPrinter = async (onStatusChange) => {
   try {
     const savedDeviceId = await AsyncStorage.getItem(SAVED_PRINTER_KEY);
@@ -121,26 +157,35 @@ export const autoConnectPrinter = async (onStatusChange) => {
 
     let device;
     if (isConnected) {
-      device = await manager.devices([savedDeviceId]);
-      device = device[0];
+      const devices = await manager.devices([savedDeviceId]);
+      device = devices[0];
+      // Discover only if we haven't cached a characteristic yet
+      if (!writableCharCache.has(savedDeviceId)) {
+        await device.discoverAllServicesAndCharacteristics();
+        await getWritableCharacteristic(device);
+      }
     } else {
-      device = await manager.connectToDevice(savedDeviceId);
+      device = await manager.connectToDevice(savedDeviceId, { timeout: 10000 });
       await device.discoverAllServicesAndCharacteristics();
+      await negotiateMtu(savedDeviceId);
+      await getWritableCharacteristic(device);
     }
 
     onStatusChange("Printer Connected");
     return device;
   } catch (error) {
+    console.warn("Auto-connect failed:", error?.message);
     onStatusChange("Auto-connect failed.");
     return null;
   }
 };
 
-// Disconnect helper (optional but useful)
 export const disconnectPrinter = async (deviceId) => {
   try {
     if (deviceId) {
       await manager.cancelDeviceConnection(deviceId);
+      writableCharCache.delete(deviceId);
+      labelSetupSent.delete(deviceId);
     }
     await AsyncStorage.removeItem(SAVED_PRINTER_KEY);
   } catch (error) {
@@ -148,7 +193,41 @@ export const disconnectPrinter = async (deviceId) => {
   }
 };
 
-// Send TSPL Label Command to Xprinter XB-365B
+const writeChunks = async (char, base64Data) => {
+  // Bigger chunks now that MTU is negotiated
+  const CHUNK_SIZE = 320;
+  const useResponse = char.isWritableWithResponse;
+
+  for (let i = 0; i < base64Data.length; i += CHUNK_SIZE) {
+    const chunk = base64Data.slice(i, i + CHUNK_SIZE);
+
+    if (useResponse) {
+      // The ack paces us — no artificial delay
+      await char.writeWithResponse(chunk);
+    } else {
+      await char.writeWithoutResponse(chunk);
+      // Tiny delay only for no-response writes so the printer buffer keeps up
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+};
+
+// Send the label setup commands ONCE per connection.
+// After that, subsequent prints only send the label content + PRINT.
+const ensureLabelSetup = async (device, char) => {
+  if (labelSetupSent.has(device.id)) return;
+
+  const setup =
+    `SIZE 50 mm, 50 mm\n` +
+    `GAP 2 mm, 0 mm\n` +
+    `DIRECTION 1\n` +
+    `CLS\n`;
+
+  const base64 = Buffer.from(setup).toString("base64");
+  await writeChunks(char, base64);
+  labelSetupSent.add(device.id);
+};
+
 export const printBarcodeTSPL = async (
   device,
   batchCode,
@@ -161,7 +240,7 @@ export const printBarcodeTSPL = async (
   const formatDateOnly = (value) => {
     if (!value) return "";
     const d = value instanceof Date ? value : new Date(value);
-    if (isNaN(d.getTime())) return String(value); // fallback if unparseable
+    if (isNaN(d.getTime())) return String(value);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
@@ -170,39 +249,22 @@ export const printBarcodeTSPL = async (
 
   const formattedExp = formatDateOnly(expirationDate);
 
-  const tsplCommand =
-    `SIZE 50 mm, 50 mm\n` +
-    `GAP 2 mm, 0 mm\n` +
-    `DIRECTION 1\n` +
-    `CLS\n` +
+  // Cache hit — no BLE discovery round-trips
+  const char = await getWritableCharacteristic(device);
+
+  // Send SIZE/GAP/DIRECTION/CLS once per session
+  await ensureLabelSetup(device, char);
+
+  // Only the label content + PRINT goes over the wire now
+  const labelCommand =
     `TEXT 40,40,"3",0,1,1,"${itemName.slice(0, 20)}"\n` +
-    `BARCODE 40,100,"128",120,0,0,2,2,"${batchCode}"\n` +
+    `BARCODE 30,100,"128",120,0,0,2,2,"${batchCode}"\n` +
     `TEXT 40,230,"3",0,1,1,"${batchCode}"\n` +
-    `TEXT 40,270,"3",0,1,1,"Exp: ${formattedExp}"\n` +
+    `TEXT 40,340,"3",0,1,1,"Exp: ${formattedExp}"\n` +
     `PRINT ${printQty},1\n`;
 
-  const base64Data = Buffer.from(tsplCommand).toString("base64");
+  const base64Data = Buffer.from(labelCommand).toString("base64");
+  await writeChunks(char, base64Data);
 
-  // Retrieve writable characteristic from printer BLE services
-  const services = await device.services();
-  for (const service of services) {
-    const characteristics = await service.characteristics();
-    for (const char of characteristics) {
-      if (char.isWritableWithResponse || char.isWritableWithoutResponse) {
-        const CHUNK_SIZE = 180;
-        for (let i = 0; i < base64Data.length; i += CHUNK_SIZE) {
-          const chunk = base64Data.slice(i, i + CHUNK_SIZE);
-          if (char.isWritableWithResponse) {
-            await char.writeWithResponse(chunk);
-          } else {
-            await char.writeWithoutResponse(chunk);
-          }
-          // Small delay to let printer buffer
-          await new Promise((r) => setTimeout(r, 30));
-        }
-        return true;
-      }
-    }
-  }
-  throw new Error("No writable characteristic found on printer.");
+  return true;
 };

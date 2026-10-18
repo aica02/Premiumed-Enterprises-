@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, StyleSheet, RefreshControl } from 'react-native';
 import { deliveryStyles } from '../styles/DeliveryStyles';
 import { detailStyles } from '../styles/DeliveryDetailStyles';
-import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin, PackageX } from 'lucide-react-native';
+import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin, PackageX, TriangleAlert, CheckCircle } from 'lucide-react-native';
 import Header from './Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { offlineFetch as fetch } from '../shared/offlineApi';
+import { styles as inventoryStyles } from '../styles/InventoryStyles';
 
 export default function DeliveryList({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
@@ -15,6 +16,10 @@ export default function DeliveryList({ navigation }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [deliveryConfirmationVisible, setDeliveryConfirmationVisible] = useState(false);
+  const [updatingOrder, setUpdatingOrder] = useState(false);
+  const [deliveryFeedback, setDeliveryFeedback] = useState(null);
 
   const [staffName, setStaffName] = useState('');
   const [staffPosition, setStaffPosition] = useState('');
@@ -92,9 +97,9 @@ export default function DeliveryList({ navigation }) {
     }
   };
 
-  const fetchConfirmedOrders = async () => {
+  const fetchConfirmedOrders = async (showLoading = true) => {
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       const response = await fetch(API_URL);
       const data = await response.json();
       const toShipOrders = data.filter(o => o.status === 'TO SHIP' && o.paymentStatus === 'COMPLETED');
@@ -103,12 +108,24 @@ export default function DeliveryList({ navigation }) {
     } catch (error) {
       console.error('Fetch Error:', error);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchConfirmedOrders(false);
+    } finally {
+      setRefreshing(false);
     }
   };
 
   const handleUpdateStatus = async (orderId) => {
+    if (!orderId) return;
+
     try {
+      setUpdatingOrder(true);
       const token = await AsyncStorage.getItem('userToken');
       const storedUserId = await AsyncStorage.getItem('userId');
       const storedUsername = await AsyncStorage.getItem('username');
@@ -128,15 +145,14 @@ export default function DeliveryList({ navigation }) {
 
       if (response.ok) {
         const result = await response.json();
-        Alert.alert(
-          result.queued ? 'Saved Offline' : 'Success',
-          result.queued
-            ? 'Delivery update saved on this device and will sync when you reconnect.'
-            : 'Order marked as Delivered',
-        );
+        setDeliveryFeedback({
+          queued: Boolean(result.queued),
+          orderId,
+        });
+        setDeliveryConfirmationVisible(false);
         setModalVisible(false);
         setSearchQuery('');
-        fetchConfirmedOrders();
+        await fetchConfirmedOrders();
       } else {
         const errorData = await response.json();
         Alert.alert('Error', errorData.message || 'Failed to update order');
@@ -144,6 +160,8 @@ export default function DeliveryList({ navigation }) {
     } catch (error) {
       console.error('Update error:', error);
       Alert.alert('Error', 'Server update failed');
+    } finally {
+      setUpdatingOrder(false);
     }
   };
 
@@ -213,7 +231,17 @@ export default function DeliveryList({ navigation }) {
         </View>
 
         {/* LIST SECTION */}
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#D4AF37']}
+              tintColor="#D4AF37"
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
           {loading ? (
             <ActivityIndicator color="#D4AF37" style={{ marginTop: 20 }} />
           ) : filteredOrders.length === 0 ? (
@@ -248,14 +276,14 @@ export default function DeliveryList({ navigation }) {
                 )}
 
                 {/* Backorder count badge */}
-                {getBackorders(item).length > 0 && (
+                {/* {getBackorders(item).length > 0 && (
                   <View style={localStyles.backorderCountBadge}>
                     <Text style={localStyles.backorderCountText}>
                       {getBackorders(item).length} backorder item
                       {getBackorders(item).length > 1 ? 's' : ''}
                     </Text>
                   </View>
-                )}
+                )} */}
 
                 <Text style={deliveryStyles.clientName}>{item.name}</Text>
                 <View style={deliveryStyles.addressContainer}>
@@ -364,7 +392,7 @@ export default function DeliveryList({ navigation }) {
                 {/* MARK DELIVERED */}
                 <TouchableOpacity
                   style={[detailStyles.updateBtn, { marginHorizontal: 20, marginTop: 10 }]}
-                  onPress={() => handleUpdateStatus(selectedOrder?.orderId)}
+                  onPress={() => setDeliveryConfirmationVisible(true)}
                 >
                   <Text style={detailStyles.updateBtnText}>MARK AS DELIVERED</Text>
                 </TouchableOpacity>
@@ -372,6 +400,189 @@ export default function DeliveryList({ navigation }) {
             </View>
           </View>
         </Modal>
+
+        <Modal
+          visible={deliveryConfirmationVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setDeliveryConfirmationVisible(false)}
+        >
+          <View style={inventoryStyles.confirmOverlay}>
+            <View style={inventoryStyles.confirmModal}>
+              <View style={inventoryStyles.confirmHeader}>
+                <View
+                  style={[
+                    inventoryStyles.supplyIcon,
+                    { backgroundColor: '#ECFDF5' },
+                  ]}
+                >
+                  <Truck size={25} color="#059669" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={inventoryStyles.confirmTitle}>
+                    Confirm Delivery
+                  </Text>
+                  <Text style={inventoryStyles.confirmSubtitle}>
+                    Please review the order before continuing.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setDeliveryConfirmationVisible(false)}
+                  style={inventoryStyles.confirmClose}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel delivery confirmation"
+                >
+                  <XCircle size={28} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={inventoryStyles.supplyPreview}>
+                <View style={{ flex: 1 }}>
+                  <Text style={inventoryStyles.supplyName}>
+                    {selectedOrder?.name || 'Customer'}
+                  </Text>
+                  <Text style={[inventoryStyles.itemCode, { color: '#059669' }]}>
+                    {selectedOrder?.orderId}
+                  </Text>
+                  <Text style={inventoryStyles.categoryText}>
+                    {selectedOrder?.shippingAddress || 'No delivery address'}
+                  </Text>
+                </View>
+              </View>
+
+              <ScrollView
+                style={inventoryStyles.confirmDetails}
+                showsVerticalScrollIndicator={false}
+              >
+                {/* ─── Supply list ─── */}
+                <Text style={inventoryStyles.detailLabel}>Supplies</Text>
+                {selectedOrder?.items?.length > 0 ? (
+                  selectedOrder.items.map((item, index) => (
+                    <View
+                      key={index}
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingVertical: 6,
+                        borderBottomWidth: 1,
+                        borderBottomColor: '#F3F4F6',
+                      }}
+                    >
+                      <Text style={{ flex: 1, fontSize: 13, color: '#111827' }} numberOfLines={2}>
+                        {item.name}
+                      </Text>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#059669', marginLeft: 12 }}>
+                        {item.quantity} Pcs
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={{ fontSize: 13, color: '#6B7280', fontStyle: 'italic', paddingVertical: 6 }}>
+                    No items
+                  </Text>
+                )}
+
+                {/* ─── Total supplies ─── */}
+                <View style={[inventoryStyles.detailRow, { marginTop: 10 }]}>
+                  <Text style={inventoryStyles.detailLabel}>Total Supplies</Text>
+                  <Text style={inventoryStyles.detailValue}>
+                    {Object.entries(
+                      (selectedOrder?.items || []).reduce((acc, i) => {
+                        const unit = i.unitType || 'Pcs';
+                        acc[unit] = (acc[unit] || 0) + (Number(i.quantity) || 0);
+                        return acc;
+                      }, {})
+                    )
+                      .map(([unit, total]) => `${total} ${unit}`)
+                      .join(' + ')}
+                     </Text>
+                </View>
+              </ScrollView>
+
+              <View
+                style={[
+                  inventoryStyles.confirmErrorBox,
+                  { backgroundColor: '#f5edd5', borderColor: '#b89c41' },
+                ]}
+              >
+                <TriangleAlert size={16} color="#D4AF37" />
+                <Text
+                  style={[
+                    inventoryStyles.confirmErrorText,
+                    { color: '#D4AF37' },
+                  ]}
+                >
+                  Confirm only after the order has been delivered.
+                </Text>
+              </View>
+
+              <View style={inventoryStyles.confirmActions}>
+                <TouchableOpacity
+                  style={inventoryStyles.cancelButton}
+                  onPress={() => setDeliveryConfirmationVisible(false)}
+                  disabled={updatingOrder}
+                >
+                  <Text style={inventoryStyles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    inventoryStyles.confirmButton,
+                    { backgroundColor: '#059669' },
+                  ]}
+                  onPress={() => handleUpdateStatus(selectedOrder?.orderId)}
+                  disabled={updatingOrder}
+                >
+                  {updatingOrder ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Truck size={18} color="#FFFFFF" />
+                      <Text style={inventoryStyles.confirmButtonText}>
+                        Confirm Delivery
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {deliveryFeedback && (
+          <Modal
+            visible={Boolean(deliveryFeedback)}
+            transparent
+            animationType="fade"
+            statusBarTranslucent
+            onRequestClose={() => setDeliveryFeedback(null)}
+          >
+            <View style={inventoryStyles.modalOverlay}>
+              <View style={inventoryStyles.successModalContainer}>
+                <View style={inventoryStyles.successIconContainer}>
+                  <CheckCircle size={38} color="#059669" />
+                </View>
+                <Text style={inventoryStyles.successEyebrow}>
+                  {deliveryFeedback.queued ? 'SAVED OFFLINE' : 'DELIVERY COMPLETE'}
+                </Text>
+                <Text style={inventoryStyles.successTitle}>
+                  {deliveryFeedback.queued ? 'Saved Offline' : 'Delivered Successfully'}
+                </Text>
+                <Text style={inventoryStyles.successMessage}>
+                  {deliveryFeedback.queued
+                    ? `Delivery of order ${deliveryFeedback.orderId} is saved on this device and will sync when you reconnect.`
+                    : `${deliveryFeedback.orderId} has been marked as delivered.`}
+                </Text>
+                <TouchableOpacity
+                  style={inventoryStyles.successButton}
+                  onPress={() => setDeliveryFeedback(null)}
+                >
+                  <Text style={inventoryStyles.successButtonText}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        )}
       </View>
     </>
   );
