@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { pickingStyles } from "../styles/PickingStyles";
 import { warehouseMapStyles } from "../styles/warehouseMapStyles";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { BarcodeScanner, requestCameraPermission } from "rn-camera-barcode-scan";
 import {
   AlertTriangle,
   Check,
@@ -27,6 +27,7 @@ import Header from "./Header";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
+
 
 export default function DeliveryList({ navigation }) {
   const [orders, setOrders] = useState([]);
@@ -50,7 +51,7 @@ export default function DeliveryList({ navigation }) {
   const isProcessing = useRef(false);
   const [pickedCounts, setPickedCounts] = useState({});
 
-  const [permission, requestPermission] = useCameraPermissions();
+  // const [permission, requestPermission] = useCameraPermissions();
   const [refreshing, setRefreshing] = useState(false);
 
   const [staffName, setStaffName] = useState("");
@@ -577,13 +578,26 @@ export default function DeliveryList({ navigation }) {
     try {
       if (selectedOrder?.status === "APPROVED" && newStatus === "APPROVED") {
         if (!permission?.granted) {
-          const result = await requestPermission();
-          if (!result.granted) {
-            Alert.alert(
-              "Permission Denied",
-              "Camera access is required to scan items.",
-            );
+          const result = await requestCameraPermission();
+          if (result !== "granted") {
+            Alert.alert("Permission Denied", "Camera access is required to scan items.");
             return;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
           }
         }
 
@@ -938,14 +952,14 @@ export default function DeliveryList({ navigation }) {
           <View style={pickingStyles.scannerModalContainer}>
             <View style={pickingStyles.cameraPlaceholder}>
               {!scanned ? (
-                <CameraView
+                <BarcodeScanner
                   style={StyleSheet.absoluteFill}
-                  onBarcodeScanned={
-                    scanned ? undefined : handleBarCodeScanned
-                  }
-                  barcodeSettings={{
-                    barcodeTypes: ["qr", "ean13", "code128", "code39"],
-                    isPinchGestureEnabled: false,
+                  isActive={!scanned}
+                  barcodeTypes={["CODE_128", "EAN_13", "CODE_39", "QR_CODE"]}
+                  onBarcodeScan={(result) => {
+                    if (!isProcessing.current) {
+                      handleBarCodeScanned({ data: result.data });
+                    }
                   }}
                 />
               ) : (
@@ -1009,7 +1023,7 @@ export default function DeliveryList({ navigation }) {
                         textAlign: "center",
                       }}
                     >
-                      All items are picked. Tap COMPLETE ORDER to finish.
+                      All items are picked..
                     </Text>
                   )}
                 </View>
