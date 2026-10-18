@@ -592,9 +592,9 @@ export const styles = StyleSheet.create({
   printIcon: {
     marginRight: 10,
   },
-  dismissBtn: {
-    marginTop: -10,
-  },
+  // dismissBtn: {
+  //   marginTop: -10,
+  // },
   dismissBtnText: {
     color: "#9CA3AF",
     fontWeight: "bold",

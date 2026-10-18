@@ -42,6 +42,7 @@ export default function DeliveryList({ navigation }) {
   const [scanFeedback, setScanFeedback] = useState(null);
   const [batchBlockedNotice, setBatchBlockedNotice] = useState(null);
   const [invalidBarcodeNotice, setInvalidBarcodeNotice] = useState(null);
+  const [wrongItemNotice, setWrongItemNotice] = useState(null);
   const [completionSuccess, setCompletionSuccess] = useState(null);
   const isProcessing = useRef(false);
   const [pickedCounts, setPickedCounts] = useState({});
@@ -260,14 +261,12 @@ export default function DeliveryList({ navigation }) {
     });
 
     if (!orderItem) {
-      showScanAlert(
-        "Wrong Item",
-        `Item "${foundItem.name || foundItem.itemCode}" is not part of this order.\n\n` +
-          `Order items in this order:\n${selectedOrder.items.map((i) => `- ${i.name || i.itemCode || i.productId}`).join("\n")}\n\n` +
-          `Scanned item: ${foundItem.name || foundItem.itemCode}\n\n` +
-          `Please check if the correct item was scanned.`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
+      setWrongItemNotice({
+        scannedItem: foundItem.name || foundItem.itemCode || "Unknown item",
+        orderItems: (selectedOrder.items || []).map(
+          (item) => item?.name || item?.itemCode || item?.productId || "Unnamed item",
+        ),
+      });
       return;
     }
 
@@ -1151,6 +1150,82 @@ export default function DeliveryList({ navigation }) {
               >
                 <Text style={pickingStyles.feedbackButtonText}>
                   SCAN ANOTHER BATCH
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {wrongItemNotice && (
+        <Modal
+          transparent
+          visible={Boolean(wrongItemNotice)}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            setWrongItemNotice(null);
+            resetScanner();
+          }}
+        >
+          <View style={pickingStyles.wrongItemOverlay}>
+            <View style={pickingStyles.wrongItemCard}>
+              <View style={pickingStyles.wrongItemIcon}>
+                <AlertTriangle size={36} color="#B91C1C" />
+              </View>
+              <Text style={pickingStyles.wrongItemEyebrow}>ORDER MISMATCH</Text>
+              <Text style={pickingStyles.wrongItemTitle}>
+                This item is not on the order
+              </Text>
+              <Text style={pickingStyles.wrongItemMessage}>
+                Check the scanned product and choose an item from this order.
+              </Text>
+
+              <View style={pickingStyles.wrongItemScanned}>
+                <Text style={pickingStyles.wrongItemLabel}>SCANNED ITEM</Text>
+                <Text style={pickingStyles.wrongItemScannedName}>
+                  {wrongItemNotice.scannedItem}
+                </Text>
+              </View>
+
+              <Text style={pickingStyles.wrongItemLabel}>
+                ITEMS IN THIS ORDER
+              </Text>
+              <ScrollView
+                style={pickingStyles.wrongItemList}
+                contentContainerStyle={pickingStyles.wrongItemListContent}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+              >
+                {wrongItemNotice.orderItems.length > 0 ? (
+                  wrongItemNotice.orderItems.map((item, index) => (
+                    <View
+                      key={`${item}-${index}`}
+                      style={pickingStyles.wrongItemOrderRow}
+                    >
+                      <View style={pickingStyles.wrongItemBullet} />
+                      <Text style={pickingStyles.wrongItemOrderName}>
+                        {item}
+                      </Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={pickingStyles.wrongItemEmpty}>
+                    No order items are available.
+                  </Text>
+                )}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={pickingStyles.wrongItemButton}
+                onPress={() => {
+                  setWrongItemNotice(null);
+                  resetScanner();
+                }}
+              >
+                <ScanLine size={18} color="#FFFFFF" />
+                <Text style={pickingStyles.feedbackButtonText}>
+                  SCAN ANOTHER ITEM
                 </Text>
               </TouchableOpacity>
             </View>
