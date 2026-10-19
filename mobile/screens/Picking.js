@@ -943,7 +943,7 @@ export default function DeliveryList({ navigation }) {
                   onBarcodeScanned={
                     scanned ? undefined : handleBarCodeScanned
                   }
-                  barcodeSettings={{
+                  barcodeScannerSettings={{
                     barcodeTypes: ["qr", "ean13", "code128", "code39"],
                     isPinchGestureEnabled: false,
                   }}
