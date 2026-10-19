@@ -215,17 +215,17 @@ const writeChunks = async (char, base64Data) => {
 // Send the label setup commands ONCE per connection.
 // After that, subsequent prints only send the label content + PRINT.
 const ensureLabelSetup = async (device, char) => {
-  if (labelSetupSent.has(device.id)) return;
+  if (!labelSetupSent.has(device.id)) {
+    const geometry =
+      `SIZE 50 mm, 50 mm\n` +
+      `GAP 2 mm, 0 mm\n` +
+      `DIRECTION 1\n`;
+    await writeChunks(char, Buffer.from(geometry).toString("base64"));
+    labelSetupSent.add(device.id);
+  }
 
-  const setup =
-    `SIZE 50 mm, 50 mm\n` +
-    `GAP 2 mm, 0 mm\n` +
-    `DIRECTION 1\n` +
-    `CLS\n`;
-
-  const base64 = Buffer.from(setup).toString("base64");
-  await writeChunks(char, base64);
-  labelSetupSent.add(device.id);
+  // CLS must fire before EVERY label. This is what prevents duplication.
+  await writeChunks(char, Buffer.from(`CLS\n`).toString("base64"));
 };
 
 export const printBarcodeTSPL = async (
