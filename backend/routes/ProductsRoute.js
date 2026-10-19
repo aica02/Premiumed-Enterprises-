@@ -381,7 +381,9 @@ router.put("/updatePrices", async (req, res) => {
     if (validUpdates.length > 0) {
       const actor = req.actor || {};
       const adminName =
-        actor.username && actor.username !== "Unknown" ? actor.username : "Admin";
+        actor.username && actor.username !== "Unknown"
+          ? actor.username
+          : "Admin";
 
       await createActivityLog({
         userId: actor.userId || null,
@@ -389,7 +391,7 @@ router.put("/updatePrices", async (req, res) => {
         role: actor.role && actor.role !== "Unknown" ? actor.role : "Admin",
         action: "Set supply prices",
         module: "Inventory",
-        description: `Admin "${adminName}" updated the supply prices`,
+        description: `Admin "${adminName}" updated the supply prices.`,
       });
     }
 
