@@ -499,16 +499,17 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
     }
 
     const actor = getActor(req);
+    const clientName =
+      actor.username && actor.username !== "Unknown"
+        ? actor.username
+        : order.username || order.name;
     await createActivityLog({
       userId: actor.userId,
-      username:
-        actor.username !== "Unknown"
-          ? actor.username
-          : order.username || order.name,
+      username: clientName,
       role: actor.role !== "Unknown" ? actor.role : "Client",
       action: "Submit payment slip",
       module: "Order",
-      description: `Client submitted a payment slip for order ${order.orderId}.${emailSent ? " Email sent to accountant." : " No email sent."}`,
+      description: `Client "${clientName}" submitted a payment slip for order ${order.orderId}.${emailSent ? " Email sent to accountant." : " No email sent."}`,
     });
 
     // try {

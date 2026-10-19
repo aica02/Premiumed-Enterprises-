@@ -9,7 +9,7 @@ import { fileURLToPath } from "url";
 import {
   checkBatchById,
   checkProductStock,
-} from "../utils/inventoryAlertService.js"; 
+} from "../utils/inventoryAlertService.js";
 const router = express.Router();
 
 // Get current file path for ES modules
@@ -99,7 +99,7 @@ router.patch("/product/:itemCode/image", async (req, res) => {
       role: actor.role,
       action: "Update product image",
       module: "Inventory",
-      description: `Product ${product.name} (${product.itemCode}) image was updated.`,
+      description: `Staff "${actor.username}" updated the image of product "${product.name}" (${product.itemCode}).`,
     });
 
     return res.json({ success: true, product });
@@ -299,7 +299,7 @@ router.post("/", async (req, res) => {
       category,
       unitType,
       supplierName,
-      quantity, 
+      quantity,
       box,
       reorderLevel,
       expirationDate,
@@ -397,9 +397,9 @@ router.post("/", async (req, res) => {
 
     batch = new Batch(batchData);
     await batch.save();
-checkBatchById(batch._id).catch(err =>
-  console.error("[Hook] checkBatchById failed:", err)
-);
+    checkBatchById(batch._id).catch((err) =>
+      console.error("[Hook] checkBatchById failed:", err),
+    );
     const savedProduct = await Product.findById(product._id).lean();
     const actor = getActor(req);
 
@@ -409,9 +409,7 @@ checkBatchById(batch._id).catch(err =>
       role: actor.role,
       action: existingProduct ? "Restock supply" : "Create supply",
       module: "Inventory",
-      description: `${product.name} was ${
-        existingProduct ? "restocked" : "added"
-      } to inventory with pending batch ${batch.batchCode}.`,
+      description: `Staff "${actor.username}" added ${product.name} to inventory with pending batch ${batch.batchCode}`,
     });
 
     res.status(201).json({
@@ -675,9 +673,9 @@ router.post("/kit", async (req, res) => {
 
     batch = new Batch(batchData);
     await batch.save();
-checkBatchById(batch._id).catch(err =>
-  console.error("[Hook] checkBatchById failed:", err)
-);
+    checkBatchById(batch._id).catch((err) =>
+      console.error("[Hook] checkBatchById failed:", err),
+    );
     const actor = getActor(req);
     await createActivityLog({
       userId: actor.userId,
@@ -685,9 +683,7 @@ checkBatchById(batch._id).catch(err =>
       role: actor.role,
       action: existingProduct ? "Restock kit" : "Create kit",
       module: "Inventory",
-      description: existingProduct
-        ? `Kit ${product.name} was restocked with pending batch ${batch.batchCode}.`
-        : `Kit ${product.name} was created with pending batch ${batch.batchCode}.`,
+      description: `Staff "${actor.username}" added ${product.name} to inventory with pending batch ${batch.batchCode}`,
     });
 
     res.status(201).json({
@@ -735,9 +731,9 @@ router.patch("/batch/stored", async (req, res) => {
       if (expiryDate < today) {
         return res.status(400).json({
           success: false,
-          message: `Cannot store expired batch. Expiration Date: ${batch.expirationDate
-            .toISOString()
-            .split("T")[0]}`,
+          message: `Cannot store expired batch. Expiration Date: ${
+            batch.expirationDate.toISOString().split("T")[0]
+          }`,
           batch: {
             batchCode: batch.batchCode,
             itemCode: batch.itemCode,
@@ -757,7 +753,7 @@ router.patch("/batch/stored", async (req, res) => {
     const deriveTotalBoxes = (target) => {
       if (target.quantityPerBox > 0) {
         target.totalBoxes = Math.floor(
-          target.totalQuantity / target.quantityPerBox
+          target.totalQuantity / target.quantityPerBox,
         );
       } else {
         target.totalBoxes = 0;
@@ -787,7 +783,7 @@ router.patch("/batch/stored", async (req, res) => {
             console.warn(
               "Invalid deduction qty for",
               itemToDeduct.name + ":",
-              deductQty
+              deductQty,
             );
             continue;
           }
@@ -801,14 +797,14 @@ router.patch("/batch/stored", async (req, res) => {
 
           const totalStoredQty = availableBatches.reduce(
             (sum, b) => sum + b.quantity,
-            0
+            0,
           );
           const actualDeduct = Math.min(deductQty, totalStoredQty);
 
           // Deduct totalQuantity, then derive totalBoxes
           itemToDeduct.totalQuantity = Math.max(
             0,
-            itemToDeduct.totalQuantity - actualDeduct
+            itemToDeduct.totalQuantity - actualDeduct,
           );
           deriveTotalBoxes(itemToDeduct);
           await itemToDeduct.save();
@@ -821,10 +817,7 @@ router.patch("/batch/stored", async (req, res) => {
             if (remainingToDeduct <= 0) break;
 
             const take = Math.min(batchToDeduct.quantity, remainingToDeduct);
-            batchToDeduct.quantity = Math.max(
-              0,
-              batchToDeduct.quantity - take
-            );
+            batchToDeduct.quantity = Math.max(0, batchToDeduct.quantity - take);
             remainingToDeduct -= take;
             batchesUpdated++;
 
@@ -844,7 +837,7 @@ router.patch("/batch/stored", async (req, res) => {
           console.error(
             "Error deducting",
             kitItem.name + ":",
-            deductError.message
+            deductError.message,
           );
         }
       }
@@ -858,21 +851,21 @@ router.patch("/batch/stored", async (req, res) => {
         (Number(product.totalQuantity) || 0) + (Number(batch.quantity) || 0);
       deriveTotalBoxes(product);
       await product.save();
-      checkBatchById(batch._id).catch(err =>
-  console.error("[Hook] checkBatchById failed:", err)
-);
+      checkBatchById(batch._id).catch((err) =>
+        console.error("[Hook] checkBatchById failed:", err),
+      );
 
-// Also check every kit component's stock (kit putaway deducts them)
-if (product.isKit && product.kitItems?.length) {
-  const codes = product.kitItems.map(k => k.itemCode);
-  Promise.all(codes.map(c => checkProductStock(c))).catch(err =>
-    console.error("[Hook] kit component stock check failed:", err)
-  );
-} else {
-  checkProductStock(product.itemCode).catch(err =>
-    console.error("[Hook] checkProductStock failed:", err)
-  );
-}
+      // Also check every kit component's stock (kit putaway deducts them)
+      if (product.isKit && product.kitItems?.length) {
+        const codes = product.kitItems.map((k) => k.itemCode);
+        Promise.all(codes.map((c) => checkProductStock(c))).catch((err) =>
+          console.error("[Hook] kit component stock check failed:", err),
+        );
+      } else {
+        checkProductStock(product.itemCode).catch((err) =>
+          console.error("[Hook] checkProductStock failed:", err),
+        );
+      }
 
       const actor = getActor(req);
       await createActivityLog({
@@ -908,8 +901,8 @@ if (product.isKit && product.kitItems?.length) {
         username: actor.username,
         role: actor.role,
         action: "Store batch",
-        module: "Putaway",
-        description: `Batch ${batch.batchCode} for ${product.name} was stored. Quantity: ${batch.quantity}`,
+        module: "Supply Management",
+        description: `Staff "${actor.username}" stored batch ${batch.batchCode} of ${product.name}.`,
       });
 
       res.status(200).json({
@@ -961,11 +954,12 @@ router.patch("/batch/:batchCode/dispose", async (req, res) => {
   const actor = {
     userId: userId || req.actor?.userId || null,
     username: username || req.actor?.username || "Unknown",
-    role: role && role !== "Unknown"
-      ? role
-      : req.actor?.role && req.actor.role !== "Unknown"
-        ? req.actor.role
-        : "Staff",
+    role:
+      role && role !== "Unknown"
+        ? role
+        : req.actor?.role && req.actor.role !== "Unknown"
+          ? req.actor.role
+          : "Staff",
   };
 
   try {
@@ -1009,9 +1003,9 @@ router.patch("/batch/:batchCode/dispose", async (req, res) => {
     batch.disposedDate = new Date().toISOString().split("T")[0];
     await batch.save();
 
-    checkProductStock(product.itemCode).catch(err =>
-  console.error("[Hook] dispose checkProductStock failed:", err)
-);
+    checkProductStock(product.itemCode).catch((err) =>
+      console.error("[Hook] dispose checkProductStock failed:", err),
+    );
 
     // Log the activity
     await createActivityLog({

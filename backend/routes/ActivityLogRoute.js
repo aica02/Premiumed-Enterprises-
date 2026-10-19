@@ -54,19 +54,20 @@ router.post("/report-printed", async (req, res) => {
   }
 
   try {
+    const adminName =
+      req.actor?.username && req.actor.username !== "Unknown"
+        ? req.actor.username
+        : "Admin";
     await ActivityLog.create({
       userId: req.actor?.userId || undefined,
-      username:
-        req.actor?.username && req.actor.username !== "Unknown"
-          ? req.actor.username
-          : "Admin",
+      username: adminName,
       role:
         req.actor?.role && req.actor.role !== "Unknown"
           ? req.actor.role
           : "Admin",
       action: "Print report",
       module: module.trim(),
-      description: `${reportName.trim()} report was generated.`,
+      description: `Admin "${adminName}" generated report of ${reportName.trim()}.`,
     });
 
     res.status(201).json({ message: "Report print activity logged." });

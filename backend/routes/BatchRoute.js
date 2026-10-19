@@ -124,14 +124,15 @@ router.put("/disposeBatch", async (req, res) => {
     }
 
     const actor = req.actor || {};
+    const adminName =
+      actor.username && actor.username !== "Unknown" ? actor.username : "Admin";
     await createActivityLog({
       userId: actor.userId || null,
-      username:
-        actor.username && actor.username !== "Unknown" ? actor.username : "Admin",
+      username: adminName,
       role: actor.role && actor.role !== "Unknown" ? actor.role : "Admin",
       action: "Mark batch for disposal",
       module: "Inventory",
-      description: `Batch ${updatedBatch.batchCode} for ${updatedBatch.itemName} was marked for disposal. Quantity: ${updatedBatch.quantity}.`,
+      description: `Admin "${adminName}" marked the batch ${updatedBatch.batchCode} of ${updatedBatch.itemName} for disposal.`,
     });
 
     res.json({
