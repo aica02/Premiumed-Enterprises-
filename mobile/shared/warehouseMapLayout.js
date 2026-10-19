@@ -27,15 +27,15 @@ export const warehouseMapLayout = {
     { id: "P4-D", top: "32.5%", left: "1%", width: "5%", height: "7%" },
 
     // bottom
-    { id: "P5-A", top: "42%", left: "1%", width: "7%", height: "5%" },
-    { id: "P5-B", top: "42%", left: "8.5%", width: "7%", height: "5%" },
-    { id: "P5-C", top: "42%", left: "16%", width: "7%", height: "5%" },
-    { id: "P5-D", top: "42%", left: "23.5%", width: "7%", height: "5%" },
+    { id: "P5-A", top: "45%", left: "1%", width: "7%", height: "5%" },
+    { id: "P5-B", top: "45%", left: "8.5%", width: "7%", height: "5%" },
+    { id: "P5-C", top: "45%", left: "16%", width: "7%", height: "5%" },
+    { id: "P5-D", top: "45%", left: "23.5%", width: "7%", height: "5%" },
   ],
 
   labels: [
     { id: "label-1", text: "Cold Storage", top: "33%", left: "62%" },
-    { id: "label-2", text: "Dry Storage", top: "39%", left: "22%" },
+    { id: "label-2", text: "Dry Storage", top: "41%", left: "22%" },
     { id: "label-3", text: "Receiving Area", top: "78%", left: "7%" },
     { id: "label-4", text: "Dispatch Area", top: "86%", left: "69.5%" },
     { id: "label-5", text: "Disposal\nArea", top: "50%", left: "42.5%" },
@@ -88,7 +88,7 @@ export const warehouseMapLayout = {
 
     {
       id: "dvdr-wall-v-3",
-      top: "43.5%",
+      top: "46.4%",
       left: "35%",
       width: 2,
       height: "5%",
@@ -96,7 +96,7 @@ export const warehouseMapLayout = {
 
     {
       id: "dvdr-wall-h-1",
-      top: "48%",
+      top: "51%",
       left: "0%",
       width: "35%",
       height: 2,
@@ -339,7 +339,7 @@ export const warehouseMapLayout = {
     {
       id: "R4-F",
       top: "3%",
-      left: "84%",
+      left: "82%",
       width: "8%",
       height: "5%",
       className: "R4",
@@ -347,7 +347,7 @@ export const warehouseMapLayout = {
     {
       id: "R4-E",
       top: "3%",
-      left: "76%",
+      left: "74%",
       width: "8%",
       height: "5%",
       className: "R4",
@@ -355,7 +355,7 @@ export const warehouseMapLayout = {
     {
       id: "R4-D",
       top: "3%",
-      left: "68%",
+      left: "66%",
       width: "8%",
       height: "5%",
       className: "R4",
@@ -363,7 +363,7 @@ export const warehouseMapLayout = {
     {
       id: "R4-C",
       top: "2%",
-      left: "85%",
+      left: "83%",
       width: "8%",
       height: "5%",
       className: "R4",
@@ -371,7 +371,7 @@ export const warehouseMapLayout = {
     {
       id: "R4-B",
       top: "2%",
-      left: "77%",
+      left: "75%",
       width: "8%",
       height: "5%",
       className: "R4",
@@ -379,7 +379,7 @@ export const warehouseMapLayout = {
     {
       id: "R4-A",
       top: "2%",
-      left: "69%",
+      left: "67%",
       width: "8%",
       height: "5%",
       className: "R4",
