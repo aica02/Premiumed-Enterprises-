@@ -380,23 +380,16 @@ router.put("/updatePrices", async (req, res) => {
 
     if (validUpdates.length > 0) {
       const actor = req.actor || {};
-      const changedPrices = validUpdates
-        .map((product) => {
-          const previousPrice = productMap[product._id.toString()].price;
-          return `The price of ${product.name} was updated from ${previousPrice} to ${product.price}`;
-        })
-        .join("; ");
+      const adminName =
+        actor.username && actor.username !== "Unknown" ? actor.username : "Admin";
 
       await createActivityLog({
         userId: actor.userId || null,
-        username:
-          actor.username && actor.username !== "Unknown"
-            ? actor.username
-            : "Admin",
+        username: adminName,
         role: actor.role && actor.role !== "Unknown" ? actor.role : "Admin",
         action: "Set supply prices",
         module: "Inventory",
-        description: changedPrices,
+        description: `Admin "${adminName}" updated the supply prices`,
       });
     }
 
