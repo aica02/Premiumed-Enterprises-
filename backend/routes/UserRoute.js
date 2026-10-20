@@ -107,23 +107,59 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
     const { email, role, fullName, ...otherDetails } = req.body;
     const file = req.file;
 
+    // 1. Required field validation
     if (!fullName || !role || !email) {
       return res
         .status(400)
         .json({ error: "Full Name, Role, and Email are required." });
     }
 
-    const charset = "0123456789!_";
-    let generated = "";
-    for (let i = 0; i < 3; i++) {
-      generated += charset.charAt(Math.floor(Math.random() * charset.length));
+    const collection = mongoose.connection.collection("users");
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // 2. Check if email already exists
+    const emailExists = await collection.findOne({ email: normalizedEmail });
+    if (emailExists) {
+      return res.status(409).json({
+        success: false,
+        error: "Email already exists. Please use a different email.",
+      });
     }
+
+    // 3. Generate a unique username (retry if collision)
+    const charset = "0123456789";
     const namePart = fullName
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, "")
-      .slice(0, 5);
-    const generatedUsername = namePart + generated;
+      .split(" ")[0]
+      .replace(/[^a-z0-9]/g, "");
 
+    let generatedUsername;
+    let usernameExists = true;
+    let attempts = 0;
+
+    while (usernameExists && attempts < 10) {
+      let generated = "";
+      for (let i = 0; i < 3; i++) {
+        generated += charset.charAt(
+          Math.floor(Math.random() * charset.length)
+        );
+      }
+      generatedUsername = namePart + generated;
+
+      usernameExists = await collection.findOne({
+        username: generatedUsername,
+      });
+      attempts++;
+    }
+
+    if (usernameExists) {
+      return res.status(500).json({
+        success: false,
+        error: "Could not generate a unique username. Please try again.",
+      });
+    }
+
+    // 4. Continue with the rest
     const generatedPassword = generateRandomPassword();
     const employeeId = await getNextEmployeeId(role);
 
@@ -154,7 +190,7 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
       ...otherDetails,
       username: generatedUsername,
       password: hashedPassword,
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       role,
       fullName: fullName.trim(),
       employeeId,
@@ -165,7 +201,6 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
       updatedAt: new Date(),
     };
 
-    const collection = mongoose.connection.collection("users");
     const result = await collection.insertOne(userData);
     console.log("Employee inserted:", result.insertedId);
 
@@ -192,7 +227,7 @@ router.post("/", upload.single("profileImage"), async (req, res) => {
           generatedPassword,
           userData.fullName,
           userData.role,
-          userData.employeeId,
+          userData.employeeId
         );
       }
     } catch (emailErr) {

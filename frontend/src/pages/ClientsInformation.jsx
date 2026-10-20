@@ -151,130 +151,149 @@ const ClientsInformation = () => {
     await approveClientRequest(request);
   };
 
-  const approveClientRequest = async (request) => {
-    if (!request?._id) {
-      toast.error("Critical Error: Request ID is missing.");
+const approveClientRequest = async (request) => {
+  if (!request?._id) {
+    toast.error("Critical Error: Request ID is missing.");
+    return;
+  }
+
+  const toastId = toast.loading("Processing approval...");
+
+  try {
+    const charset = "0123456789";
+    const namePart = request.dialysisCenterName
+      .toLowerCase()
+      .split(" ")[0]
+      .replace(/[^a-z0-9]/g, "");
+
+    let username;
+    let usernameExists = true;
+    let attempts = 0;
+
+    while (usernameExists && attempts < 10) {
+      let generated = "";
+      for (let i = 0; i < 3; i++) {
+        generated += charset.charAt(
+          Math.floor(Math.random() * charset.length)
+        );
+      }
+      username = namePart + generated;
+
+      // Ask backend if username is already taken
+      const checkRes = await axios.get(
+        `${BACKEND_URL}/api/clients/check-username`,
+        { params: { username } }
+      );
+
+      usernameExists = checkRes.data.exists;
+      attempts++;
+    }
+
+    if (usernameExists) {
+      toast.error("Could not generate a unique username. Try again.", {
+        id: toastId,
+      });
       return;
     }
 
-    const toastId = toast.loading("Processing approval...");
-
-    try {
-      const charset = "0123456789!_";
-      let generated = "";
-
-      for (let i = 0; i < 3; i++) {
-        generated += charset.charAt(Math.floor(Math.random() * charset.length));
-      }
-
-      const namePart = request.dialysisCenterName
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, "")
-        .slice(0, 5);
-
-      const username = namePart + generated;
-
-      const passwordCharset =
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!";
-
-      let password = "";
-
-      for (let i = 0; i < 10; i++) {
-        password += passwordCharset.charAt(
-          Math.floor(Math.random() * passwordCharset.length),
-        );
-      }
-
-      const settingsRes = await axios.get(`${BACKEND_URL}/api/settings`);
-
-      const settings = settingsRes.data;
-
-      let fileBlob = null;
-      let fileName = "profile-image.jpg";
-      let fileType = "image/jpeg";
-
-      if (settings?.profileImage) {
-        try {
-          const fileResponse = await axios.get(settings.profileImage, {
-            responseType: "blob",
-          });
-
-          fileBlob = fileResponse.data;
-
-          if (settings.profileImage.toLowerCase().includes(".pdf")) {
-            fileName = "profile-document.pdf";
-            fileType = "application/pdf";
-          } else if (settings.profileImage.toLowerCase().includes(".png")) {
-            fileName = "profile-image.png";
-            fileType = "image/png";
-          } else if (settings.profileImage.toLowerCase().includes(".gif")) {
-            fileName = "profile-image.gif";
-            fileType = "image/gif";
-          } else if (settings.profileImage.toLowerCase().includes(".webp")) {
-            fileName = "profile-image.webp";
-            fileType = "image/webp";
-          }
-        } catch (imgErr) {
-          console.error("Failed to download file:", imgErr);
-        }
-      }
-
-      const formData = new FormData();
-
-      formData.append("requestId", request._id);
-      formData.append("username", username);
-      formData.append("password", password);
-      formData.append(
-        "profileImagePublicId",
-        settings?.profileImagePublicId || "",
-      );
-
-      if (fileBlob) {
-        const file = new File([fileBlob], fileName, { type: fileType });
-
-        formData.append("attachment", file);
-      }
-
-      const response = await axios.post(
-        `${BACKEND_URL}/api/auth/approve-client`,
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            "X-Username": localStorage.getItem("username") || "",
-            "X-User-Id": localStorage.getItem("userId") || "",
-            "X-Role": localStorage.getItem("role") || "Admin",
-          },
-        },
-      );
-
-      if (response.data.success) {
-        toast.success(
-          `Account approved! Email ${
-            response.data.emailSent ? "sent" : "not sent"
-          } successfully!`,
-          { id: toastId },
-        );
-
-        await fetchData();
-
-        setActiveModal(null);
-      } else {
-        toast.error(response.data.error || "Failed to approve request", {
-          id: toastId,
-        });
-      }
-    } catch (err) {
-      console.error("Approval error:", err);
-
-      toast.error(
-        err.response?.data?.error ||
-          err.message ||
-          "An error occurred during approval",
-        { id: toastId },
+    // Generate password
+    const passwordCharset =
+      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!";
+    let password = "";
+    for (let i = 0; i < 10; i++) {
+      password += passwordCharset.charAt(
+        Math.floor(Math.random() * passwordCharset.length)
       );
     }
-  };
+
+    // Settings + profile image
+    const settingsRes = await axios.get(`${BACKEND_URL}/api/settings`);
+    const settings = settingsRes.data;
+
+    let fileBlob = null;
+    let fileName = "profile-image.jpg";
+    let fileType = "image/jpeg";
+
+    if (settings?.profileImage) {
+      try {
+        const fileResponse = await axios.get(settings.profileImage, {
+          responseType: "blob",
+        });
+        fileBlob = fileResponse.data;
+
+        const url = settings.profileImage.toLowerCase();
+        if (url.includes(".pdf")) {
+          fileName = "profile-document.pdf";
+          fileType = "application/pdf";
+        } else if (url.includes(".png")) {
+          fileName = "profile-image.png";
+          fileType = "image/png";
+        } else if (url.includes(".gif")) {
+          fileName = "profile-image.gif";
+          fileType = "image/gif";
+        } else if (url.includes(".webp")) {
+          fileName = "profile-image.webp";
+          fileType = "image/webp";
+        }
+      } catch (imgErr) {
+        console.error("Failed to download file:", imgErr);
+      }
+    }
+
+    // Build form data
+    const formData = new FormData();
+    formData.append("requestId", request._id);
+    formData.append("username", username);
+    formData.append("password", password);
+    formData.append(
+      "profileImagePublicId",
+      settings?.profileImagePublicId || ""
+    );
+
+    if (fileBlob) {
+      const file = new File([fileBlob], fileName, { type: fileType });
+      formData.append("attachment", file);
+    }
+
+    // Approve request
+    const response = await axios.post(
+      `${BACKEND_URL}/api/auth/approve-client`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          "X-Username": localStorage.getItem("username") || "",
+          "X-User-Id": localStorage.getItem("userId") || "",
+          "X-Role": localStorage.getItem("role") || "Admin",
+        },
+      }
+    );
+
+    if (response.data.success) {
+      toast.success(
+        `Account approved! Email ${
+          response.data.emailSent ? "sent" : "not sent"
+        } successfully!`,
+        { id: toastId }
+      );
+
+      await fetchData();
+      setActiveModal(null);
+    } else {
+      toast.error(response.data.error || "Failed to approve request", {
+        id: toastId,
+      });
+    }
+  } catch (err) {
+    console.error("Approval error:", err);
+    toast.error(
+      err.response?.data?.error ||
+        err.message ||
+        "An error occurred during approval",
+      { id: toastId }
+    );
+  }
+};
 
   const handlePrintClients = () => {
     const columns = ["Client Name", "Email Address", "Phone", "Status"];

@@ -19,11 +19,11 @@ router.get("/", async (req, res) => {
     const filteredProducts = productsWithBatches.filter((product) => {
       const hasPriceZero = product.price === 0 || product.price === "0";
 
-      const hasStoredBatch = product.batches?.some(
-        (batch) => batch.status === "stored",
-      );
+      // const hasStoredBatch = product.batches?.some(
+      //   (batch) => batch.status === "stored",
+      // );
 
-      if (hasPriceZero || !hasStoredBatch) {
+      if (hasPriceZero) {
         return false;
       }
 

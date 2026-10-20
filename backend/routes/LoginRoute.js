@@ -124,32 +124,86 @@ router.get("/requests", async (req, res) => {
   }
 });
 
-router.post("/approve-client", upload.single("attachment"), async (req, res) => {
+router.post(
+  "/approve-client",
+  upload.single("attachment"),
+  async (req, res) => {
     if (!req.body || !req.body.requestId) {
       console.error("Payload Error: req.body is missing or empty.");
       return res.status(400).json({ error: "Required fields missing." });
     }
 
-    const { requestId, username, password, profileImagePublicId } = req.body;
+    const {
+      requestId,
+      username,
+      password,
+      profileImagePublicId,
+    } = req.body;
     const file = req.file;
 
     try {
-      const requestData = await ClientRequest.findById(requestId);
-      if (!requestData) {
-        console.error("Request not found:", requestId);
-        return res.status(404).json({ error: "Request not found" });
-      }
-
-      const existingUser = await User.findOne({
-        username: { $regex: new RegExp(`^${escapeRegex(username)}$`, "i") },
-      });
-      if (existingUser) {
-        console.error("Username already exists:", username);
+      // 1. Required field validation
+      if (!username || !password) {
         return res.status(400).json({
-          error: "Username already exists. Please choose a different username.",
+          success: false,
+          error: "Username and password are required.",
         });
       }
 
+      // 2. Find the client request
+      const requestData = await ClientRequest.findById(requestId);
+      if (!requestData) {
+        console.error("Request not found:", requestId);
+        return res
+          .status(404)
+          .json({ success: false, error: "Request not found." });
+      }
+
+      // 3. Prevent re-approval
+      if (requestData.status === "APPROVED") {
+        return res.status(409).json({
+          success: false,
+          error: "This request has already been approved.",
+        });
+      }
+
+      // 4. Username uniqueness check (case-insensitive)
+      const existingUsername = await User.findOne({
+        username: {
+          $regex: new RegExp(`^${escapeRegex(username)}$`, "i"),
+        },
+      });
+      if (existingUsername) {
+        console.error("Username already exists:", username);
+        return res.status(409).json({
+          success: false,
+          error:
+            "Username already exists. Please choose a different username.",
+        });
+      }
+
+      // 5. Email uniqueness check (case-insensitive)
+      const normalizedEmail = (requestData.email || "").toLowerCase().trim();
+      if (normalizedEmail) {
+        const existingEmail = await User.findOne({
+          email: {
+            $regex: new RegExp(
+              `^${escapeRegex(normalizedEmail)}$`,
+              "i"
+            ),
+          },
+        });
+        if (existingEmail) {
+          console.error("Email already exists:", normalizedEmail);
+          return res.status(409).json({
+            success: false,
+            error:
+              "A user with this email already exists. Cannot approve this request.",
+          });
+        }
+      }
+
+      // 6. Hash password
       const salt = await bcrypt.genSalt(10);
       const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -158,22 +212,24 @@ router.post("/approve-client", upload.single("attachment"), async (req, res) => 
       const settingsData = await Settings.findOne();
       const profileImageUrl = settingsData?.profileImage || "";
 
+      // 7. Build user document
       const userData = {
         username,
         password: hashedPassword,
         role: "User",
         status: "Active",
-        profileImage: "",
-        profileImagePublicId: "",
+        profileImage: profileImageUrl,
+        profileImagePublicId: profileImagePublicId || "",
         fullName: requestData.dialysisCenterName || "N/A",
-        facilityType: requestData.facilityType || "Standalone Dialysis Center",
+        facilityType:
+          requestData.facilityType || "Standalone Dialysis Center",
         yearEstablished: requestData.yearEstablished || "N/A",
         registrationNumber: requestData.registrationNumber || "N/A",
         machines: Number(requestData.machines) || 0,
         address: requestData.address || "N/A",
         phoneNumber: requestData.mobile || "N/A",
         landline: requestData.landline || "N/A",
-        email: requestData.email || "N/A",
+        email: normalizedEmail || "N/A",
         ownership: requestData.ownership || "Private",
         ownerName: requestData.ownerName || "N/A",
         medicalDirector: requestData.medicalDirector || "N/A",
@@ -187,18 +243,33 @@ router.post("/approve-client", upload.single("attachment"), async (req, res) => 
         updatedAt: new Date(),
       };
 
+      // 8. Insert (catch race-condition duplicates)
       console.log("Inserting user data...");
-      const result = await collection.insertOne(userData);
-      console.log("User inserted successfully! ID:", result.insertedId);
+      let result;
+      try {
+        result = await collection.insertOne(userData);
+        console.log("User inserted successfully! ID:", result.insertedId);
+      } catch (insertErr) {
+        if (insertErr.code === 11000) {
+          return res.status(409).json({
+            success: false,
+            error: "Username or email already exists.",
+          });
+        }
+        throw insertErr;
+      }
 
       const userId = result.insertedId;
+
+      // 9. Mark request as approved
       requestData.status = "APPROVED";
       await requestData.save();
 
+      // 10. Activity log
       try {
         await createActivityLog({
-          userId: userId,
-          username: username,
+          userId,
+          username,
           role: "User",
           action: "Approve client",
           module: "Client management",
@@ -208,6 +279,7 @@ router.post("/approve-client", upload.single("attachment"), async (req, res) => 
         console.error("Failed to create activity log:", logErr);
       }
 
+      // 11. Send approval email
       let emailResult = { success: false, error: null };
       try {
         if (process.env.SYSTEM_EMAIL && process.env.SYSTEM_PASSWORD) {
@@ -223,18 +295,18 @@ router.post("/approve-client", upload.single("attachment"), async (req, res) => 
             username,
             password,
             requestData.dialysisCenterName,
-            file,
+            file
           );
           console.log(
             "Email result:",
-            emailResult.success ? "SUCCESS" : "FAILED",
+            emailResult.success ? "SUCCESS" : "FAILED"
           );
           if (emailResult.error) {
             console.error("Email error:", emailResult.error);
           }
         } else {
           console.warn(
-            "System email credentials not configured. Email not sent.",
+            "System email credentials not configured. Email not sent."
           );
         }
       } catch (emailErr) {
@@ -242,17 +314,17 @@ router.post("/approve-client", upload.single("attachment"), async (req, res) => 
         emailResult = { success: false, error: emailErr.message };
       }
 
-      const response = {
+      // 12. Respond
+      res.json({
         success: true,
         message: "Account created and client approved successfully!",
         emailSent: emailResult.success || false,
         user: {
-          username: username,
+          username,
           email: requestData.email,
           fullName: requestData.dialysisCenterName,
         },
-      };
-      res.json(response);
+      });
     } catch (err) {
       console.error("APPROVAL ERROR");
       console.error("Error name:", err.name);
@@ -264,9 +336,8 @@ router.post("/approve-client", upload.single("attachment"), async (req, res) => 
         error: err.message || "Internal server error",
       });
     }
-  },
+  }
 );
-
 // GET PROFILE
 router.get("/profile/:username", async (req, res) => {
   try {

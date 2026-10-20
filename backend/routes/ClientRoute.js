@@ -48,17 +48,79 @@ router.get("/requests", async (req, res) => {
   }
 });
 
+// GET /api/client/check-username?username=xxx
+router.get("/check-username", async (req, res) => {
+  try {
+    const { username } = req.query;
+
+    if (!username) {
+      return res.status(400).json({ error: "Username is required." });
+    }
+
+    const exists = await User.findOne({ username });
+    return res.status(200).json({ exists: !!exists });
+  } catch (err) {
+    console.error("Check username error:", err);
+    res.status(500).json({ error: "Failed to check username." });
+  }
+});
+
 router.post("/approve-client", async (req, res) => {
   const { requestId, username, password } = req.body;
 
   try {
-    const requestData = await ClientRequest.findById(requestId);
-    if (!requestData)
-      return res.status(404).json({ error: "Request not found" });
+    // 1. Validate
+    if (!requestId || !username || !password) {
+      return res.status(400).json({
+        success: false,
+        error: "requestId, username, and password are required.",
+      });
+    }
 
+    // 2. Find the request
+    const requestData = await ClientRequest.findById(requestId);
+    if (!requestData) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Request not found." });
+    }
+
+    if (requestData.status === "APPROVED") {
+      return res.status(409).json({
+        success: false,
+        error: "This request has already been approved.",
+      });
+    }
+
+    // 3. Check if username already exists
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(409).json({
+        success: false,
+        error: "Username already exists. Please try again.",
+      });
+    }
+
+    // 4. Check if email already exists (using the email from the request)
+    const normalizedEmail = (requestData.email || "").toLowerCase().trim();
+    if (normalizedEmail) {
+      const existingEmail = await User.findOne({ email: normalizedEmail });
+      if (existingEmail) {
+        return res.status(409).json({
+          success: false,
+          error: "A user with this email already exists.",
+        });
+      }
+    }
+
+    // 5. Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // 6. Create the user
     const newUser = new User({
       username,
-      password,
+      password: hashedPassword,
       role: "User",
       status: "Active",
 
@@ -71,7 +133,7 @@ router.post("/approve-client", async (req, res) => {
       address: requestData.address || "N/A",
       phoneNumber: requestData.mobile,
       landline: requestData.landline || "N/A",
-      email: requestData.email,
+      email: normalizedEmail,
 
       // OWNERSHIP & PERSONNEL
       ownership: requestData.ownership || "Private",
@@ -87,27 +149,49 @@ router.post("/approve-client", async (req, res) => {
       procurementEmail: requestData.procurementEmail || "N/A",
     });
 
-    await newUser.save();
+    // 7. Save (catch race-condition duplicates as a safety net)
+    try {
+      await newUser.save();
+    } catch (saveErr) {
+      if (saveErr.code === 11000) {
+        return res.status(409).json({
+          success: false,
+          error: "Username or email already exists.",
+        });
+      }
+      throw saveErr;
+    }
 
+    // 8. Mark the request as approved
     requestData.status = "APPROVED";
     await requestData.save();
 
-    const actor = getActor(req);
-    await createActivityLog({
-      userId: actor.userId,
-      username: actor.username || username,
-      role: actor.role || "Admin",
-      action: "Approve client",
-      module: "Client Management",
-      description: `Client account "${username}" was approved and activated.`,
-    });
+    // 9. Activity log
+    try {
+      const actor = getActor(req);
+      await createActivityLog({
+        userId: actor.userId,
+        username: actor.username || username,
+        role: actor.role || "Admin",
+        action: "Approve client",
+        module: "Client Management",
+        description: `Client account "${username}" was approved and activated.`,
+      });
+    } catch (logErr) {
+      console.error("Activity log error:", logErr);
+    }
 
-    res
-      .status(200)
-      .json({ message: "Account activated and password hashed successfully!" });
+    res.status(200).json({
+      success: true,
+      message: "Account activated and password hashed successfully!",
+      emailSent: false,
+    });
   } catch (err) {
     console.error("Approval Error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message || "Failed to approve client.",
+    });
   }
 });
 
