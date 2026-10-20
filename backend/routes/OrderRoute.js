@@ -18,6 +18,10 @@ import {
   sendDepositSlipToAccountant,
   sendOrderStatusUpdate,
 } from "../utils/emailService.js";
+import {
+  checkBatchById,
+  checkProductStock,
+} from "../utils/inventoryAlertService.js";
 
 const router = express.Router();
 
@@ -432,6 +436,11 @@ router.post("/pick-item", async (req, res) => {
     await Product.findByIdAndUpdate(product._id, {
       $inc: { totalQuantity: -scannedQty },
     });
+
+    //  NEW: trigger SMS/alert check after picking
+    checkProductStock(product.itemCode).catch((err) =>
+      console.error("[Hook] pick-item checkProductStock failed:", err),
+    );
 
     res.json({ message: "Item picked successfully via FEFO (Unexpired Only)" });
   } catch (err) {
@@ -1211,6 +1220,12 @@ router.post("/:orderId/complete", async (req, res) => {
           newTotalQuantity: product.totalQuantity,
           newTotalBoxes: product.totalBoxes,
         });
+         checkProductStock(cleanCode).catch((err) =>
+          console.error(
+            `[Hook] complete checkProductStock failed for ${cleanCode}:`,
+            err,
+          ),
+        );
       } else {
         console.warn(`Product not found for itemCode: ${cleanCode}`);
       }
