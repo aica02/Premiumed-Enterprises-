@@ -59,6 +59,53 @@ router.patch('/all', async (req, res) => {
   }
 });
 
+router.patch('/stock-alerts', async (req, res) => {
+  try {
+    const {
+      stockAlertsEnabled,
+      reorderNotifyOwner,
+      reorderNotifySupervisor,
+      reorderNotifyStaff,
+      ownerNumber,
+    } = req.body;
+
+    const updates = {};
+    for (const [field, value] of Object.entries({
+      stockAlertsEnabled,
+      reorderNotifyOwner,
+      reorderNotifySupervisor,
+      reorderNotifyStaff,
+    })) {
+      if (value !== undefined) {
+        if (typeof value !== 'boolean') {
+          return res.status(400).json({ message: `${field} must be a boolean` });
+        }
+        updates[field] = value;
+      }
+    }
+
+    if (ownerNumber !== undefined) {
+      if (typeof ownerNumber !== 'string' || ownerNumber.length > 30) {
+        return res.status(400).json({ message: 'ownerNumber must be a string of at most 30 characters' });
+      }
+      updates.ownerNumber = ownerNumber.trim();
+    }
+
+    if (reorderNotifyStaff !== undefined) {
+      updates.notifyStaffStock = reorderNotifyStaff;
+    }
+
+    const settings = await Settings.findOneAndUpdate(
+      {},
+      { $set: updates },
+      { new: true, upsert: true, runValidators: true }
+    );
+    res.json(settings);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 router.patch('/accountant-email', async (req, res) => {
   try {
     const { accountantEmail } = req.body;

@@ -1,6 +1,7 @@
 import Batch from "../models/Batch.js";
 import Product from "../models/Product.js";
 import User from "../models/User.js";
+import Settings from "../models/Settings.js";
 import AlertLog from "../models/AlertLogs.js";
 import { sendSMS } from "./smsService.js";
 
@@ -64,6 +65,64 @@ async function getAdminRecipients() {
   return recipients;
 }
 
+async function getStockRecipients(settings) {
+  if (!settings.stockAlertsEnabled) return [];
+
+  const roles = [];
+  if (settings.reorderNotifySupervisor) roles.push("Admin");
+  if (settings.reorderNotifyStaff && settings.notifyStaffStock) {
+    roles.push("Staff");
+  }
+
+  const users = roles.length
+    ? await User.find({
+        role: { $in: roles },
+        status: "Active",
+        phoneNumber: { $exists: true, $nin: [null, ""] },
+      })
+        .select("_id username fullName role phoneNumber")
+        .lean()
+    : [];
+
+  const recipients = [];
+  for (const user of users) {
+    const phone = normalizePhone(user.phoneNumber);
+    if (phone) {
+      recipients.push({
+        ...user,
+        phoneNumber: phone,
+        recipientName: user.username,
+      });
+    } else {
+      console.warn(
+        `[InventoryAlert] Skipping ${user.role} "${user.username}" -- invalid phone: "${user.phoneNumber}"`
+      );
+    }
+  }
+
+  if (settings.reorderNotifyOwner && settings.ownerNumber) {
+    const phone = normalizePhone(settings.ownerNumber);
+    if (phone) {
+      recipients.push({
+        _id: "owner",
+        username: "Owner",
+        recipientName: "Owner",
+        phoneNumber: phone,
+      });
+    } else {
+      console.warn(
+        `[InventoryAlert] Skipping Owner -- invalid phone: "${settings.ownerNumber}"`
+      );
+    }
+  }
+
+  return [
+    ...new Map(
+      recipients.map((recipient) => [recipient.phoneNumber, recipient])
+    ).values(),
+  ];
+}
+
 async function wasRecentlyAlerted(batchId, alertType) {
   const cutoff = new Date(Date.now() - COOLDOWN_HOURS * 60 * 60 * 1000);
   const existing = await AlertLog.findOne({
@@ -95,13 +154,23 @@ export async function runInventoryAlertCheck({ force = false } = {}) {
     `[InventoryAlert] force=${force} | NEAR_EXPIRY_DAYS=${NEAR_EXPIRY_DAYS} | LOW_STOCK_DEFAULT=${LOW_STOCK_DEFAULT} | COOLDOWN_HOURS=${COOLDOWN_HOURS}`
   );
 
+  const settings = (await Settings.findOne().lean()) || {};
+  const stockSettings = {
+    stockAlertsEnabled: settings.stockAlertsEnabled ?? true,
+    notifyStaffStock: settings.notifyStaffStock ?? true,
+    reorderNotifyOwner: settings.reorderNotifyOwner ?? true,
+    reorderNotifySupervisor: settings.reorderNotifySupervisor ?? true,
+    reorderNotifyStaff: settings.reorderNotifyStaff ?? true,
+    ownerNumber: settings.ownerNumber ?? "",
+  };
   const recipients = await getAdminRecipients();
+  const stockRecipients = await getStockRecipients(stockSettings);
 
-  if (recipients.length === 0) {
+  if (recipients.length === 0 && stockRecipients.length === 0) {
     console.error(
-      "[InventoryAlert] No active Admin users with valid phone numbers found -- skipping."
+      "[InventoryAlert] No enabled inventory-alert recipients with valid phone numbers found -- skipping."
     );
-    return { skipped: true, reason: "No admin recipients" };
+    return { skipped: true, reason: "No inventory alert recipients" };
   }
 
   const now = new Date();
@@ -201,17 +270,19 @@ export async function runInventoryAlertCheck({ force = false } = {}) {
     "\n[InventoryAlert] --- STEP 4: Checking LOW-STOCK products (using totalQuantity) ---"
   );
 
-  const lowStockProducts = await Product.find({
-    isKit: false,
-    $expr: {
-      $lte: [
-        { $ifNull: ["$totalQuantity", 0] },
-        { $ifNull: ["$reorderLevel", LOW_STOCK_DEFAULT] },
-      ],
-    },
-  })
-    .select("name itemCode unitType reorderLevel totalQuantity")
-    .lean();
+  const lowStockProducts = stockSettings.stockAlertsEnabled
+    ? await Product.find({
+        isKit: false,
+        $expr: {
+          $lte: [
+            { $ifNull: ["$totalQuantity", 0] },
+            { $ifNull: ["$reorderLevel", LOW_STOCK_DEFAULT] },
+          ],
+        },
+      })
+        .select("name itemCode unitType reorderLevel totalQuantity")
+        .lean()
+    : [];
 
   console.log(
     `[InventoryAlert] Found ${lowStockProducts.length} product(s) at or below reorder level.`
@@ -243,10 +314,8 @@ export async function runInventoryAlertCheck({ force = false } = {}) {
   // ---------- SUMMARY BEFORE SENDING ----------
   console.log("\n[InventoryAlert] --- STEP 5: Alert queue summary ---");
   console.log(`[InventoryAlert] Total alerts to send: ${alerts.length}`);
-  console.log(`[InventoryAlert] Recipients per alert: ${recipients.length}`);
-  console.log(
-    `[InventoryAlert] Expected total SMS: ${alerts.length * recipients.length}`
-  );
+  console.log(`[InventoryAlert] Expiry recipients: ${recipients.length}`);
+  console.log(`[InventoryAlert] Low-stock recipients: ${stockRecipients.length}`);
 
   if (alerts.length === 0) {
     console.log("[InventoryAlert] No alerts to send. Exiting.");
@@ -257,7 +326,7 @@ export async function runInventoryAlertCheck({ force = false } = {}) {
       sent: 0,
       failed: 0,
       totalAlerts: 0,
-      totalRecipients: recipients.length,
+      totalRecipients: recipients.length + stockRecipients.length,
       results: [],
     };
   }
@@ -276,25 +345,34 @@ export async function runInventoryAlertCheck({ force = false } = {}) {
       `[InventoryAlert]   Message preview: "${alert.message.replace(/\n/g, " | ")}"`
     );
 
-    for (const admin of recipients) {
+    const alertRecipients =
+      alert.type === "low_stock" ? stockRecipients : recipients;
+    if (alertRecipients.length === 0) {
+      console.log(
+        `[InventoryAlert] No enabled recipients for ${alert.type}; skipping delivery.`
+      );
+      continue;
+    }
+
+    for (const recipient of alertRecipients) {
       try {
         console.log(
-          `[InventoryAlert]   -> Sending to ${admin.username} (${admin.phoneNumber})...`
+          `[InventoryAlert]   -> Sending to ${recipient.username} (${recipient.phoneNumber})...`
         );
-        const resp = await sendSMS(admin.phoneNumber, alert.message);
+        const resp = await sendSMS(recipient.phoneNumber, alert.message);
         console.log(
-          `[InventoryAlert]   SENT to ${admin.username} (${admin.phoneNumber}) -- API response:`,
+          `[InventoryAlert]   SENT to ${recipient.username} (${recipient.phoneNumber}) -- API response:`,
           JSON.stringify(resp)
         );
         results.push({
           type: alert.type,
           item: alert.batch.itemName,
-          admin: admin.username,
+          admin: recipient.recipientName || recipient.username,
           sent: true,
         });
       } catch (err) {
         console.error(
-          `[InventoryAlert]   FAILED to ${admin.username} (${admin.phoneNumber}):`
+          `[InventoryAlert]   FAILED to ${recipient.username} (${recipient.phoneNumber}):`
         );
         console.error("     Message:", err.message);
         if (err.response) {
@@ -317,7 +395,7 @@ export async function runInventoryAlertCheck({ force = false } = {}) {
         results.push({
           type: alert.type,
           item: alert.batch.itemName,
-          admin: admin.username,
+          admin: recipient.recipientName || recipient.username,
           sent: false,
           error: err.message,
         });
@@ -336,14 +414,16 @@ export async function runInventoryAlertCheck({ force = false } = {}) {
   console.log(`[InventoryAlert] Alerts processed : ${alerts.length}`);
   console.log(`[InventoryAlert] SMS sent         : ${sentCount}`);
   console.log(`[InventoryAlert] SMS failed       : ${failedCount}`);
-  console.log(`[InventoryAlert] Recipients       : ${recipients.length}`);
+  console.log(
+    `[InventoryAlert] Recipients       : ${recipients.length + stockRecipients.length}`
+  );
   console.log("");
 
   return {
     sent: sentCount,
     failed: failedCount,
     totalAlerts: alerts.length,
-    totalRecipients: recipients.length,
+    totalRecipients: recipients.length + stockRecipients.length,
     results,
   };
 }
@@ -480,6 +560,20 @@ export async function checkBatchById(batchId) {
 
 export async function checkProductStock(itemCode) {
   try {
+    const settings = (await Settings.findOne().lean()) || {};
+    const stockSettings = {
+      stockAlertsEnabled: settings.stockAlertsEnabled ?? true,
+      notifyStaffStock:
+        settings.notifyStaffStock ?? settings.reorderNotifyStaff ?? true,
+      reorderNotifyOwner: settings.reorderNotifyOwner ?? true,
+      reorderNotifySupervisor: settings.reorderNotifySupervisor ?? true,
+      reorderNotifyStaff: settings.reorderNotifyStaff ?? true,
+      ownerNumber: settings.ownerNumber ?? "",
+    };
+    if (!stockSettings.stockAlertsEnabled) {
+      return { skipped: true, reason: "Stock alerts disabled" };
+    }
+
     const product = await Product.findOne({ itemCode, isKit: false })
       .select("name itemCode unitType reorderLevel totalQuantity")
       .lean();
@@ -501,10 +595,12 @@ export async function checkProductStock(itemCode) {
       return { skipped: true, reason: "Above reorder level" };
     }
 
-    const recipients = await getAdminRecipients();
+    const recipients = await getStockRecipients(stockSettings);
     if (recipients.length === 0) {
-      console.log("[InventoryAlert] (event) No admin recipients -- skipping.");
-      return { skipped: true, reason: "No admin recipients" };
+      console.log(
+        "[InventoryAlert] (event) No enabled stock-alert recipients -- skipping."
+      );
+      return { skipped: true, reason: "No stock alert recipients" };
     }
 
     if (await wasRecentlyAlerted(product._id, "low_stock")) {
@@ -526,7 +622,10 @@ export async function checkProductStock(itemCode) {
         console.log(
           `[InventoryAlert] (event) low_stock SMS sent to ${admin.username} for ${product.itemCode}`
         );
-        results.push({ admin: admin.username, sent: true });
+        results.push({
+          admin: admin.recipientName || admin.username,
+          sent: true,
+        });
       } catch (err) {
         console.error(
           `[InventoryAlert] (event) low_stock failed for ${admin.username} (${admin.phoneNumber}):`
@@ -549,7 +648,11 @@ export async function checkProductStock(itemCode) {
             JSON.stringify(err.config.data, null, 2)
           );
         }
-        results.push({ admin: admin.username, sent: false, error: err.message });
+        results.push({
+          admin: admin.recipientName || admin.username,
+          sent: false,
+          error: err.message,
+        });
       }
     }
     await logAlert(product._id, "low_stock");

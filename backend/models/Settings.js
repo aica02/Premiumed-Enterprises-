@@ -6,6 +6,7 @@ const SettingsSchema = new mongoose.Schema({
   notifySupervisor: { type: Boolean, default: true },
   stockAlertsEnabled: { type: Boolean, default: true },
   notifyStaffStock: { type: Boolean, default: true },
+  reorderNotifyOwner: { type: Boolean, default: true },
   reorderNotifySupervisor: { type: Boolean, default: true },
   reorderNotifyStaff: { type: Boolean, default: true },
   offlineMode: { type: Boolean, default: true },
@@ -13,6 +14,7 @@ const SettingsSchema = new mongoose.Schema({
   accountantEmail: { type: String, default: "" },
   profileImage: { type: String, default: "" },
   profileImagePublicId: { type: String, default: "" },
+  ownerNumber: { type: String, default: "" },
 }, { timestamps: true });
 
 // Compile schema into a model

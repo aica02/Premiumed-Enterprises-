@@ -14,6 +14,12 @@ const Settings = () => {
   const [autoPrioritize, setAutoPrioritize] = useState(true);
   const [urgencyThreshold, setUrgencyThreshold] = useState(0);
   const [notifySupervisor, setNotifySupervisor] = useState(true);
+  const [stockAlertsEnabled, setStockAlertsEnabled] = useState(true);
+  const [notifyOwner, setNotifyOwner] = useState(true);
+  const [notifyStockSupervisor, setNotifyStockSupervisor] = useState(true);
+  const [notifyStockStaff, setNotifyStockStaff] = useState(true);
+  const [ownerNumber, setOwnerNumber] = useState("");
+  const [stockAlertSaving, setStockAlertSaving] = useState(false);
   const [accountantEmail, setAccountantEmail] = useState("");
   const [emailSaving, setEmailSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -35,6 +41,13 @@ const Settings = () => {
           setNotifySupervisor(res.data.notifySupervisor ?? true);
           setAccountantEmail(res.data.accountantEmail ?? "");
           setAttachmentUrl(res.data.profileImage || "");
+          setStockAlertsEnabled(res.data.stockAlertsEnabled ?? true);
+          setNotifyOwner(res.data.reorderNotifyOwner ?? true);
+          setNotifyStockSupervisor(res.data.reorderNotifySupervisor ?? true);
+          setNotifyStockStaff(
+            res.data.notifyStaffStock ?? res.data.reorderNotifyStaff ?? true,
+          );
+          setOwnerNumber(res.data.ownerNumber ?? "");
         }
       } catch (err) {
         console.error("Error fetching settings:", err);
@@ -117,6 +130,45 @@ const Settings = () => {
       toast.success("Urgency settings updated!");
     } catch (err) {
       toast.error("Failed to save urgency settings");
+    }
+  };
+
+  const handleStockAlertChange = async (updatedFields) => {
+    const payload = {
+      stockAlertsEnabled:
+        updatedFields.stockAlertsEnabled ?? stockAlertsEnabled,
+      reorderNotifyOwner: updatedFields.reorderNotifyOwner ?? notifyOwner,
+      reorderNotifySupervisor:
+        updatedFields.reorderNotifySupervisor ?? notifyStockSupervisor,
+      reorderNotifyStaff: updatedFields.reorderNotifyStaff ?? notifyStockStaff,
+      ownerNumber: updatedFields.ownerNumber ?? ownerNumber,
+    };
+
+    setStockAlertSaving(true);
+    try {
+      const response = await axios.patch(
+        `${BACKEND_URL}/api/settings/stock-alerts`,
+        payload,
+        {
+          headers: {
+            "X-Username": localStorage.getItem("username") || "",
+            "X-User-Id": localStorage.getItem("userId") || "",
+            "X-Role": localStorage.getItem("role") || "Admin",
+          },
+        },
+      );
+      setStockAlertsEnabled(response.data.stockAlertsEnabled);
+      setNotifyOwner(response.data.reorderNotifyOwner);
+      setNotifyStockSupervisor(response.data.reorderNotifySupervisor);
+      setNotifyStockStaff(response.data.reorderNotifyStaff);
+      setOwnerNumber(response.data.ownerNumber || "");
+      toast.success("Stock alert settings updated!");
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || "Failed to save stock alert settings",
+      );
+    } finally {
+      setStockAlertSaving(false);
     }
   };
 
@@ -347,10 +399,44 @@ const Settings = () => {
                 </span>
               </div>
               <label className="switch">
-                <input type="checkbox" defaultChecked />
+                <input
+                  type="checkbox"
+                  checked={notifyOwner}
+                  disabled={stockAlertSaving}
+                  onChange={(e) => {
+                    const value = e.target.checked;
+                    setNotifyOwner(value);
+                    handleStockAlertChange({ reorderNotifyOwner: value });
+                  }}
+                />
                 <span className="slider round"></span>
               </label>
             </div>
+            {notifyOwner && (
+              <div className="setting-input">
+                <label className="setting-label" htmlFor="owner-number">
+                  Owner phone number
+                </label>
+                <div className="flex-row">
+                  <input
+                    id="owner-number"
+                    type="tel"
+                    value={ownerNumber}
+                    onChange={(e) => setOwnerNumber(e.target.value)}
+                    placeholder="+63 9XX XXX XXXX"
+                    autoComplete="tel"
+                    maxLength={30}
+                  />
+                  <button
+                    className="save-btn"
+                    disabled={stockAlertSaving}
+                    onClick={() => handleStockAlertChange({ ownerNumber })}
+                  >
+                    {stockAlertSaving ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="toggle-item">
               <div className="toggle-text">
                 <p className="setting-label">Notify Supervisor</p>
@@ -359,7 +445,16 @@ const Settings = () => {
                 </span>
               </div>
               <label className="switch">
-                <input type="checkbox" defaultChecked />
+                <input
+                  type="checkbox"
+                  checked={notifyStockSupervisor}
+                  disabled={stockAlertSaving}
+                  onChange={(e) => {
+                    const value = e.target.checked;
+                    setNotifyStockSupervisor(value);
+                    handleStockAlertChange({ reorderNotifySupervisor: value });
+                  }}
+                />
                 <span className="slider round"></span>
               </label>
             </div>
@@ -371,7 +466,16 @@ const Settings = () => {
                 </span>
               </div>
               <label className="switch">
-                <input type="checkbox" defaultChecked />
+                <input
+                  type="checkbox"
+                  checked={notifyStockStaff}
+                  disabled={stockAlertSaving}
+                  onChange={(e) => {
+                    const value = e.target.checked;
+                    setNotifyStockStaff(value);
+                    handleStockAlertChange({ reorderNotifyStaff: value });
+                  }}
+                />
                 <span className="slider round"></span>
               </label>
             </div>
