@@ -18,6 +18,7 @@ import "../styles/capsules.css";
 import "../styles/ConfirmModal.css";
 import "../styles/formValidation.css";
 import { Toaster, toast } from "react-hot-toast";
+import AddressFields from "../components/AddressFields";
 import logo from "../assets/Premiumed logo.png";
 import EmptyState from "../components/EmptyState";
 import { generateSupplyFilteredReport } from "../utils/pdf/SupplierInfoReportEngine";
@@ -26,8 +27,10 @@ import usePolling from "../hooks/usePolling";
 import {
   COUNTRY_CODES,
   FIELD_MAX_LENGTHS,
+  combineAddress,
   formatFieldInput,
   formatInternationalPhone,
+  splitAddress,
 } from "../utils/fieldFormatting";
 import {
   combineFullName,
@@ -50,8 +53,10 @@ const SUPPLIER_VALIDATION_FIELDS = [
   "phone",
   "email",
   "tinNumber",
-  "address",
-  "location",
+  "city",
+  "province",
+  "locationCity",
+  "locationProvince",
   "role",
   "status",
   "notes",
@@ -64,8 +69,10 @@ const SUPPLIER_VALIDATION_OPTIONS = {
   phone: { required: true, label: "Phone Number" },
   email: { required: true, label: "Email" },
   tinNumber: { required: true, label: "TIN Number" },
-  address: { required: true, label: "Address" },
-  location: { required: true, label: "Location" },
+  city: { required: true, label: "City" },
+  province: { required: true, label: "Province" },
+  locationCity: { required: true, label: "City" },
+  locationProvince: { required: true, label: "Province" },
   role: { required: true, label: "Role" },
   status: { required: true, label: "Status" },
   notes: { required: true, label: "Notes" },
@@ -167,8 +174,11 @@ const SuppliersInformation = () => {
     contactLastName: "",
     phone: "",
     email: "",
-    address: "",
+    city: "",
+    province: "",
     location: "",
+    locationCity: "",
+    locationProvince: "",
     status: "Active",
     tinNumber: "",
     notes: "",
@@ -666,6 +676,10 @@ const SuppliersInformation = () => {
     const formattedEmail = formatFieldInput("email", dataToSave.email || "");
 
     const { contactFirstName, contactLastName, ...supplierFields } = dataToSave;
+    delete supplierFields.city;
+    delete supplierFields.province;
+    delete supplierFields.locationCity;
+    delete supplierFields.locationProvince;
     const formattedSupplier = {
       ...supplierFields,
       name: formatFieldInput(
@@ -680,8 +694,11 @@ const SuppliersInformation = () => {
         ? formatInternationalPhone(supplierPhoneCountryCode, formattedPhone)
         : "",
       email: formattedEmail,
-      address: formatFieldInput("address", dataToSave.address || "").trim(),
-      location: formatFieldInput("address", dataToSave.location || "").trim(),
+      address: combineAddress(dataToSave.city, dataToSave.province),
+      location: combineAddress(
+        dataToSave.locationCity,
+        dataToSave.locationProvince,
+      ),
       tinNumber: formatFieldInput("tinNumber", dataToSave.tinNumber || ""),
     };
 
@@ -785,11 +802,44 @@ const SuppliersInformation = () => {
       name === "contactLastName"
     ) {
       value = formatFieldInput("ownerName", value);
-    } else if (name === "address" || name === "location") {
+    } else if (name === "address") {
       value = formatFieldInput("address", value);
+    } else if (
+      name === "city" ||
+      name === "province" ||
+      name === "locationCity" ||
+      name === "locationProvince"
+    ) {
+      value = formatFieldInput(
+        name === "locationCity"
+          ? "city"
+          : name === "locationProvince"
+            ? "province"
+            : name,
+        value,
+      );
     }
     setNewSupplier((prev) => {
-      const next = { ...prev, [name]: value };
+      const next = {
+        ...prev,
+        [name]: value,
+        ...(name === "city" || name === "province"
+          ? {
+              address: combineAddress(
+                name === "city" ? value : prev.city,
+                name === "province" ? value : prev.province,
+              ),
+            }
+          : {}),
+        ...(name === "locationCity" || name === "locationProvince"
+          ? {
+              location: combineAddress(
+                name === "locationCity" ? value : prev.locationCity,
+                name === "locationProvince" ? value : prev.locationProvince,
+              ),
+            }
+          : {}),
+      };
       if (name === "contactFirstName" || name === "contactLastName") {
         next.contact = combineFullName(
           next.contactFirstName,
@@ -846,11 +896,44 @@ const SuppliersInformation = () => {
       name === "contactLastName"
     ) {
       value = formatFieldInput("ownerName", value);
-    } else if (name === "address" || name === "location") {
+    } else if (name === "address") {
       value = formatFieldInput("address", value);
+    } else if (
+      name === "city" ||
+      name === "province" ||
+      name === "locationCity" ||
+      name === "locationProvince"
+    ) {
+      value = formatFieldInput(
+        name === "locationCity"
+          ? "city"
+          : name === "locationProvince"
+            ? "province"
+            : name,
+        value,
+      );
     }
     setSelectedSupplier((prev) => {
-      const next = { ...prev, [name]: value };
+      const next = {
+        ...prev,
+        [name]: value,
+        ...(name === "city" || name === "province"
+          ? {
+              address: combineAddress(
+                name === "city" ? value : prev.city,
+                name === "province" ? value : prev.province,
+              ),
+            }
+          : {}),
+        ...(name === "locationCity" || name === "locationProvince"
+          ? {
+              location: combineAddress(
+                name === "locationCity" ? value : prev.locationCity,
+                name === "locationProvince" ? value : prev.locationProvince,
+              ),
+            }
+          : {}),
+      };
       if (name === "contactFirstName" || name === "contactLastName") {
         next.contact = combineFullName(
           next.contactFirstName,
@@ -1059,6 +1142,15 @@ const SuppliersInformation = () => {
                                 splitFullName(contactName);
                               setSelectedSupplier({
                                 ...item,
+                                ...splitAddress(item.address || ""),
+                                ...Object.fromEntries(
+                                  Object.entries(
+                                    splitAddress(item.location || ""),
+                                  ).map(([part, value]) => [
+                                    `location${part === "city" ? "City" : "Province"}`,
+                                    value,
+                                  ]),
+                                ),
                                 contact: contactName,
                                 contactFirstName: firstName,
                                 contactLastName: lastName,
@@ -1519,7 +1611,7 @@ const SuppliersInformation = () => {
                     )}
                   />
                   <DetailItem
-                    label="Location"
+                    label="Rack Location"
                     value={selectedBatch.storageLocation}
                   />
                   <DetailItem
@@ -1581,16 +1673,23 @@ const SuppliersInformation = () => {
                     readOnly
                   />
 
-                  <InputItem
-                    placeholder="City, Province"
-                    label="Address"
-                    name="address"
-                    value={newSupplier.address}
+                  <AddressFields
+                    province={newSupplier.province}
+                    city={newSupplier.city}
                     onChange={handleInputChange}
-                    onBlur={(e) =>
-                      handleSupplierBlur("address", e.target.value)
-                    }
-                    error={supplierTouched.address && supplierErrors.address}
+                    onBlur={handleSupplierBlur}
+                    errors={supplierErrors}
+                    touched={supplierTouched}
+                    className="supplier-address-field"
+                    onProvinceChange={() => {
+                      setNewSupplier((prev) => ({
+                        ...prev,
+                        city: "",
+                        address: combineAddress("", prev.province),
+                      }));
+                      setSupplierTouched((prev) => ({ ...prev, city: false }));
+                      setSupplierErrors((prev) => ({ ...prev, city: "" }));
+                    }}
                   />
 
                   <InputItem
@@ -1612,37 +1711,61 @@ const SuppliersInformation = () => {
                   <div className="detail-group full title">
                     <h4>Contact Person</h4>
                   </div>
-                  <InputItem
-                    placeholder="First name"
-                    label="First Name"
-                    name="contactFirstName"
-                    value={newSupplier.contactFirstName}
-                    onChange={handleInputChange}
-                    onBlur={(e) =>
-                      handleSupplierBlur("contactFirstName", e.target.value)
-                    }
-                    error={
-                      supplierTouched.contactFirstName &&
-                      supplierErrors.contactFirstName
-                    }
-                    maxLength={50}
-                  />
-                  <InputItem
-                    placeholder="Last name"
-                    label="Last Name"
-                    name="contactLastName"
-                    value={newSupplier.contactLastName}
-                    onChange={handleInputChange}
-                    onBlur={(e) =>
-                      handleSupplierBlur("contactLastName", e.target.value)
-                    }
-                    error={
-                      (supplierTouched.contactLastName &&
-                        supplierErrors.contactLastName) ||
-                      (supplierTouched.contact && supplierErrors.contact)
-                    }
-                    maxLength={50}
-                  />
+                  <div className="field-group supplier-contact-name-field">
+                    <label className="field-label">Full Name</label>
+                    <div className="supplier-contact-name-inputs">
+                      <div className="field-group">
+                        <input
+                          type="text"
+                          name="contactFirstName"
+                          className={`field-box ${supplierErrors.contactFirstName ? "input-error" : ""}`}
+                          placeholder="First name"
+                          aria-label="First name"
+                          value={newSupplier.contactFirstName}
+                          onChange={handleInputChange}
+                          onBlur={(e) =>
+                            handleSupplierBlur(
+                              "contactFirstName",
+                              e.target.value,
+                            )
+                          }
+                          maxLength={50}
+                        />
+                        {supplierTouched.contactFirstName &&
+                          supplierErrors.contactFirstName && (
+                            <div className="inline-error-message">
+                              {supplierErrors.contactFirstName}
+                            </div>
+                          )}
+                      </div>
+                      <div className="field-group">
+                        <input
+                          type="text"
+                          name="contactLastName"
+                          className={`field-box ${supplierErrors.contactLastName || supplierErrors.contact ? "input-error" : ""}`}
+                          placeholder="Last name"
+                          aria-label="Last name"
+                          value={newSupplier.contactLastName}
+                          onChange={handleInputChange}
+                          onBlur={(e) =>
+                            handleSupplierBlur(
+                              "contactLastName",
+                              e.target.value,
+                            )
+                          }
+                          maxLength={50}
+                        />
+                        {(supplierTouched.contactLastName &&
+                          supplierErrors.contactLastName) ||
+                        (supplierTouched.contact && supplierErrors.contact) ? (
+                          <div className="inline-error-message">
+                            {supplierErrors.contactLastName ||
+                              supplierErrors.contact}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
                   <div className="field-group">
                     <label className="field-label" htmlFor="new-supplier-phone">
                       Phone
@@ -1708,16 +1831,32 @@ const SuppliersInformation = () => {
                       </div>
                     )}
                   </div>
-                  <InputItem
-                    placeholder="City, Province"
-                    label="Location"
-                    name="location"
-                    value={newSupplier.location}
+                  <AddressFields
+                    label="Address"
+                    provinceName="locationProvince"
+                    cityName="locationCity"
+                    province={newSupplier.locationProvince}
+                    city={newSupplier.locationCity}
                     onChange={handleInputChange}
-                    onBlur={(e) =>
-                      handleSupplierBlur("location", e.target.value)
-                    }
-                    error={supplierTouched.location && supplierErrors.location}
+                    onBlur={handleSupplierBlur}
+                    errors={supplierErrors}
+                    touched={supplierTouched}
+                    className="supplier-address-field"
+                    onProvinceChange={() => {
+                      setNewSupplier((prev) => ({
+                        ...prev,
+                        locationCity: "",
+                        location: combineAddress("", prev.locationProvince),
+                      }));
+                      setSupplierTouched((prev) => ({
+                        ...prev,
+                        locationCity: false,
+                      }));
+                      setSupplierErrors((prev) => ({
+                        ...prev,
+                        locationCity: "",
+                      }));
+                    }}
                   />
 
                   <div className="detail-group full title">
@@ -1790,18 +1929,32 @@ const SuppliersInformation = () => {
                         value={selectedSupplier.role}
                         readOnly
                       />
-                      <InputItem
-                        placeholder="City, Province"
-                        label="Location"
-                        name="location"
-                        value={selectedSupplier.location}
+                      <AddressFields
+                        label="Address"
+                        provinceName="locationProvince"
+                        cityName="locationCity"
+                        province={selectedSupplier.locationProvince}
+                        city={selectedSupplier.locationCity}
                         onChange={handleEditChange}
-                        onBlur={(e) =>
-                          handleSupplierBlur("location", e.target.value)
-                        }
-                        error={
-                          supplierTouched.location && supplierErrors.location
-                        }
+                        onBlur={handleSupplierBlur}
+                        errors={supplierErrors}
+                        touched={supplierTouched}
+                        className="supplier-address-field"
+                        onProvinceChange={() => {
+                          setSelectedSupplier((prev) => ({
+                            ...prev,
+                            locationCity: "",
+                            location: combineAddress("", prev.locationProvince),
+                          }));
+                          setSupplierTouched((prev) => ({
+                            ...prev,
+                            locationCity: false,
+                          }));
+                          setSupplierErrors((prev) => ({
+                            ...prev,
+                            locationCity: "",
+                          }));
+                        }}
                       />
                       <InputItem
                         label="TIN Number"
@@ -1823,7 +1976,7 @@ const SuppliersInformation = () => {
                     <>
                       <DetailItem label="Role" value={selectedSupplier.role} />
                       <DetailItem
-                        label="Location"
+                        label="Address"
                         value={selectedSupplier.location}
                       />
                       <DetailItem
@@ -1837,37 +1990,62 @@ const SuppliersInformation = () => {
                   </div>
                   {isEditing ? (
                     <>
-                      <InputItem
-                        placeholder="First name"
-                        label="First Name"
-                        name="contactFirstName"
-                        value={selectedSupplier.contactFirstName}
-                        onChange={handleEditChange}
-                        onBlur={(e) =>
-                          handleSupplierBlur("contactFirstName", e.target.value)
-                        }
-                        error={
-                          supplierTouched.contactFirstName &&
-                          supplierErrors.contactFirstName
-                        }
-                        maxLength={50}
-                      />
-                      <InputItem
-                        placeholder="Last name"
-                        label="Last Name"
-                        name="contactLastName"
-                        value={selectedSupplier.contactLastName}
-                        onChange={handleEditChange}
-                        onBlur={(e) =>
-                          handleSupplierBlur("contactLastName", e.target.value)
-                        }
-                        error={
-                          (supplierTouched.contactLastName &&
-                            supplierErrors.contactLastName) ||
-                          (supplierTouched.contact && supplierErrors.contact)
-                        }
-                        maxLength={50}
-                      />
+                      <div className="field-group supplier-contact-name-field">
+                        <label className="field-label">Full Name</label>
+                        <div className="supplier-contact-name-inputs">
+                          <div className="field-group">
+                            <input
+                              type="text"
+                              name="contactFirstName"
+                              className={`field-box ${supplierErrors.contactFirstName ? "input-error" : ""}`}
+                              placeholder="First name"
+                              aria-label="First name"
+                              value={selectedSupplier.contactFirstName}
+                              onChange={handleEditChange}
+                              onBlur={(e) =>
+                                handleSupplierBlur(
+                                  "contactFirstName",
+                                  e.target.value,
+                                )
+                              }
+                              maxLength={50}
+                            />
+                            {supplierTouched.contactFirstName &&
+                              supplierErrors.contactFirstName && (
+                                <div className="inline-error-message">
+                                  {supplierErrors.contactFirstName}
+                                </div>
+                              )}
+                          </div>
+                          <div className="field-group">
+                            <input
+                              type="text"
+                              name="contactLastName"
+                              className={`field-box ${supplierErrors.contactLastName || supplierErrors.contact ? "input-error" : ""}`}
+                              placeholder="Last name"
+                              aria-label="Last name"
+                              value={selectedSupplier.contactLastName}
+                              onChange={handleEditChange}
+                              onBlur={(e) =>
+                                handleSupplierBlur(
+                                  "contactLastName",
+                                  e.target.value,
+                                )
+                              }
+                              maxLength={50}
+                            />
+                            {(supplierTouched.contactLastName &&
+                              supplierErrors.contactLastName) ||
+                            (supplierTouched.contact &&
+                              supplierErrors.contact) ? (
+                              <div className="inline-error-message">
+                                {supplierErrors.contactLastName ||
+                                  supplierErrors.contact}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
                       <div className="field-group">
                         <label
                           className="field-label"
@@ -1923,18 +2101,29 @@ const SuppliersInformation = () => {
                         }
                         error={supplierTouched.email && supplierErrors.email}
                       />
-                      <InputItem
-                        placeholder="City, Province"
-                        label="Address"
-                        name="address"
-                        value={selectedSupplier.address}
+                      <AddressFields
+                        province={selectedSupplier.province}
+                        city={selectedSupplier.city}
                         onChange={handleEditChange}
-                        onBlur={(e) =>
-                          handleSupplierBlur("address", e.target.value)
-                        }
-                        error={
-                          supplierTouched.address && supplierErrors.address
-                        }
+                        onBlur={handleSupplierBlur}
+                        errors={supplierErrors}
+                        touched={supplierTouched}
+                        className="supplier-address-field"
+                        onProvinceChange={() => {
+                          setSelectedSupplier((prev) => ({
+                            ...prev,
+                            city: "",
+                            address: combineAddress("", prev.province),
+                          }));
+                          setSupplierTouched((prev) => ({
+                            ...prev,
+                            city: false,
+                          }));
+                          setSupplierErrors((prev) => ({
+                            ...prev,
+                            city: "",
+                          }));
+                        }}
                       />
                     </>
                   ) : (
@@ -2019,6 +2208,7 @@ const InputItem = ({
   error,
   fullWidth,
   placeholder,
+  ariaLabel,
   inputMode,
   maxLength,
   readOnly,
@@ -2033,6 +2223,7 @@ const InputItem = ({
       onChange={onChange}
       onBlur={onBlur}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       inputMode={inputMode}
       maxLength={maxLength}
       readOnly={readOnly}

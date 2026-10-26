@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { RiImageEditLine } from "react-icons/ri";
 import { IoPersonCircle } from "react-icons/io5";
+import AddressFields from "../components/AddressFields";
 import "../stylesClient/profile.css";
 import "../styles/formValidation.css";
 import axios from "axios";
@@ -8,8 +9,10 @@ import { Toaster, toast } from "react-hot-toast";
 import {
   COUNTRY_CODES,
   FIELD_MAX_LENGTHS,
+  combineAddress,
   formatFieldInput,
   formatInternationalPhone,
+  splitAddress,
 } from "../utils/fieldFormatting";
 import {
   combineFullName,
@@ -26,7 +29,8 @@ const PROFILE_VALIDATION_FIELDS = [
   "yearEstablished",
   "registrationNumber",
   "machines",
-  "address",
+  "city",
+  "province",
   "mobile",
   "landline",
   "email",
@@ -45,7 +49,8 @@ const PROFILE_FIELD_FORMATS = {
   yearEstablished: "yearEstablished",
   registrationNumber: "registrationNumber",
   machines: "machines",
-  address: "address",
+  city: "city",
+  province: "province",
   mobile: "mobile",
   landline: "landline",
   email: "email",
@@ -114,7 +119,8 @@ const Profile = () => {
     yearEstablished: "",
     registrationNumber: "",
     machines: "",
-    address: "",
+    city: "",
+    province: "",
     mobile: "",
     landline: "",
     email: "",
@@ -171,12 +177,8 @@ const Profile = () => {
       [name]: validateField(
         name,
         combineFullName(
-          part === "FirstName"
-            ? formattedValue
-            : formData[`${name}FirstName`],
-          part === "LastName"
-            ? formattedValue
-            : formData[`${name}LastName`],
+          part === "FirstName" ? formattedValue : formData[`${name}FirstName`],
+          part === "LastName" ? formattedValue : formData[`${name}LastName`],
         ),
       ),
     }));
@@ -256,6 +258,7 @@ const Profile = () => {
       );
       const formattedProfile = {
         ...formData,
+        address: combineAddress(formData.city, formData.province),
         mobile: formattedMobile
           ? formatInternationalPhone(mobileCountryCode, formattedMobile)
           : "",
@@ -349,7 +352,7 @@ const Profile = () => {
           yearEstablished: updatedData.yearEstablished || "",
           registrationNumber: updatedData.registrationNumber || "",
           machines: updatedData.machines || "",
-          address: updatedData.address || "",
+          ...splitAddress(updatedData.address || ""),
           mobile: updatedData.phoneNumber || "",
           landline: updatedData.landline || "",
           email: updatedData.email || "",
@@ -484,7 +487,7 @@ const Profile = () => {
         yearEstablished: data.yearEstablished || "",
         registrationNumber: data.registrationNumber || "",
         machines: data.machines || "",
-        address: data.address || "",
+        ...splitAddress(data.address || ""),
         mobile: data.phoneNumber || "",
         landline: data.landline || "",
         email: data.email || "",
@@ -645,6 +648,7 @@ const Profile = () => {
                 name="dialysisCenterName"
                 value={formData.dialysisCenterName}
                 onChange={handleChange}
+                full
                 onBlur={(e) =>
                   handleFieldBlur("dialysisCenterName", e.target.value)
                 }
@@ -710,16 +714,31 @@ const Profile = () => {
                 disabled={!isEditing}
               />
 
-              <Input
-                label="Registered Address"
-                name="address"
-                value={formData.address}
-                onChange={handleChange}
-                onBlur={(e) => handleFieldBlur("address", e.target.value)}
-                error={touchedFields.address && fieldErrors.address}
-                disabled={!isEditing}
-                full
-              />
+              {isEditing ? (
+                <AddressFields
+                  provinceName="province"
+                  cityName="city"
+                  province={formData.province}
+                  city={formData.city}
+                  onChange={handleChange}
+                  onBlur={handleFieldBlur}
+                  errors={fieldErrors}
+                  touched={touchedFields}
+                  className="Profile-Client-full"
+                  onProvinceChange={() => {
+                    setFormData((prev) => ({ ...prev, city: "" }));
+                    setTouchedFields((prev) => ({ ...prev, city: false }));
+                    setFieldErrors((prev) => ({ ...prev, city: "" }));
+                  }}
+                />
+              ) : (
+                <Input
+                  label="Address"
+                  value={combineAddress(formData.city, formData.province)}
+                  disabled
+                  full
+                />
+              )}
 
               <PhoneField
                 label="Mobile Number"
@@ -1021,7 +1040,6 @@ const Select = ({ label, options, error, ...props }) => (
       {...props}
       className={`${props.className || ""} ${error ? "input-error" : ""}`.trim()}
     >
-      <option value="">Select...</option>
       {options.map((opt) => (
         <option key={opt} value={opt}>
           {opt}

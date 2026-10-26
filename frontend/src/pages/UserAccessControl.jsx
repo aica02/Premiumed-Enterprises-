@@ -16,11 +16,14 @@ import "../styles/capsules.css";
 import "../styles/formValidation.css";
 import { Toaster, toast } from "react-hot-toast";
 import EmptyState from "../components/EmptyState";
+import AddressFields from "../components/AddressFields";
 import {
   COUNTRY_CODES,
   FIELD_MAX_LENGTHS,
+  combineAddress,
   formatFieldInput,
   formatInternationalPhone,
+  splitAddress,
 } from "../utils/fieldFormatting";
 import {
   combineFullName,
@@ -36,7 +39,8 @@ const API_URL =
 const EMPLOYEE_VALIDATION_FIELDS = [
   "firstName",
   "lastName",
-  "address",
+  "city",
+  "province",
   "phoneNumber",
   "email",
   "role",
@@ -44,7 +48,8 @@ const EMPLOYEE_VALIDATION_FIELDS = [
 const EMPLOYEE_VALIDATION_OPTIONS = {
   firstName: { required: true, label: "First Name" },
   lastName: { required: true, label: "Last Name" },
-  address: { required: true, label: "Address" },
+  city: { required: true, label: "City" },
+  province: { required: true, label: "Province" },
 };
 
 const UsersAccessControl = () => {
@@ -64,7 +69,8 @@ const UsersAccessControl = () => {
     fullName: "",
     firstName: "",
     lastName: "",
-    address: "",
+    city: "",
+    province: "",
     phoneNumber: "",
     phoneCountryCode: "+63",
     email: "",
@@ -107,7 +113,18 @@ const UsersAccessControl = () => {
           : name;
     const value = formatFieldInput(formatName, inputValue);
     setFormData((prev) => {
-      const next = { ...prev, [name]: value };
+      const next = {
+        ...prev,
+        [name]: value,
+        ...(name === "city" || name === "province"
+          ? {
+              address: combineAddress(
+                name === "city" ? value : prev.city,
+                name === "province" ? value : prev.province,
+              ),
+            }
+          : {}),
+      };
       if (name === "firstName" || name === "lastName") {
         next.fullName = combineFullName(next.firstName, next.lastName);
       }
@@ -224,7 +241,7 @@ const UsersAccessControl = () => {
       fd.append("email", email);
       fd.append("role", roleMap[formData.role?.toLowerCase()] || formData.role);
       fd.append("phoneNumber", phoneNumberWithCountryCode);
-      fd.append("address", formData.address || "");
+      fd.append("address", combineAddress(formData.city, formData.province));
       fd.append("status", formData.status || "Active");
 
       if (formData.profileImageFile) {
@@ -285,9 +302,10 @@ const UsersAccessControl = () => {
         formData.firstName,
         formData.lastName,
       );
-      const formattedAddress = (formData.address || "")
-        .replace(/\s{2,}/g, " ")
-        .trim();
+      const formattedAddress = combineAddress(
+        formData.city,
+        formData.province,
+      ).replace(/\s{2,}/g, " ");
 
       const formDataToSend = new FormData();
 
@@ -327,6 +345,7 @@ const UsersAccessControl = () => {
       const updatedName = splitFullName(updatedUser.fullName || formattedFullName);
       setFormData({
         ...updatedUser,
+        ...splitAddress(updatedUser.address || formattedAddress),
         ...updatedName,
         phoneCountryCode:
           updatedUser.phoneCountryCode || formData.phoneCountryCode || "+63",
@@ -396,6 +415,7 @@ const UsersAccessControl = () => {
     const { firstName, lastName } = splitFullName(emp.fullName || "");
     setFormData({
       ...emp,
+      ...splitAddress(emp.address || ""),
       firstName,
       lastName,
       phoneCountryCode: emp.phoneCountryCode || "+63",
@@ -876,30 +896,40 @@ const UsersAccessControl = () => {
                       </div>
                     </div>
                   )}
-                  <div className="field-group">
-                    <label className="field-label" htmlFor="employee-address">
-                      Address
-                    </label>
-                    <input
-                      id="employee-address"
-                      type="text"
-                      placeholder="City, Province"
-                      value={formData.address || ""}
-                      className={fieldErrors.address ? "input-error" : ""}
+                  {activeModal === "viewProfile" && !isEditing ? (
+                    <div className="field-group">
+                      <label className="field-label" htmlFor="employee-address">
+                        Address
+                      </label>
+                      <input
+                        id="employee-address"
+                        type="text"
+                        value={combineAddress(formData.city, formData.province)}
+                        disabled
+                      />
+                    </div>
+                  ) : (
+                    <AddressFields
+                      provinceName="province"
+                      cityName="city"
+                      province={formData.province}
+                      city={formData.city}
                       onChange={(e) =>
-                        handleEmployeeFieldChange("address", e.target.value)
+                        handleEmployeeFieldChange(
+                          e.target.name,
+                          e.target.value,
+                        )
                       }
-                      onBlur={(e) =>
-                        handleEmployeeFieldBlur("address", e.target.value)
-                      }
-                      disabled={!isEditing && activeModal === "viewProfile"}
+                      onBlur={handleEmployeeFieldBlur}
+                      errors={fieldErrors}
+                      touched={touchedFields}
+                      onProvinceChange={() => {
+                        setFormData((prev) => ({ ...prev, city: "" }));
+                        setTouchedFields((prev) => ({ ...prev, city: false }));
+                        setFieldErrors((prev) => ({ ...prev, city: "" }));
+                      }}
                     />
-                    {touchedFields.address && fieldErrors.address && (
-                      <div className="inline-error-message">
-                        {fieldErrors.address}
-                      </div>
-                    )}
-                  </div>
+                  )}
                   <div className="field-group">
                     <label
                       className="field-label"

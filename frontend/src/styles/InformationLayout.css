@@ -73,6 +73,29 @@
   font-size: 16px;
 }
 
+.supplier-address-field {
+  grid-column: 1 / -1;
+}
+
+.supplier-contact-name-field {
+  grid-column: 1 / -1;
+}
+
+.supplier-contact-name-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.supplier-contact-name-inputs > .field-group {
+  min-width: 0;
+}
+
+.supplier-contact-name-inputs input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* info card */
 .info-card {
   background: white;

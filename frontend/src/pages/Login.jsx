@@ -6,9 +6,11 @@ import logo from "../assets/Premiumed logo.png";
 import { useNavigate } from "react-router-dom";
 import { Toaster, toast } from "react-hot-toast";
 import { FaArrowLeft, FaCheck, FaEye, FaEyeSlash } from "react-icons/fa";
+import AddressFields from "../components/AddressFields";
 import {
   COUNTRY_CODES,
   FIELD_MAX_LENGTHS,
+  combineAddress,
   formatFieldInput,
   formatInternationalPhone,
 } from "../utils/fieldFormatting";
@@ -55,7 +57,8 @@ const Login = () => {
     yearEstablished: "",
     registrationNumber: "",
     machines: "",
-    address: "",
+    city: "",
+    province: "",
     mobileCountryCode: "+63",
     mobile: "",
     landlineCountryCode: "+63",
@@ -89,7 +92,8 @@ const Login = () => {
     yearEstablished: "",
     registrationNumber: "",
     machines: "",
-    address: "",
+    city: "",
+    province: "",
     mobile: "",
     landline: "",
     email: "",
@@ -195,7 +199,8 @@ const Login = () => {
       "yearEstablished",
       "registrationNumber",
       "machines",
-      "address",
+      "city",
+      "province",
       "mobile",
       "landline",
       "email",
@@ -476,7 +481,7 @@ const Login = () => {
       yearEstablished: formData.yearEstablished,
       registrationNumber: formData.registrationNumber,
       machines: formData.machines,
-      address: formData.address,
+      address: combineAddress(formData.city, formData.province),
 
       mobile: formatInternationalPhone(
         formData.mobileCountryCode,
@@ -534,7 +539,8 @@ const Login = () => {
         yearEstablished: "",
         registrationNumber: "", //TIN number
         machines: "",
-        address: "",
+        city: "",
+        province: "",
         mobileCountryCode: "+63",
         mobile: "",
         landlineCountryCode: "+63",
@@ -568,7 +574,8 @@ const Login = () => {
         yearEstablished: "",
         registrationNumber: "",
         machines: "",
-        address: "",
+        city: "",
+        province: "",
         mobile: "",
         landline: "",
         email: "",
@@ -800,23 +807,21 @@ const Login = () => {
                   {currentStep === 1 && (
                     <>
                       <SectionTitle title="FACILITY INFORMATION" />
-
+                      <InputBox
+                        label="Dialysis Center Name"
+                        name="dialysisCenterName"
+                        placeholder="Full name"
+                        value={formData.dialysisCenterName}
+                        onChange={handleRegisterChange}
+                        onBlur={handleRegisterBlur}
+                        maxLength={100}
+                        error={
+                          touchedFields.dialysisCenterName
+                            ? registerErrors.dialysisCenterName
+                            : ""
+                        }
+                      />
                       <div className="form-row">
-                        <InputBox
-                          label="Dialysis Center Name"
-                          name="dialysisCenterName"
-                          placeholder="Full name"
-                          value={formData.dialysisCenterName}
-                          onChange={handleRegisterChange}
-                          onBlur={handleRegisterBlur}
-                          maxLength={100}
-                          error={
-                            touchedFields.dialysisCenterName
-                              ? registerErrors.dialysisCenterName
-                              : ""
-                          }
-                        />
-
                         <SelectBox
                           label="Type of Facility"
                           name="facilityType"
@@ -834,9 +839,6 @@ const Login = () => {
                             "Government Facility",
                           ]}
                         />
-                      </div>
-
-                      <div className="form-row">
                         <YearSelect
                           label="Year Established"
                           name="yearEstablished"
@@ -849,7 +851,9 @@ const Login = () => {
                               : ""
                           }
                         />
+                      </div>
 
+                      <div className="form-row">
                         <InputBox
                           label="TIN Number"
                           name="registrationNumber"
@@ -864,9 +868,7 @@ const Login = () => {
                               : ""
                           }
                         />
-                      </div>
 
-                      <div className="form-row">
                         <InputBox
                           label="Number of Dialysis Machine / Units"
                           name="machines"
@@ -882,20 +884,32 @@ const Login = () => {
                               : ""
                           }
                         />
-
-                        <InputBox
-                          label="Registered Address"
-                          name="address"
-                          placeholder="City, Province"
-                          value={formData.address}
-                          onChange={handleRegisterChange}
-                          onBlur={handleRegisterBlur}
-                          maxLength={250}
-                          error={
-                            touchedFields.address ? registerErrors.address : ""
-                          }
-                        />
                       </div>
+
+                      <AddressFields
+                        label="Address"
+                        provinceName="province"
+                        cityName="city"
+                        province={formData.province}
+                        city={formData.city}
+                        className="full-width"
+                        errors={registerErrors}
+                        touched={touchedFields}
+                        onChange={handleRegisterChange}
+                        onBlur={(name, value) =>
+                          handleRegisterBlur({
+                            target: { name, value },
+                          })
+                        }
+                        onProvinceChange={() => {
+                          setFormData((prev) => ({ ...prev, city: "" }));
+                          setTouchedFields((prev) => ({
+                            ...prev,
+                            city: false,
+                          }));
+                          setRegisterErrors((prev) => ({ ...prev, city: "" }));
+                        }}
+                      />
 
                       <div className="form-row mobilePhone">
                         <PhoneInput
@@ -1430,10 +1444,7 @@ const PhoneInput = ({
 }) => {
   return (
     <div className="signup-input-group">
-      <label>
-        {label}
-        {required && <span className="required-mark">*</span>}
-      </label>
+      <label>{label}</label>
 
       <div
         className={`phone-input-wrapper ${error ? "phone-input-error" : ""}`}

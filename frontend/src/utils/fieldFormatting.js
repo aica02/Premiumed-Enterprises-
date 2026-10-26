@@ -27,6 +27,8 @@ export const FIELD_MAX_LENGTHS = {
   tinNumber: 17,
   machines: 3,
   address: 250,
+  city: 124,
+  province: 124,
   mobile: 12,
   landline: 12,
   email: 150,
@@ -91,6 +93,8 @@ export const formatFieldValue = (name, value) => {
 
     case "dialysisCenterName":
     case "address":
+    case "city":
+    case "province":
     case "ownerName":
     case "medicalDirector":
     case "nephrologist":
@@ -112,3 +116,17 @@ export const formatFieldInput = (name, value) => {
 
 export const formatInternationalPhone = (countryCode, phone) =>
   `${countryCode}${phone.replace(/\s/g, "")}`;
+
+export const combineAddress = (city = "", province = "") =>
+  [city, province]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
+export const splitAddress = (address = "") => {
+  const [city = "", ...provinceParts] = String(address).split(",");
+  return {
+    city: city.trim(),
+    province: provinceParts.join(",").trim(),
+  };
+};
