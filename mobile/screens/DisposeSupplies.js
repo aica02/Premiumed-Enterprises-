@@ -23,6 +23,7 @@ import { styles as inventoryStyles } from "../styles/InventoryStyles";
 import { pickingStyles } from "../styles/PickingStyles";
 import { warehouseMapStyles } from "../styles/warehouseMapStyles";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
+import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 
 export default function DisposeSupplies({ navigation }) {
@@ -44,6 +45,15 @@ export default function DisposeSupplies({ navigation }) {
   const isProcessing = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
   const { tables, labels, lines, areas, pallets, racks } = warehouseMapLayout;
+  const additionalLocations = useWarehouseMapAdditions();
+  const mobilePallets = [
+    ...pallets,
+    ...additionalLocations.filter((location) => location.type === "pallet"),
+  ];
+  const mobileRacks = [
+    ...racks,
+    ...additionalLocations.filter((location) => location.type === "rack"),
+  ];
   const INVENTORY_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage`;
   const USER_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/login/profile`;
 
@@ -413,7 +423,7 @@ export default function DisposeSupplies({ navigation }) {
                 />
               ))}
 
-              {pallets.map((pallet, index) => {
+              {mobilePallets.map((pallet, index) => {
                 const isHighlighted = highlightedRack === pallet.id;
 
                 return (
@@ -442,7 +452,7 @@ export default function DisposeSupplies({ navigation }) {
                 );
               })}
 
-              {racks.map((rack, index) => {
+              {mobileRacks.map((rack, index) => {
                 const rackStyle =
                   [
                     "R1",
@@ -454,7 +464,10 @@ export default function DisposeSupplies({ navigation }) {
                     "R7",
                     "R8",
                     "R9",
-                  ].includes(rack.className) && warehouseMapStyles.rackTypeA;
+                  ].includes(rack.className) ||
+                  rack.className === "custom-rack"
+                    ? warehouseMapStyles.rackTypeA
+                    : null;
                 const isHighlighted = highlightedRack === rack.id;
 
                 return (

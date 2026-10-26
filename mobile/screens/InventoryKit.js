@@ -37,6 +37,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
+import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
 
 //need icomment
 import {
@@ -75,6 +76,7 @@ export default function InventoryKit({
   refreshing,
   styles,
 }) {
+  const additionalLocations = useWarehouseMapAdditions();
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -83,6 +85,7 @@ export default function InventoryKit({
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [errorFeedback, setErrorFeedback] = useState(null);
   const [sortOrder, setSortOrder] = useState("QTY Low → High");
   const [expirySort, setExpirySort] = useState("Sort Expiry");
   const [fefoFilter, setFefoFilter] = useState("All FEFO");
@@ -99,7 +102,6 @@ export default function InventoryKit({
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [successFeedback, setSuccessFeedback] = useState(null);
-  const [errorFeedback, setErrorFeedback] = useState(null);
 
   const [kitItems, setKitItems] = useState([]);
   const [showConfirmKitModal, setShowConfirmKitModal] = useState(false);
@@ -312,9 +314,13 @@ export default function InventoryKit({
         .map((batch) => batch.storageLocation),
     );
 
-    const locations = warehouseMapLayout.pallets.filter(({ id }) =>
-      /^P1-[A-D]$/.test(id),
-    );
+    const locations = [
+      ...warehouseMapLayout.pallets.filter(({ id }) => id.startsWith("P1-")),
+      ...additionalLocations.filter(
+        (location) =>
+          location.type === "pallet" && location.id.startsWith("P1-"),
+      ),
+    ];
 
     return locations
       .filter(({ id }) => kitFormData.itemCode || !occupiedLocations.has(id))
@@ -1742,10 +1748,13 @@ export default function InventoryKit({
                                 }}
                               >
                                 <TouchableOpacity
+                                  accessibilityRole="checkbox"
+                                  accessibilityState={{ checked: isAdded }}
+                                  accessibilityLabel={`Add ${item.name} to kit`}
                                   style={{
                                     width: 24,
                                     height: 24,
-                                    borderRadius: 12,
+                                    borderRadius: 5,
                                     borderWidth: 2,
                                     borderColor: isAdded
                                       ? "#D4AF37"
@@ -1787,13 +1796,10 @@ export default function InventoryKit({
                                   }}
                                 >
                                   {isAdded && (
-                                    <View
-                                      style={{
-                                        width: 10,
-                                        height: 10,
-                                        borderRadius: 5,
-                                        backgroundColor: "#FFF",
-                                      }}
+                                    <Check
+                                      size={16}
+                                      color="#FFF"
+                                      strokeWidth={3}
                                     />
                                   )}
                                 </TouchableOpacity>

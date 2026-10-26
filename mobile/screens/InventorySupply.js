@@ -42,6 +42,7 @@ import { UNITTYPES } from "../components/UnitType";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
+import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
 
 //need icomment
 import {
@@ -82,6 +83,7 @@ export default function InventorySupply({
   refreshing,
   styles,
 }) {
+  const additionalLocations = useWarehouseMapAdditions();
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [menuVisible, setMenuVisible] = useState(false);
@@ -99,10 +101,10 @@ export default function InventorySupply({
 
   const [restockSuccessData, setRestockSuccessData] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [errorFeedback, setErrorFeedback] = useState(null);
 
   //need icomment
   const [successFeedback, setSuccessFeedback] = useState(null);
-  const [errorFeedback, setErrorFeedback] = useState(null);
   const [printQty, setPrintQty] = useState("1");
   const [printerDevice, setPrinterDevice] = useState(null);
   const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
@@ -199,13 +201,28 @@ export default function InventorySupply({
             : category === INTRAVENOUS_FLUIDS_CATEGORY
               ? ["P2", "P5"]
               : null;
+    const addedRacks = additionalLocations.filter(
+      (location) =>
+        location.type === "rack" &&
+        (category === KIT_INCLUSIONS_CATEGORY
+          ? location.id.startsWith("R6-")
+          : !location.id.startsWith("R6-")),
+    );
+    const addedPallets = additionalLocations.filter(
+      (location) =>
+        location.type === "pallet" &&
+        palletPrefixes?.some((prefix) => location.id.startsWith(`${prefix}-`)),
+    );
     const locations = palletPrefixes
-      ? warehouseMapLayout.pallets.filter(({ id }) =>
-          palletPrefixes.some((prefix) => id.startsWith(`${prefix}-`)),
-        )
+      ? [
+          ...warehouseMapLayout.pallets.filter(({ id }) =>
+            palletPrefixes.some((prefix) => id.startsWith(`${prefix}-`)),
+          ),
+          ...addedPallets,
+        ]
       : category === KIT_INCLUSIONS_CATEGORY
-        ? racks.filter(({ id }) => id.startsWith("R6-"))
-        : racks.filter(({ id }) => !id.startsWith("R6-"));
+        ? [...racks.filter(({ id }) => id.startsWith("R6-")), ...addedRacks]
+        : [...racks.filter(({ id }) => !id.startsWith("R6-")), ...addedRacks];
 
     return locations.filter(
       ({ id }) => formData.itemCode || !occupiedLocations.has(id),

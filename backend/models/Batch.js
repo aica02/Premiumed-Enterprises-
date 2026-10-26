@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import WarehouseMapLayout from "./WarehouseMapLayout.js";
 
 const rackSlots = {
   1: "ABCDE",
@@ -46,7 +47,16 @@ const batchSchema = new mongoose.Schema(
     storageLocation: {
       type: String,
       required: true,
-      enum: locationIds,
+      validate: {
+        validator: async (locationId) =>
+          locationIds.includes(locationId) ||
+          Boolean(
+            await WarehouseMapLayout.exists({
+              "locations.id": locationId,
+            }),
+          ),
+        message: "Storage location must be a configured warehouse location.",
+      },
     },
     status: {
       type: String,

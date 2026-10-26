@@ -24,6 +24,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AlertTriangle, CheckCircle, PackageCheck } from "lucide-react-native";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
+import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
 
 export default function PutawayList({ navigation }) {
   const [batches, setBatches] = useState([]);
@@ -43,6 +44,15 @@ export default function PutawayList({ navigation }) {
   const isProcessingRef = useRef(false);
 
   const { tables, labels, lines, areas, pallets, racks } = warehouseMapLayout;
+  const additionalLocations = useWarehouseMapAdditions();
+  const mobilePallets = [
+    ...pallets,
+    ...additionalLocations.filter((location) => location.type === "pallet"),
+  ];
+  const mobileRacks = [
+    ...racks,
+    ...additionalLocations.filter((location) => location.type === "rack"),
+  ];
 
   const API_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage/batches/pending`;
   const INVENTORY_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage/stored`;
@@ -434,7 +444,7 @@ export default function PutawayList({ navigation }) {
             ))}
 
             {/* PALLETS */}
-            {pallets.map((pallet, index) => {
+            {mobilePallets.map((pallet, index) => {
               const status = computeDynamicStatus(pallet.id, inventory);
               const selectedRackId = highlightedRack?.trim();
               const isHighlighted = selectedRackId === pallet.id;
@@ -478,7 +488,7 @@ export default function PutawayList({ navigation }) {
             })}
 
             {/* RACKS */}
-            {racks.map((rack, index) => {
+            {mobileRacks.map((rack, index) => {
               const rackStyle = [
                 "R1",
                 "R2",
@@ -489,7 +499,7 @@ export default function PutawayList({ navigation }) {
                 "R7",
                 "R8",
                 "R9",
-              ].includes(rack.className)
+              ].includes(rack.className) || rack.className === "custom-rack"
                 ? warehouseMapStyles.rackTypeA
                 : ["R3", "R4", "R5"].includes(rack.className)
                   ? warehouseMapStyles.rackTypeB

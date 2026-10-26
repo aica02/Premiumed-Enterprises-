@@ -22,6 +22,7 @@ import cartRoutes from "./routes/CartRoute.js";
 import LoginMobileRoutes from "./routes/LoginMobileRoutes.js";
 import profileEditRoutes from "./routes/auth.js";
 import activityLogRoutes from "./routes/ActivityLogRoute.js";
+import warehouseMapRoutes from "./routes/WarehouseMapRoute.js";
 import exportActivityLogs from "./utils/exportActivityLogs.js";
 
 dotenv.config();
@@ -249,6 +250,7 @@ app.use("/api/login", LoginMobileRoutes);
 app.use("/api/profile", profileEditRoutes);
 app.use("/uploads", express.static("uploads"));
 app.use("/api/activitylogs", activityLogRoutes);
+app.use("/api/warehouse-map", warehouseMapRoutes);
 
 // Schedule daily archival of activity logs older than retention (365 days)
 const scheduleDailyActivityExport = () => {

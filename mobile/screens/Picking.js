@@ -27,6 +27,7 @@ import Header from "./Header";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
+import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
 
 export default function DeliveryList({ navigation }) {
   const [orders, setOrders] = useState([]);
@@ -58,6 +59,15 @@ export default function DeliveryList({ navigation }) {
   const [userId, setUserId] = useState(null);
 
   const { tables, labels, lines, areas, pallets, racks } = warehouseMapLayout;
+  const additionalLocations = useWarehouseMapAdditions();
+  const mobilePallets = [
+    ...pallets,
+    ...additionalLocations.filter((location) => location.type === "pallet"),
+  ];
+  const mobileRacks = [
+    ...racks,
+    ...additionalLocations.filter((location) => location.type === "rack"),
+  ];
 
   const API_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/orders`;
   const INVENTORY_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage`;
@@ -753,7 +763,7 @@ export default function DeliveryList({ navigation }) {
               />
             ))}
 
-            {pallets.map((pallet, index) => {
+            {mobilePallets.map((pallet, index) => {
               const isHighlighted = highlightedLocations.has(pallet.id);
 
               return (
@@ -782,9 +792,12 @@ export default function DeliveryList({ navigation }) {
               );
             })}
 
-            {racks.map((rack, index) => {
+            {mobileRacks.map((rack, index) => {
               const rackStyle =
-                ["R1", "R2", "R3", "R4", "R5", "R6"].includes(rack.className) &&
+                (["R1", "R2", "R3", "R4", "R5", "R6"].includes(
+                  rack.className,
+                ) ||
+                  rack.className === "custom-rack") &&
                 warehouseMapStyles.rackTypeA;
               const isHighlighted = highlightedLocations.has(rack.id);
 
