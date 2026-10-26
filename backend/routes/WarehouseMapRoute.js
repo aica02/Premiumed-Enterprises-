@@ -1,13 +1,14 @@
 import express from "express";
 import WarehouseMapLayout from "../models/WarehouseMapLayout.js";
 import Batch from "../models/Batch.js";
+import { ensureWarehouseMapDefaults } from "../utils/warehouseMapDefaults.js";
 
 const router = express.Router();
 
 router.get("/layout", async (req, res) => {
   try {
-    const layout = await WarehouseMapLayout.findOne().lean();
-    res.json({ locations: layout?.locations || [] });
+    const layout = await ensureWarehouseMapDefaults();
+    res.json({ version: 2, locations: layout?.locations || [] });
   } catch (error) {
     console.error("Failed to load warehouse map additions:", error);
     res.status(500).json({ message: "Failed to load warehouse map layout." });
@@ -39,10 +40,7 @@ router.post("/layout/locations", async (req, res) => {
   }
 
   try {
-    let layout = await WarehouseMapLayout.findOne();
-    if (!layout) {
-      layout = new WarehouseMapLayout();
-    }
+    const layout = await ensureWarehouseMapDefaults();
 
     const normalizedId = id.trim();
     if (
@@ -84,7 +82,7 @@ router.patch("/layout/locations", async (req, res) => {
   }
 
   try {
-    const layout = await WarehouseMapLayout.findOne();
+    const layout = await ensureWarehouseMapDefaults();
     const location = layout?.locations.find((entry) => entry.id === id.trim());
     if (!location) {
       return res.status(404).json({ message: "Added location not found." });
@@ -112,7 +110,7 @@ router.delete("/layout/locations", async (req, res) => {
 
   try {
     const locationId = id.trim();
-    const layout = await WarehouseMapLayout.findOne();
+    const layout = await ensureWarehouseMapDefaults();
     const locationIndex = layout?.locations.findIndex(
       (location) => location.id === locationId,
     );

@@ -39,7 +39,6 @@ import NetInfo from "@react-native-community/netinfo";
 
 import { CATEGORIES } from "../components/Categories";
 import { UNITTYPES } from "../components/UnitType";
-import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
 import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
@@ -180,17 +179,21 @@ export default function InventorySupply({
         .map((batch) => batch.storageLocation),
     );
 
-    const racks = [...warehouseMapLayout.racks].sort(
-      (firstRack, secondRack) => {
-        const [, firstNumber, firstSlot] = firstRack.id.match(/^R(\d+)-(.+)$/);
-        const [, secondNumber, secondSlot] =
-          secondRack.id.match(/^R(\d+)-(.+)$/);
-        return (
-          Number(firstNumber) - Number(secondNumber) ||
-          firstSlot.localeCompare(secondSlot)
-        );
-      },
-    );
+    const racks = additionalLocations
+      .filter((location) => location.type === "rack")
+      .sort((firstRack, secondRack) => {
+        const firstMatch = firstRack.id.match(/^R(\d+)-(.+)$/);
+        const secondMatch = secondRack.id.match(/^R(\d+)-(.+)$/);
+        if (firstMatch && secondMatch) {
+          return (
+            Number(firstMatch[1]) - Number(secondMatch[1]) ||
+            firstMatch[2].localeCompare(secondMatch[2])
+          );
+        }
+        if (firstMatch) return -1;
+        if (secondMatch) return 1;
+        return firstRack.id.localeCompare(secondRack.id);
+      });
     const palletPrefixes =
       category === PPE_CATEGORY
         ? ["P4"]
@@ -201,28 +204,19 @@ export default function InventorySupply({
             : category === INTRAVENOUS_FLUIDS_CATEGORY
               ? ["P2", "P5"]
               : null;
-    const addedRacks = additionalLocations.filter(
-      (location) =>
-        location.type === "rack" &&
-        (category === KIT_INCLUSIONS_CATEGORY
-          ? location.id.startsWith("R6-")
-          : !location.id.startsWith("R6-")),
-    );
-    const addedPallets = additionalLocations.filter(
-      (location) =>
-        location.type === "pallet" &&
-        palletPrefixes?.some((prefix) => location.id.startsWith(`${prefix}-`)),
-    );
     const locations = palletPrefixes
-      ? [
-          ...warehouseMapLayout.pallets.filter(({ id }) =>
-            palletPrefixes.some((prefix) => id.startsWith(`${prefix}-`)),
-          ),
-          ...addedPallets,
-        ]
-      : category === KIT_INCLUSIONS_CATEGORY
-        ? [...racks.filter(({ id }) => id.startsWith("R6-")), ...addedRacks]
-        : [...racks.filter(({ id }) => !id.startsWith("R6-")), ...addedRacks];
+      ? additionalLocations.filter(
+          (location) =>
+            location.type === "pallet" &&
+            palletPrefixes.some((prefix) =>
+              location.id.startsWith(`${prefix}-`),
+            ),
+        )
+      : racks.filter((location) =>
+          category === KIT_INCLUSIONS_CATEGORY
+            ? location.id.startsWith("R6-")
+            : !location.id.startsWith("R6-"),
+        );
 
     return locations.filter(
       ({ id }) => formData.itemCode || !occupiedLocations.has(id),

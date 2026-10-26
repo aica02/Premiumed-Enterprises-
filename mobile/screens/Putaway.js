@@ -43,16 +43,14 @@ export default function PutawayList({ navigation }) {
 
   const isProcessingRef = useRef(false);
 
-  const { tables, labels, lines, areas, pallets, racks } = warehouseMapLayout;
+  const { tables, labels, lines, areas } = warehouseMapLayout;
   const additionalLocations = useWarehouseMapAdditions();
-  const mobilePallets = [
-    ...pallets,
-    ...additionalLocations.filter((location) => location.type === "pallet"),
-  ];
-  const mobileRacks = [
-    ...racks,
-    ...additionalLocations.filter((location) => location.type === "rack"),
-  ];
+  const mobilePallets = additionalLocations.filter(
+    (location) => location.type === "pallet",
+  );
+  const mobileRacks = additionalLocations.filter(
+    (location) => location.type === "rack",
+  );
 
   const API_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage/batches/pending`;
   const INVENTORY_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/inventoryPage/stored`;

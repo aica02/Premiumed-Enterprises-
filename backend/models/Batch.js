@@ -1,37 +1,6 @@
 import mongoose from "mongoose";
 import WarehouseMapLayout from "./WarehouseMapLayout.js";
-
-const rackSlots = {
-  1: "ABCDE",
-  2: "ABCDE",
-  3: "ABCDEFGHI",
-  4: "ABCDEF",
-  5: "ABCD",
-  6: "ABCDEF",
-};
-
-const rackIds = Object.entries(rackSlots).flatMap(([rackNumber, slots]) =>
-  [...slots].map((slot) => `R${rackNumber}-${slot}`),
-);
-
-const palletSlots = {
-  1: "ABCD",
-  2: "ABCD",
-  3: "ABCD",
-  4: "ABCD",
-  5: "ABCD",
-};
-
-const palletIds = Object.entries(palletSlots).flatMap(([palletNumber, slots]) =>
-  [...slots].map((slot) => `P${palletNumber}-${slot}`),
-);
-
-const locationIds = [
-  ...Object.keys(rackSlots).map((rackNumber) => `R${rackNumber}`),
-  ...rackIds,
-  ...Object.keys(palletSlots).map((palletNumber) => `P${palletNumber}`),
-  ...palletIds,
-];
+import { ensureWarehouseMapDefaults } from "../utils/warehouseMapDefaults.js";
 
 const batchSchema = new mongoose.Schema(
   {
@@ -48,13 +17,14 @@ const batchSchema = new mongoose.Schema(
       type: String,
       required: true,
       validate: {
-        validator: async (locationId) =>
-          locationIds.includes(locationId) ||
-          Boolean(
+        validator: async (locationId) => {
+          await ensureWarehouseMapDefaults();
+          return Boolean(
             await WarehouseMapLayout.exists({
               "locations.id": locationId,
             }),
-          ),
+          );
+        },
         message: "Storage location must be a configured warehouse location.",
       },
     },

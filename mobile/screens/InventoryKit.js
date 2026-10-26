@@ -34,7 +34,6 @@ import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
-import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
 import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
@@ -314,13 +313,10 @@ export default function InventoryKit({
         .map((batch) => batch.storageLocation),
     );
 
-    const locations = [
-      ...warehouseMapLayout.pallets.filter(({ id }) => id.startsWith("P1-")),
-      ...additionalLocations.filter(
-        (location) =>
-          location.type === "pallet" && location.id.startsWith("P1-"),
-      ),
-    ];
+    const locations = additionalLocations.filter(
+      (location) =>
+        location.type === "pallet" && location.id.startsWith("P1-"),
+    );
 
     return locations
       .filter(({ id }) => kitFormData.itemCode || !occupiedLocations.has(id))

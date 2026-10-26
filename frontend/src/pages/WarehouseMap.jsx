@@ -15,14 +15,34 @@ const BACKEND_URL =
 
 const WarehouseMap = () => {
   const { tables, pallets, labels, lines, racks } = warehouseMapLayout;
+  const defaultLocations = [
+    ...racks.map((rack) => ({
+      ...rack,
+      type: "rack",
+      top: Number.parseFloat(rack.top),
+      left: Number.parseFloat(rack.left),
+      width: Number.parseFloat(rack.width),
+      height: Number.parseFloat(rack.height),
+    })),
+    ...pallets.map((pallet) => ({
+      ...pallet,
+      type: "pallet",
+      top: Number.parseFloat(pallet.top),
+      left: Number.parseFloat(pallet.left),
+      width: Number.parseFloat(pallet.width),
+      height: Number.parseFloat(pallet.height),
+    })),
+  ];
 
   const [items, setItems] = useState([]);
   const [activeTab, setActiveTab] = useState("nearExpiry");
   const [selectedRack, setSelectedRack] = useState(null);
   const [selectedLocationDetails, setSelectedLocationDetails] = useState(null);
   const [isWarehouseMapModalOpen, setIsWarehouseMapModalOpen] = useState(false);
-  const [isAddLocationExpanded, setIsAddLocationExpanded] = useState(true);
-  const [additionalLocations, setAdditionalLocations] = useState([]);
+  const [isAddLocationExpanded, setIsAddLocationExpanded] = useState(false);
+  const [additionalLocations, setAdditionalLocations] =
+    useState(defaultLocations);
+  const [locationTypeFilter, setLocationTypeFilter] = useState("all");
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [removingLocationId, setRemovingLocationId] = useState(null);
   const [editingLocationId, setEditingLocationId] = useState(null);
@@ -34,6 +54,23 @@ const WarehouseMap = () => {
     width: "7.1",
     height: "5.1",
   });
+
+  const sortedFilteredLocations = useMemo(
+    () =>
+      additionalLocations
+        .filter(
+          (location) =>
+            locationTypeFilter === "all" ||
+            location.type === locationTypeFilter,
+        )
+        .sort((left, right) =>
+          left.id.localeCompare(right.id, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        ),
+    [additionalLocations, locationTypeFilter],
+  );
 
   const NEAR_EXPIRY_DAYS = 30;
 
@@ -56,7 +93,7 @@ const WarehouseMap = () => {
 
   useEffect(() => {
     axios
-      .get(`${BACKEND_URL}/api/warehouse-map/layout`)
+      .get(`${BACKEND_URL}/api/warehouse-map/layout?version=2`)
       .then((response) => {
         if (!Array.isArray(response.data.locations)) {
           throw new Error("Invalid warehouse map layout response.");
@@ -295,8 +332,8 @@ const WarehouseMap = () => {
     }
 
     const name = newLocation.name.trim();
-    const existingNames = [...racks, ...pallets, ...additionalLocations].map(
-      (location) => location.id.toLowerCase(),
+    const existingNames = additionalLocations.map((location) =>
+      location.id.toLowerCase(),
     );
     if (!name) {
       toast.error("Enter a name for the new location.");
@@ -538,7 +575,6 @@ const WarehouseMap = () => {
         />
       ))}
       {[
-        ...pallets,
         ...additionalLocations
           .filter(
             (location) =>
@@ -640,7 +676,6 @@ const WarehouseMap = () => {
       ))}
 
       {[
-        ...racks,
         ...additionalLocations
           .filter(
             (location) =>
@@ -652,7 +687,7 @@ const WarehouseMap = () => {
             left: `${location.left}%`,
             width: `${location.width}%`,
             height: `${location.height}%`,
-            className: "custom-rack",
+            className: location.className || "custom-rack",
           })),
         ...(showDraftLocation && getDraftLocation()?.type === "rack"
           ? [getDraftLocation()]
@@ -878,7 +913,8 @@ const WarehouseMap = () => {
               <div>
                 <h2 id="warehouse-map-modal-title">Warehouse Map</h2>
                 <p>
-                  Add racks or pallets without changing the existing layout.
+                  Manage racks and pallets without changing the rest of the
+                  floor plan.
                 </p>
               </div>
               <button
@@ -945,7 +981,7 @@ const WarehouseMap = () => {
                           }
                         />
                       </label>
-                      <label>
+                      <label className="warehouse-map-editor-type">
                         Location type
                         <select
                           disabled={Boolean(editingLocationId)}
@@ -1062,14 +1098,31 @@ const WarehouseMap = () => {
                   )}
                 </form>
                 <div className="warehouse-map-added-locations">
-                  <h3>Added locations</h3>
+                  <h3>Warehouse locations</h3>
+                  <label className="warehouse-map-location-filter">
+                    <span>Filter by type</span>
+                    <select
+                      value={locationTypeFilter}
+                      onChange={(event) =>
+                        setLocationTypeFilter(event.target.value)
+                      }
+                    >
+                      <option value="all">All locations</option>
+                      <option value="rack">Racks</option>
+                      <option value="pallet">Pallets</option>
+                    </select>
+                  </label>
                   {additionalLocations.length === 0 ? (
                     <p className="warehouse-map-editor-hint">
-                      No added racks or pallets yet.
+                      No racks or pallets are configured.
+                    </p>
+                  ) : sortedFilteredLocations.length === 0 ? (
+                    <p className="warehouse-map-editor-hint">
+                      No {locationTypeFilter} locations are configured.
                     </p>
                   ) : (
                     <ul>
-                      {additionalLocations.map((location) => (
+                      {sortedFilteredLocations.map((location) => (
                         <li key={location.id}>
                           <span>
                             <strong>{location.id}</strong>

@@ -8,6 +8,7 @@ const warehouseLocationSchema = new mongoose.Schema(
     left: { type: Number, required: true, min: 0, max: 100 },
     width: { type: Number, required: true, min: 0, max: 100 },
     height: { type: Number, required: true, min: 0, max: 100 },
+    className: { type: String, trim: true },
   },
   { _id: false },
 );
@@ -15,6 +16,7 @@ const warehouseLocationSchema = new mongoose.Schema(
 const warehouseMapLayoutSchema = new mongoose.Schema(
   {
     locations: { type: [warehouseLocationSchema], default: [] },
+    defaultsSeeded: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
