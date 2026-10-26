@@ -11,7 +11,12 @@ import {
   formatFieldInput,
   formatInternationalPhone,
 } from "../utils/fieldFormatting";
-import { validateField, validateFields } from "../utils/formValidation";
+import {
+  combineFullName,
+  splitFullName,
+  validateField,
+  validateFields,
+} from "../utils/formValidation";
 import { FaLongArrowAltLeft } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 
@@ -115,10 +120,20 @@ const Profile = () => {
     email: "",
     ownership: "",
     ownerName: "",
+    ownerNameFirstName: "",
+    ownerNameLastName: "",
     medicalDirector: "",
+    medicalDirectorFirstName: "",
+    medicalDirectorLastName: "",
     nephrologist: "",
+    nephrologistFirstName: "",
+    nephrologistLastName: "",
     unitManager: "",
+    unitManagerFirstName: "",
+    unitManagerLastName: "",
     purchasingContact: "",
+    purchasingContactFirstName: "",
+    purchasingContactLastName: "",
     designation: "",
     procurementMobile: "",
     procurementEmail: "",
@@ -135,6 +150,45 @@ const Profile = () => {
       [name]: validateField(name, formattedValue),
     }));
     if (error) setError(null);
+  };
+
+  const handleNameChange = (name, part, value) => {
+    const formattedValue = formatFieldInput(name, value);
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [`${name}${part}`]: formattedValue,
+      };
+      next[name] = combineFullName(
+        part === "FirstName" ? formattedValue : prev[`${name}FirstName`],
+        part === "LastName" ? formattedValue : prev[`${name}LastName`],
+      );
+      return next;
+    });
+    setTouchedFields((prev) => ({ ...prev, [name]: true }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      [name]: validateField(
+        name,
+        combineFullName(
+          part === "FirstName"
+            ? formattedValue
+            : formData[`${name}FirstName`],
+          part === "LastName"
+            ? formattedValue
+            : formData[`${name}LastName`],
+        ),
+      ),
+    }));
+    if (error) setError(null);
+  };
+
+  const handleNameBlur = (name) => {
+    setTouchedFields((prev) => ({ ...prev, [name]: true }));
+    setFieldErrors((prev) => ({
+      ...prev,
+      [name]: validateField(name, formData[name]),
+    }));
   };
 
   const handleFieldBlur = (name, value) => {
@@ -274,6 +328,21 @@ const Profile = () => {
         }
 
         const updatedData = response.data.user;
+        const updatedNameFields = Object.fromEntries(
+          [
+            "ownerName",
+            "medicalDirector",
+            "nephrologist",
+            "unitManager",
+            "purchasingContact",
+          ].flatMap((name) => {
+            const parts = splitFullName(updatedData[name] || "");
+            return [
+              [`${name}FirstName`, parts.firstName],
+              [`${name}LastName`, parts.lastName],
+            ];
+          }),
+        );
         setFormData({
           dialysisCenterName: updatedData.fullName || "",
           facilityType: updatedData.facilityType || "",
@@ -290,6 +359,7 @@ const Profile = () => {
           nephrologist: updatedData.nephrologist || "",
           unitManager: updatedData.unitManager || "",
           purchasingContact: updatedData.purchasingContact || "",
+          ...updatedNameFields,
           designation: updatedData.designation || "",
           procurementMobile: updatedData.procurementMobile || "",
           procurementEmail: updatedData.procurementEmail || "",
@@ -367,6 +437,21 @@ const Profile = () => {
         timeout: 10000,
       });
       const data = response.data;
+      const profileNameFields = Object.fromEntries(
+        [
+          "ownerName",
+          "medicalDirector",
+          "nephrologist",
+          "unitManager",
+          "purchasingContact",
+        ].flatMap((name) => {
+          const parts = splitFullName(data[name] || "");
+          return [
+            [`${name}FirstName`, parts.firstName],
+            [`${name}LastName`, parts.lastName],
+          ];
+        }),
+      );
 
       setUserRole(data.role || "User");
       setMobileCountryCode(getPhoneParts(data.phoneNumber || "").countryCode);
@@ -409,6 +494,7 @@ const Profile = () => {
         nephrologist: data.nephrologist || "",
         unitManager: data.unitManager || "",
         purchasingContact: data.purchasingContact || "",
+        ...profileNameFields,
         designation: data.designation || "",
         procurementMobile: data.procurementMobile || "",
         procurementEmail: data.procurementEmail || "",
@@ -696,65 +782,71 @@ const Profile = () => {
                 )}
               </div>
 
-              <Input
+              <NameInput
                 label="Owner's Name"
                 name="ownerName"
                 value={formData.ownerName}
-                onChange={handleChange}
-                onBlur={(e) => handleFieldBlur("ownerName", e.target.value)}
+                firstName={formData.ownerNameFirstName}
+                lastName={formData.ownerNameLastName}
+                onNameChange={handleNameChange}
+                onNameBlur={handleNameBlur}
                 error={touchedFields.ownerName && fieldErrors.ownerName}
-                disabled={!isEditing}
+                isEditing={isEditing}
               />
 
-              <Input
+              <NameInput
                 label="Medical Director's Name"
                 name="medicalDirector"
                 value={formData.medicalDirector}
-                onChange={handleChange}
-                onBlur={(e) =>
-                  handleFieldBlur("medicalDirector", e.target.value)
-                }
+                firstName={formData.medicalDirectorFirstName}
+                lastName={formData.medicalDirectorLastName}
+                onNameChange={handleNameChange}
+                onNameBlur={handleNameBlur}
                 error={
                   touchedFields.medicalDirector && fieldErrors.medicalDirector
                 }
-                disabled={!isEditing}
+                isEditing={isEditing}
               />
 
-              <Input
+              <NameInput
                 label="Nephrologist Name"
                 name="nephrologist"
                 value={formData.nephrologist}
-                onChange={handleChange}
-                onBlur={(e) => handleFieldBlur("nephrologist", e.target.value)}
+                firstName={formData.nephrologistFirstName}
+                lastName={formData.nephrologistLastName}
+                onNameChange={handleNameChange}
+                onNameBlur={handleNameBlur}
                 error={touchedFields.nephrologist && fieldErrors.nephrologist}
-                disabled={!isEditing}
+                isEditing={isEditing}
               />
 
-              <Input
+              <NameInput
                 label="Unit Manager / Administrator"
                 name="unitManager"
                 value={formData.unitManager}
-                onChange={handleChange}
-                onBlur={(e) => handleFieldBlur("unitManager", e.target.value)}
+                firstName={formData.unitManagerFirstName}
+                lastName={formData.unitManagerLastName}
+                onNameChange={handleNameChange}
+                onNameBlur={handleNameBlur}
                 error={touchedFields.unitManager && fieldErrors.unitManager}
-                disabled={!isEditing}
+                isEditing={isEditing}
               />
             </Section>
 
             <Section title="PROCUREMENT & ACCOUNTS INFORMATION">
-              <Input
+              <NameInput
                 label="Purchasing Contact Person"
                 name="purchasingContact"
                 value={formData.purchasingContact}
-                onChange={handleChange}
-                onBlur={(e) =>
-                  handleFieldBlur("purchasingContact", e.target.value)
-                }
+                firstName={formData.purchasingContactFirstName}
+                lastName={formData.purchasingContactLastName}
+                onNameChange={handleNameChange}
+                onNameBlur={handleNameBlur}
                 error={
                   touchedFields.purchasingContact &&
                   fieldErrors.purchasingContact
                 }
-                disabled={!isEditing}
+                isEditing={isEditing}
               />
 
               <Input
@@ -829,6 +921,50 @@ const Input = ({ label, full, error, ...props }) => {
     </div>
   );
 };
+
+const NameInput = ({
+  label,
+  name,
+  value,
+  firstName,
+  lastName,
+  onNameChange,
+  onNameBlur,
+  error,
+  isEditing,
+}) =>
+  isEditing ? (
+    <div className="Profile-Client-group">
+      <label htmlFor={`${name}-first-name`}>{label}</label>
+      <div className="Profile-Client-nameInputs">
+        <input
+          id={`${name}-first-name`}
+          type="text"
+          value={firstName || ""}
+          placeholder="First name"
+          maxLength={50}
+          aria-label={`${label} first name`}
+          onChange={(e) => onNameChange(name, "FirstName", e.target.value)}
+          onBlur={() => onNameBlur(name)}
+          className={error ? "input-error" : ""}
+        />
+        <input
+          id={`${name}-last-name`}
+          type="text"
+          value={lastName || ""}
+          placeholder="Last name"
+          maxLength={50}
+          aria-label={`${label} last name`}
+          onChange={(e) => onNameChange(name, "LastName", e.target.value)}
+          onBlur={() => onNameBlur(name)}
+          className={error ? "input-error" : ""}
+        />
+      </div>
+      {error && <div className="inline-error-message">{error}</div>}
+    </div>
+  ) : (
+    <Input label={label} name={name} value={value} disabled />
+  );
 
 const PhoneField = ({
   label,

@@ -22,20 +22,28 @@ import {
   formatFieldInput,
   formatInternationalPhone,
 } from "../utils/fieldFormatting";
-import { validateField, validateFields } from "../utils/formValidation";
+import {
+  combineFullName,
+  splitFullName,
+  validateField,
+  validateFields,
+} from "../utils/formValidation";
 import usePolling from "../hooks/usePolling";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
   (window.location.hostname === "localhost" ? "http://localhost:5000" : "");
 const EMPLOYEE_VALIDATION_FIELDS = [
-  "fullName",
+  "firstName",
+  "lastName",
   "address",
   "phoneNumber",
   "email",
   "role",
 ];
 const EMPLOYEE_VALIDATION_OPTIONS = {
+  firstName: { required: true, label: "First Name" },
+  lastName: { required: true, label: "Last Name" },
   address: { required: true, label: "Address" },
 };
 
@@ -54,6 +62,8 @@ const UsersAccessControl = () => {
 
   const initialForm = {
     fullName: "",
+    firstName: "",
+    lastName: "",
     address: "",
     phoneNumber: "",
     phoneCountryCode: "+63",
@@ -75,6 +85,9 @@ const UsersAccessControl = () => {
       EMPLOYEE_VALIDATION_FIELDS,
       EMPLOYEE_VALIDATION_OPTIONS,
     );
+    if (combineFullName(formData.firstName, formData.lastName).length > 100) {
+      nextErrors.lastName = "Full Name cannot exceed 100 characters.";
+    }
     setTouchedFields(
       EMPLOYEE_VALIDATION_FIELDS.reduce((touched, field) => {
         touched[field] = true;
@@ -89,11 +102,17 @@ const UsersAccessControl = () => {
     const formatName =
       name === "phoneNumber"
         ? "mobile"
-        : name === "fullName"
+        : name === "firstName" || name === "lastName"
           ? "ownerName"
           : name;
     const value = formatFieldInput(formatName, inputValue);
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === "firstName" || name === "lastName") {
+        next.fullName = combineFullName(next.firstName, next.lastName);
+      }
+      return next;
+    });
     setTouchedFields((prev) => ({ ...prev, [name]: true }));
     setFieldErrors((prev) => ({
       ...prev,
@@ -198,7 +217,10 @@ const UsersAccessControl = () => {
       };
 
       const fd = new FormData();
-      fd.append("fullName", formData.fullName.trim());
+      fd.append(
+        "fullName",
+        combineFullName(formData.firstName, formData.lastName),
+      );
       fd.append("email", email);
       fd.append("role", roleMap[formData.role?.toLowerCase()] || formData.role);
       fd.append("phoneNumber", phoneNumberWithCountryCode);
@@ -259,9 +281,10 @@ const UsersAccessControl = () => {
         : phoneDigits;
       const formattedPhone = formatFieldInput("mobile", localPhoneDigits);
       const formattedEmail = formatFieldInput("email", formData.email || "");
-      const formattedFullName = (formData.fullName || "")
-        .replace(/\s{2,}/g, " ")
-        .trim();
+      const formattedFullName = combineFullName(
+        formData.firstName,
+        formData.lastName,
+      );
       const formattedAddress = (formData.address || "")
         .replace(/\s{2,}/g, " ")
         .trim();
@@ -301,8 +324,10 @@ const UsersAccessControl = () => {
       await fetchEmployees();
 
       const updatedUser = response.data;
+      const updatedName = splitFullName(updatedUser.fullName || formattedFullName);
       setFormData({
         ...updatedUser,
+        ...updatedName,
         phoneCountryCode:
           updatedUser.phoneCountryCode || formData.phoneCountryCode || "+63",
         phoneNumber: updatedUser.phoneNumber || "",
@@ -368,8 +393,11 @@ const UsersAccessControl = () => {
   };
 
   const openViewProfile = (emp) => {
+    const { firstName, lastName } = splitFullName(emp.fullName || "");
     setFormData({
       ...emp,
+      firstName,
+      lastName,
       phoneCountryCode: emp.phoneCountryCode || "+63",
       phoneNumber: emp.phoneNumber || "",
       profileImage: emp.profileImage || "",
@@ -758,30 +786,96 @@ const UsersAccessControl = () => {
                   <div className="form-title">
                     <p className="label">Personal Information</p>
                   </div>
-                  <div className="field-group">
-                    <label className="field-label" htmlFor="employee-full-name">
-                      Full Name
-                    </label>
-                    <input
-                      id="employee-full-name"
-                      type="text"
-                      placeholder="Full name"
-                      value={formData.fullName || ""}
-                      className={fieldErrors.fullName ? "input-error" : ""}
-                      onChange={(e) =>
-                        handleEmployeeFieldChange("fullName", e.target.value)
-                      }
-                      onBlur={(e) =>
-                        handleEmployeeFieldBlur("fullName", e.target.value)
-                      }
-                      disabled={!isEditing && activeModal === "viewProfile"}
-                    />
-                    {touchedFields.fullName && fieldErrors.fullName && (
-                      <div className="inline-error-message">
-                        {fieldErrors.fullName}
+                  {activeModal === "viewProfile" && !isEditing ? (
+                    <div className="field-group">
+                      <label
+                        className="field-label"
+                        htmlFor="employee-full-name"
+                      >
+                        Full Name
+                      </label>
+                      <input
+                        id="employee-full-name"
+                        type="text"
+                        value={
+                          formData.fullName ||
+                          combineFullName(formData.firstName, formData.lastName)
+                        }
+                        disabled
+                      />
+                    </div>
+                  ) : (
+                    <div className="field-group employee-name-field">
+                      <label
+                        className="field-label"
+                        htmlFor="employee-first-name"
+                      >
+                        Full Name
+                      </label>
+                      <div className="employee-name-inputs">
+                        <div className="employee-name-part">
+                          <input
+                            id="employee-first-name"
+                            type="text"
+                            placeholder="First name"
+                            value={formData.firstName || ""}
+                            className={
+                              fieldErrors.firstName ? "input-error" : ""
+                            }
+                            onChange={(e) =>
+                              handleEmployeeFieldChange(
+                                "firstName",
+                                e.target.value,
+                              )
+                            }
+                            onBlur={(e) =>
+                              handleEmployeeFieldBlur(
+                                "firstName",
+                                e.target.value,
+                              )
+                            }
+                            maxLength={50}
+                          />
+                          {touchedFields.firstName &&
+                            fieldErrors.firstName && (
+                              <div className="inline-error-message">
+                                {fieldErrors.firstName}
+                              </div>
+                            )}
+                        </div>
+                        <div className="employee-name-part">
+                          <input
+                            id="employee-last-name"
+                            type="text"
+                            placeholder="Last name"
+                            value={formData.lastName || ""}
+                            className={
+                              fieldErrors.lastName ? "input-error" : ""
+                            }
+                            onChange={(e) =>
+                              handleEmployeeFieldChange(
+                                "lastName",
+                                e.target.value,
+                              )
+                            }
+                            onBlur={(e) =>
+                              handleEmployeeFieldBlur(
+                                "lastName",
+                                e.target.value,
+                              )
+                            }
+                            maxLength={50}
+                          />
+                          {touchedFields.lastName &&
+                            fieldErrors.lastName && (
+                              <div className="inline-error-message">
+                                {fieldErrors.lastName}
+                              </div>
+                            )}
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   <div className="field-group">
                     <label className="field-label" htmlFor="employee-address">
                       Address

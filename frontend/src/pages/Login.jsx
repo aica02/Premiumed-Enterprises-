@@ -12,7 +12,7 @@ import {
   formatFieldInput,
   formatInternationalPhone,
 } from "../utils/fieldFormatting";
-import { validateField } from "../utils/formValidation";
+import { combineFullName, validateField } from "../utils/formValidation";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -63,10 +63,20 @@ const Login = () => {
     email: "",
     ownership: "Private",
     ownerName: "",
+    ownerFirstName: "",
+    ownerLastName: "",
     medicalDirector: "",
+    medicalDirectorFirstName: "",
+    medicalDirectorLastName: "",
     nephrologist: "",
+    nephrologistFirstName: "",
+    nephrologistLastName: "",
     unitManager: "",
+    unitManagerFirstName: "",
+    unitManagerLastName: "",
     purchasingContact: "",
+    purchasingFirstName: "",
+    purchasingLastName: "",
     designation: "",
     procurementMobileCountryCode: "+63",
     procurementMobile: "",
@@ -85,10 +95,20 @@ const Login = () => {
     email: "",
     ownership: "",
     ownerName: "",
+    ownerFirstName: "",
+    ownerLastName: "",
     medicalDirector: "",
+    medicalDirectorFirstName: "",
+    medicalDirectorLastName: "",
     nephrologist: "",
+    nephrologistFirstName: "",
+    nephrologistLastName: "",
     unitManager: "",
+    unitManagerFirstName: "",
+    unitManagerLastName: "",
     purchasingContact: "",
+    purchasingFirstName: "",
+    purchasingLastName: "",
     designation: "",
     procurementMobile: "",
     procurementEmail: "",
@@ -114,7 +134,20 @@ const Login = () => {
       return;
     }
 
-    value = formatFieldInput(name, value);
+    const formatName =
+      {
+        ownerFirstName: "ownerName",
+        ownerLastName: "ownerName",
+        medicalDirectorFirstName: "medicalDirector",
+        medicalDirectorLastName: "medicalDirector",
+        nephrologistFirstName: "nephrologist",
+        nephrologistLastName: "nephrologist",
+        unitManagerFirstName: "unitManager",
+        unitManagerLastName: "unitManager",
+        purchasingFirstName: "purchasingContact",
+        purchasingLastName: "purchasingContact",
+      }[name] || name;
+    value = formatFieldInput(formatName, value);
 
     // update form data
     setFormData((prev) => ({
@@ -170,14 +203,19 @@ const Login = () => {
 
     2: [
       "ownership",
-      "ownerName",
-      "medicalDirector",
-      "nephrologist",
-      "unitManager",
+      "ownerFirstName",
+      "ownerLastName",
+      "medicalDirectorFirstName",
+      "medicalDirectorLastName",
+      "nephrologistFirstName",
+      "nephrologistLastName",
+      "unitManagerFirstName",
+      "unitManagerLastName",
     ],
 
     3: [
-      "purchasingContact",
+      "purchasingFirstName",
+      "purchasingLastName",
       "designation",
       "procurementMobile",
       "procurementEmail",
@@ -200,6 +238,22 @@ const Login = () => {
         newErrors[field] = error;
       } else {
         newErrors[field] = "";
+      }
+    });
+
+    const namePairs = [
+      ["ownerFirstName", "ownerLastName"],
+      ["medicalDirectorFirstName", "medicalDirectorLastName"],
+      ["nephrologistFirstName", "nephrologistLastName"],
+      ["unitManagerFirstName", "unitManagerLastName"],
+      ["purchasingFirstName", "purchasingLastName"],
+    ];
+    namePairs.forEach(([firstField, lastField]) => {
+      if (
+        fields.includes(firstField) &&
+        combineFullName(formData[firstField], formData[lastField]).length > 100
+      ) {
+        newErrors[lastField] = "Full Name cannot exceed 100 characters.";
       }
     });
 
@@ -433,12 +487,27 @@ const Login = () => {
       email: formData.email,
 
       ownership: formData.ownership,
-      ownerName: formData.ownerName,
-      medicalDirector: formData.medicalDirector,
-      nephrologist: formData.nephrologist,
-      unitManager: formData.unitManager,
+      ownerName: combineFullName(
+        formData.ownerFirstName,
+        formData.ownerLastName,
+      ),
+      medicalDirector: combineFullName(
+        formData.medicalDirectorFirstName,
+        formData.medicalDirectorLastName,
+      ),
+      nephrologist: combineFullName(
+        formData.nephrologistFirstName,
+        formData.nephrologistLastName,
+      ),
+      unitManager: combineFullName(
+        formData.unitManagerFirstName,
+        formData.unitManagerLastName,
+      ),
 
-      purchasingContact: formData.purchasingContact,
+      purchasingContact: combineFullName(
+        formData.purchasingFirstName,
+        formData.purchasingLastName,
+      ),
       designation: formData.designation,
 
       procurementMobile: formatInternationalPhone(
@@ -473,10 +542,20 @@ const Login = () => {
         email: "",
         ownership: "Private",
         ownerName: "",
+        ownerFirstName: "",
+        ownerLastName: "",
         medicalDirector: "",
+        medicalDirectorFirstName: "",
+        medicalDirectorLastName: "",
         nephrologist: "",
+        nephrologistFirstName: "",
+        nephrologistLastName: "",
         unitManager: "",
+        unitManagerFirstName: "",
+        unitManagerLastName: "",
         purchasingContact: "",
+        purchasingFirstName: "",
+        purchasingLastName: "",
         designation: "",
         procurementMobileCountryCode: "+63",
         procurementMobile: "",
@@ -495,10 +574,20 @@ const Login = () => {
         email: "",
         ownership: "",
         ownerName: "",
+        ownerFirstName: "",
+        ownerLastName: "",
         medicalDirector: "",
+        medicalDirectorFirstName: "",
+        medicalDirectorLastName: "",
         nephrologist: "",
+        nephrologistFirstName: "",
+        nephrologistLastName: "",
         unitManager: "",
+        unitManagerFirstName: "",
+        unitManagerLastName: "",
         purchasingContact: "",
+        purchasingFirstName: "",
+        purchasingLastName: "",
         designation: "",
         procurementMobile: "",
         procurementEmail: "",
@@ -870,93 +959,80 @@ const Login = () => {
                     <>
                       <SectionTitle title="OWNERSHIP" />
 
-                      <div className="form-row ownership-container">
-                        <div className="radio-group">
-                          {["Private", "Partnership", "Government"].map(
-                            (type) => (
-                              <label key={type}>
-                                <input
-                                  type="radio"
-                                  name="ownership"
-                                  value={type}
-                                  checked={formData.ownership === type}
-                                  onChange={handleRegisterChange}
-                                />
+                      <div className="radio-group">
+                        {["Private", "Partnership", "Government"].map(
+                          (type) => (
+                            <label key={type}>
+                              <input
+                                type="radio"
+                                name="ownership"
+                                value={type}
+                                checked={formData.ownership === type}
+                                onChange={handleRegisterChange}
+                              />
 
-                                {type}
-                              </label>
-                            ),
+                              {type}
+                            </label>
+                          ),
+                        )}
+
+                        {touchedFields.ownership &&
+                          registerErrors.ownership && (
+                            <div className="inline-error-message">
+                              {registerErrors.ownership}
+                            </div>
                           )}
-
-                          {touchedFields.ownership &&
-                            registerErrors.ownership && (
-                              <div className="inline-error-message">
-                                {registerErrors.ownership}
-                              </div>
-                            )}
-                        </div>
-
-                        <InputBox
-                          label="Owner's Name"
-                          name="ownerName"
-                          placeholder="Full name"
-                          value={formData.ownerName}
-                          onChange={handleRegisterChange}
-                          onBlur={handleRegisterBlur}
-                          maxLength={100}
-                          error={
-                            touchedFields.ownerName
-                              ? registerErrors.ownerName
-                              : ""
-                          }
-                        />
                       </div>
 
                       <div className="form-row">
-                        <InputBox
-                          label="Medical Director's Name"
-                          name="medicalDirector"
-                          placeholder="ex: MD, FPCP, FPSN"
-                          value={formData.medicalDirector}
+                        <NameInputBox
+                          label="Owner's Name"
+                          firstName="ownerFirstName"
+                          lastName="ownerLastName"
+                          firstValue={formData.ownerFirstName}
+                          lastValue={formData.ownerLastName}
+                          errors={registerErrors}
+                          touched={touchedFields}
                           onChange={handleRegisterChange}
                           onBlur={handleRegisterBlur}
-                          maxLength={100}
-                          error={
-                            touchedFields.medicalDirector
-                              ? registerErrors.medicalDirector
-                              : ""
-                          }
-                        />
-
-                        <InputBox
-                          label="Nephrologist Name"
-                          name="nephrologist"
-                          placeholder="ex. MD, FPSN"
-                          value={formData.nephrologist}
-                          onChange={handleRegisterChange}
-                          onBlur={handleRegisterBlur}
-                          maxLength={100}
-                          error={
-                            touchedFields.nephrologist
-                              ? registerErrors.nephrologist
-                              : ""
-                          }
+                          full
                         />
                       </div>
 
-                      <InputBox
-                        label="Unit Manager / Administrator"
-                        name="unitManager"
-                        placeholder="ex: RN, MAN"
-                        value={formData.unitManager}
+                      <NameInputBox
+                        label="Medical Director's Name"
+                        firstName="medicalDirectorFirstName"
+                        lastName="medicalDirectorLastName"
+                        firstValue={formData.medicalDirectorFirstName}
+                        lastValue={formData.medicalDirectorLastName}
+                        errors={registerErrors}
+                        touched={touchedFields}
                         onChange={handleRegisterChange}
                         onBlur={handleRegisterBlur}
-                        maxLength={100}
-                        error={
-                          touchedFields.unitManager
-                            ? registerErrors.unitManager
-                            : ""
-                        }
+                      />
+
+                      <NameInputBox
+                        label="Nephrologist Name"
+                        firstName="nephrologistFirstName"
+                        lastName="nephrologistLastName"
+                        firstValue={formData.nephrologistFirstName}
+                        lastValue={formData.nephrologistLastName}
+                        errors={registerErrors}
+                        touched={touchedFields}
+                        onChange={handleRegisterChange}
+                        onBlur={handleRegisterBlur}
+                      />
+
+                      <NameInputBox
+                        label="Unit Manager / Administrator"
+                        firstName="unitManagerFirstName"
+                        lastName="unitManagerLastName"
+                        firstValue={formData.unitManagerFirstName}
+                        lastValue={formData.unitManagerLastName}
+                        errors={registerErrors}
+                        touched={touchedFields}
+                        onChange={handleRegisterChange}
+                        onBlur={handleRegisterBlur}
                         full
                       />
 
@@ -985,22 +1061,19 @@ const Login = () => {
                     <>
                       <SectionTitle title="PROCUREMENT & ACCOUNTS INFORMATION" />
 
-                      <div className="form-row">
-                        <InputBox
-                          label="Purchasing Contact Person"
-                          name="purchasingContact"
-                          placeholder="Full name"
-                          value={formData.purchasingContact}
-                          onChange={handleRegisterChange}
-                          onBlur={handleRegisterBlur}
-                          maxLength={100}
-                          error={
-                            touchedFields.purchasingContact
-                              ? registerErrors.purchasingContact
-                              : ""
-                          }
-                        />
+                      <NameInputBox
+                        label="Purchasing Contact"
+                        firstName="purchasingFirstName"
+                        lastName="purchasingLastName"
+                        firstValue={formData.purchasingFirstName}
+                        lastValue={formData.purchasingLastName}
+                        errors={registerErrors}
+                        touched={touchedFields}
+                        onChange={handleRegisterChange}
+                        onBlur={handleRegisterBlur}
+                      />
 
+                      <div className="form-row">
                         <InputBox
                           label="Designation"
                           name="designation"
@@ -1015,9 +1088,7 @@ const Login = () => {
                               : ""
                           }
                         />
-                      </div>
 
-                      <div className="form-row">
                         <PhoneInput
                           label="Mobile Number"
                           countryCodeName="procurementMobileCountryCode"
@@ -1032,24 +1103,24 @@ const Login = () => {
                               : ""
                           }
                         />
-
-                        <InputBox
-                          label="Email Address"
-                          name="procurementEmail"
-                          type="email"
-                          placeholder="example@gmail.com"
-                          value={formData.procurementEmail}
-                          onChange={handleRegisterChange}
-                          onBlur={handleRegisterBlur}
-                          autoComplete="email"
-                          maxLength={150}
-                          error={
-                            touchedFields.procurementEmail
-                              ? registerErrors.procurementEmail
-                              : ""
-                          }
-                        />
                       </div>
+
+                      <InputBox
+                        label="Email Address"
+                        name="procurementEmail"
+                        type="email"
+                        placeholder="example@gmail.com"
+                        value={formData.procurementEmail}
+                        onChange={handleRegisterChange}
+                        onBlur={handleRegisterBlur}
+                        autoComplete="email"
+                        maxLength={150}
+                        error={
+                          touchedFields.procurementEmail
+                            ? registerErrors.procurementEmail
+                            : ""
+                        }
+                      />
 
                       <div className="step-buttons">
                         <button
@@ -1244,6 +1315,48 @@ const InputBox = ({ label, error, full, ...props }) => (
     <input {...props} className={error ? "input-error" : ""} />
 
     {error && <div className="inline-error-message">{error}</div>}
+  </div>
+);
+
+const NameInputBox = ({
+  label,
+  firstName,
+  lastName,
+  firstValue,
+  lastValue,
+  errors,
+  touched,
+  onChange,
+  onBlur,
+  full,
+}) => (
+  <div className={`signup-input-group ${full ? "full-width" : ""}`}>
+    <label>{label}</label>
+    <div className="name-input-row">
+      {[
+        { name: firstName, placeholder: "First name", value: firstValue },
+        { name: lastName, placeholder: "Last name", value: lastValue },
+      ].map((field) => (
+        <div key={field.name}>
+          <input
+            type="text"
+            name={field.name}
+            placeholder={field.placeholder}
+            aria-label={`${label} ${field.placeholder}`}
+            value={field.value}
+            onChange={onChange}
+            onBlur={onBlur}
+            maxLength={50}
+            className={
+              touched[field.name] && errors[field.name] ? "input-error" : ""
+            }
+          />
+          {touched[field.name] && errors[field.name] && (
+            <div className="inline-error-message">{errors[field.name]}</div>
+          )}
+        </div>
+      ))}
+    </div>
   </div>
 );
 

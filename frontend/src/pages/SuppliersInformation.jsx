@@ -29,7 +29,12 @@ import {
   formatFieldInput,
   formatInternationalPhone,
 } from "../utils/fieldFormatting";
-import { validateField, validateFields } from "../utils/formValidation";
+import {
+  combineFullName,
+  splitFullName,
+  validateField,
+  validateFields,
+} from "../utils/formValidation";
 
 const BACKEND_URL =
   import.meta.env.VITE_API_URL ||
@@ -40,6 +45,8 @@ const ITEMS_API = `${BACKEND_URL}/api/products`;
 const SUPPLIER_VALIDATION_FIELDS = [
   "name",
   "contact",
+  "contactFirstName",
+  "contactLastName",
   "phone",
   "email",
   "tinNumber",
@@ -52,6 +59,8 @@ const SUPPLIER_VALIDATION_FIELDS = [
 const SUPPLIER_VALIDATION_OPTIONS = {
   name: { required: true, label: "Supplier Name" },
   contact: { required: true, label: "Full Name" },
+  contactFirstName: { required: true, label: "First Name" },
+  contactLastName: { required: true, label: "Last Name" },
   phone: { required: true, label: "Phone Number" },
   email: { required: true, label: "Email" },
   tinNumber: { required: true, label: "TIN Number" },
@@ -154,6 +163,8 @@ const SuppliersInformation = () => {
     name: "",
     role: "Supplier",
     contact: "",
+    contactFirstName: "",
+    contactLastName: "",
     phone: "",
     email: "",
     address: "",
@@ -654,13 +665,17 @@ const SuppliersInformation = () => {
     const formattedPhone = formatFieldInput("mobile", dataToSave.phone || "");
     const formattedEmail = formatFieldInput("email", dataToSave.email || "");
 
+    const { contactFirstName, contactLastName, ...supplierFields } = dataToSave;
     const formattedSupplier = {
-      ...dataToSave,
+      ...supplierFields,
       name: formatFieldInput(
         "dialysisCenterName",
         dataToSave.name || "",
       ).trim(),
-      contact: formatFieldInput("ownerName", dataToSave.contact || "").trim(),
+      contact: formatFieldInput(
+        "ownerName",
+        combineFullName(contactFirstName, contactLastName),
+      ).trim(),
       phone: formattedPhone
         ? formatInternationalPhone(supplierPhoneCountryCode, formattedPhone)
         : "",
@@ -764,18 +779,53 @@ const SuppliersInformation = () => {
       value = formatFieldInput("tinNumber", value);
     } else if (name === "name") {
       value = formatFieldInput("dialysisCenterName", value);
-    } else if (name === "contact") {
+    } else if (
+      name === "contact" ||
+      name === "contactFirstName" ||
+      name === "contactLastName"
+    ) {
       value = formatFieldInput("ownerName", value);
     } else if (name === "address" || name === "location") {
       value = formatFieldInput("address", value);
     }
-    setNewSupplier((prev) => ({ ...prev, [name]: value }));
-    setSupplierTouched((prev) => ({ ...prev, [name]: true }));
+    setNewSupplier((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === "contactFirstName" || name === "contactLastName") {
+        next.contact = combineFullName(
+          next.contactFirstName,
+          next.contactLastName,
+        );
+      }
+      return next;
+    });
+    setSupplierTouched((prev) => ({
+      ...prev,
+      [name]: true,
+      ...(name === "contactFirstName" || name === "contactLastName"
+        ? { contact: true }
+        : {}),
+    }));
     setSupplierErrors((prev) => ({
       ...prev,
       [name]: SUPPLIER_VALIDATION_FIELDS.includes(name)
         ? validateField(name, value, SUPPLIER_VALIDATION_OPTIONS[name])
         : "",
+      ...(name === "contactFirstName" || name === "contactLastName"
+        ? {
+            contact: validateField(
+              "contact",
+              combineFullName(
+                name === "contactFirstName"
+                  ? value
+                  : newSupplier.contactFirstName,
+                name === "contactLastName"
+                  ? value
+                  : newSupplier.contactLastName,
+              ),
+              SUPPLIER_VALIDATION_OPTIONS.contact,
+            ),
+          }
+        : {}),
     }));
   };
 
@@ -790,18 +840,53 @@ const SuppliersInformation = () => {
       value = formatFieldInput("email", value);
     } else if (name === "name") {
       value = formatFieldInput("dialysisCenterName", value);
-    } else if (name === "contact") {
+    } else if (
+      name === "contact" ||
+      name === "contactFirstName" ||
+      name === "contactLastName"
+    ) {
       value = formatFieldInput("ownerName", value);
     } else if (name === "address" || name === "location") {
       value = formatFieldInput("address", value);
     }
-    setSelectedSupplier((prev) => ({ ...prev, [name]: value }));
-    setSupplierTouched((prev) => ({ ...prev, [name]: true }));
+    setSelectedSupplier((prev) => {
+      const next = { ...prev, [name]: value };
+      if (name === "contactFirstName" || name === "contactLastName") {
+        next.contact = combineFullName(
+          next.contactFirstName,
+          next.contactLastName,
+        );
+      }
+      return next;
+    });
+    setSupplierTouched((prev) => ({
+      ...prev,
+      [name]: true,
+      ...(name === "contactFirstName" || name === "contactLastName"
+        ? { contact: true }
+        : {}),
+    }));
     setSupplierErrors((prev) => ({
       ...prev,
       [name]: SUPPLIER_VALIDATION_FIELDS.includes(name)
         ? validateField(name, value, SUPPLIER_VALIDATION_OPTIONS[name])
         : "",
+      ...(name === "contactFirstName" || name === "contactLastName"
+        ? {
+            contact: validateField(
+              "contact",
+              combineFullName(
+                name === "contactFirstName"
+                  ? value
+                  : selectedSupplier.contactFirstName,
+                name === "contactLastName"
+                  ? value
+                  : selectedSupplier.contactLastName,
+              ),
+              SUPPLIER_VALIDATION_OPTIONS.contact,
+            ),
+          }
+        : {}),
     }));
   };
 
@@ -968,7 +1053,16 @@ const SuppliersInformation = () => {
                           <button
                             className="view-profile-btn"
                             onClick={() => {
-                              setSelectedSupplier(item);
+                              const contactName =
+                                item.contact || item.contactPerson || "";
+                              const { firstName, lastName } =
+                                splitFullName(contactName);
+                              setSelectedSupplier({
+                                ...item,
+                                contact: contactName,
+                                contactFirstName: firstName,
+                                contactLastName: lastName,
+                              });
                               setSupplierErrors({});
                               setSupplierTouched({});
                               setIsEditing(false);
@@ -1519,15 +1613,35 @@ const SuppliersInformation = () => {
                     <h4>Contact Person</h4>
                   </div>
                   <InputItem
-                    placeholder="Full name"
-                    label="Full Name"
-                    name="contact"
-                    value={newSupplier.contact}
+                    placeholder="First name"
+                    label="First Name"
+                    name="contactFirstName"
+                    value={newSupplier.contactFirstName}
                     onChange={handleInputChange}
                     onBlur={(e) =>
-                      handleSupplierBlur("contact", e.target.value)
+                      handleSupplierBlur("contactFirstName", e.target.value)
                     }
-                    error={supplierTouched.contact && supplierErrors.contact}
+                    error={
+                      supplierTouched.contactFirstName &&
+                      supplierErrors.contactFirstName
+                    }
+                    maxLength={50}
+                  />
+                  <InputItem
+                    placeholder="Last name"
+                    label="Last Name"
+                    name="contactLastName"
+                    value={newSupplier.contactLastName}
+                    onChange={handleInputChange}
+                    onBlur={(e) =>
+                      handleSupplierBlur("contactLastName", e.target.value)
+                    }
+                    error={
+                      (supplierTouched.contactLastName &&
+                        supplierErrors.contactLastName) ||
+                      (supplierTouched.contact && supplierErrors.contact)
+                    }
+                    maxLength={50}
                   />
                   <div className="field-group">
                     <label className="field-label" htmlFor="new-supplier-phone">
@@ -1724,17 +1838,35 @@ const SuppliersInformation = () => {
                   {isEditing ? (
                     <>
                       <InputItem
-                        placeholder="Full name"
-                        label="Full Name"
-                        name="contact"
-                        value={selectedSupplier.contact}
+                        placeholder="First name"
+                        label="First Name"
+                        name="contactFirstName"
+                        value={selectedSupplier.contactFirstName}
                         onChange={handleEditChange}
                         onBlur={(e) =>
-                          handleSupplierBlur("contact", e.target.value)
+                          handleSupplierBlur("contactFirstName", e.target.value)
                         }
                         error={
-                          supplierTouched.contact && supplierErrors.contact
+                          supplierTouched.contactFirstName &&
+                          supplierErrors.contactFirstName
                         }
+                        maxLength={50}
+                      />
+                      <InputItem
+                        placeholder="Last name"
+                        label="Last Name"
+                        name="contactLastName"
+                        value={selectedSupplier.contactLastName}
+                        onChange={handleEditChange}
+                        onBlur={(e) =>
+                          handleSupplierBlur("contactLastName", e.target.value)
+                        }
+                        error={
+                          (supplierTouched.contactLastName &&
+                            supplierErrors.contactLastName) ||
+                          (supplierTouched.contact && supplierErrors.contact)
+                        }
+                        maxLength={50}
                       />
                       <div className="field-group">
                         <label

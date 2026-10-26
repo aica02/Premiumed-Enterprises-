@@ -232,6 +232,25 @@
   min-width: 0;
 }
 
+.employee-name-inputs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.employee-name-part {
+  min-width: 0;
+}
+
+.employee-modal-overlay
+  .employee-modal-body
+  .employee-form
+  .employee-name-part
+  > input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .employee-modal-overlay
   .employee-modal-body
   .employee-form

@@ -252,15 +252,27 @@ img {
   font-size: 12px;
   box-sizing: border-box;
 }
+.name-input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.name-input-row input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
 .full-width {
   grid-column: span 2;
 }
 .radio-group {
+  width: 100%;
   display: flex;
   gap: 15px;
   justify-content: center;
-  align-items: center;
+  align-items: left;
   font-size: 12px;
+  margin: 10px;
 }
 .radio-group input[type="radio"] {
   margin-right: 5px;
@@ -569,6 +581,9 @@ img {
   }
   .grid-row,
   .form-row {
+    grid-template-columns: 1fr;
+  }
+  .name-input-row {
     grid-template-columns: 1fr;
   }
   .signup-submit {

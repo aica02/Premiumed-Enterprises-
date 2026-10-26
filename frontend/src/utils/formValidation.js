@@ -15,8 +15,20 @@ const FIELD_LABELS = {
   procurementEmail: "Procurement Email Address",
   ownership: "Ownership",
   ownerName: "Owner's Name",
+  ownerFirstName: "First Name",
+  ownerLastName: "Last Name",
+  medicalDirectorFirstName: "First Name",
+  medicalDirectorLastName: "Last Name",
+  nephrologistFirstName: "First Name",
+  nephrologistLastName: "Last Name",
+  unitManagerFirstName: "First Name",
+  unitManagerLastName: "Last Name",
   fullName: "Full Name",
   contact: "Full Name",
+  contactFirstName: "First Name",
+  contactLastName: "Last Name",
+  firstName: "First Name",
+  lastName: "Last Name",
   medicalDirector: "Medical Director's Name",
   nephrologist: "Nephrologist Name",
   unitManager: "Unit Manager / Administrator",
@@ -32,9 +44,37 @@ const FIELD_ALIASES = {
   tinNumber: "registrationNumber",
   location: "address",
   fullName: "ownerName",
+  firstName: "ownerName",
+  lastName: "ownerName",
+  ownerFirstName: "ownerName",
+  ownerLastName: "ownerName",
+  medicalDirectorFirstName: "medicalDirector",
+  medicalDirectorLastName: "medicalDirector",
+  nephrologistFirstName: "nephrologist",
+  nephrologistLastName: "nephrologist",
+  unitManagerFirstName: "unitManager",
+  unitManagerLastName: "unitManager",
+  purchasingFirstName: "purchasingContact",
+  purchasingLastName: "purchasingContact",
+  contactFirstName: "ownerName",
+  contactLastName: "ownerName",
   contact: "ownerName",
   phoneNumber: "mobile",
   phone: "mobile",
+};
+
+export const combineFullName = (firstName = "", lastName = "") =>
+  [firstName, lastName]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s{2,}/g, " ");
+
+export const splitFullName = (fullName = "") => {
+  const [firstName = "", ...lastNameParts] = String(fullName)
+    .trim()
+    .split(/\s+/);
+  return { firstName, lastName: lastNameParts.join(" ") };
 };
 
 export const validateField = (name, value, options = {}) => {
