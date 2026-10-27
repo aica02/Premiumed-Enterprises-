@@ -43,6 +43,15 @@ const UserSchema = new mongoose.Schema({
   designation: { type: String },
   procurementMobile: { type: String },
   procurementEmail: { type: String },
+  dtiDocument: {
+    url: { type: String, trim: true },
+    fileName: { type: String, trim: true },
+  },
+  otherDocument: {
+    documentType: { type: String, trim: true },
+    url: { type: String, trim: true },
+    fileName: { type: String, trim: true },
+  },
   lastLogin: {
     type: Date
   }

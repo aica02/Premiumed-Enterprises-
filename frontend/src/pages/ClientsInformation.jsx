@@ -31,6 +31,7 @@ const ClientsInformation = () => {
   const [activeModal, setActiveModal] = useState(null);
   const [clients, setClients] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [registrationRequests, setRegistrationRequests] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
@@ -45,6 +46,7 @@ const ClientsInformation = () => {
         clientsRes.data.filter((u) => u.role?.toLowerCase() !== "admin"),
       );
       const reqRes = await axios.get(`${BACKEND_URL}/api/auth/requests`);
+      setRegistrationRequests(reqRes.data);
       setRequests(reqRes.data.filter((r) => r.status === "PENDING"));
     } catch (err) {
       console.error("Error fetching data:", err);
@@ -330,6 +332,16 @@ const ClientsInformation = () => {
     );
   };
 
+  const activeClient = activeModal?.data;
+  const activeClientRequest = activeClient
+    ? registrationRequests.find(
+        (request) =>
+          request.status === "APPROVED" &&
+          request.email?.trim().toLowerCase() ===
+            activeClient.email?.trim().toLowerCase(),
+      )
+    : null;
+
   return (
     <>
       <Toaster position="top-center" reverseOrder={false} autoClose={3000} />
@@ -531,8 +543,15 @@ const ClientsInformation = () => {
 
         {activeModal?.type === "viewClient" && (
           <ClientProfileModal
-            key={activeModal.data?._id}
-            client={activeModal.data}
+            key={activeClient?._id}
+            client={{
+              ...activeClient,
+              dtiDocument:
+                activeClient.dtiDocument || activeClientRequest?.dtiDocument,
+              otherDocument:
+                activeClient.otherDocument ||
+                activeClientRequest?.otherDocument,
+            }}
             onClose={() => setActiveModal(null)}
           />
         )}
@@ -710,6 +729,19 @@ const ClientProfileModal = ({ client, onClose }) => {
             <DetailItem label="Email Address" value={client.email} />
             <DetailItem label="Address" value={client.address} fullWidth />
             <div className="detail-group full title">
+              <h4>Registration Documents</h4>
+            </div>
+            <DocumentDetail
+              label="DTI"
+              document={client.dtiDocument}
+              fullWidth
+            />
+            <DocumentDetail
+              label={client.otherDocument?.documentType || "Other Document"}
+              document={client.otherDocument}
+              fullWidth
+            />
+            <div className="detail-group full title">
               <h4>Ownership & Personnel</h4>
             </div>
             <DetailItem label="Ownership" value={client.ownership} />
@@ -802,6 +834,20 @@ const RequestDetailsModal = ({ request, onClose, onRequestApproval }) => {
             <DetailItem label="Email Address" value={request.email} />
 
             <div className="detail-group full title">
+              <h4>Registration Documents</h4>
+            </div>
+            <DocumentDetail
+              label="DTI"
+              document={request.dtiDocument}
+              fullWidth
+            />
+            <DocumentDetail
+              label={request.otherDocument?.documentType || "Other Document"}
+              document={request.otherDocument}
+              fullWidth
+            />
+
+            <div className="detail-group full title">
               <h4>Ownership & Personnel</h4>
             </div>
 
@@ -849,6 +895,30 @@ const DetailItem = ({ label, value, fullWidth }) => (
     <label className="field-label">{label}</label>
     <div className="field-box">{value || "N/A"}</div>
   </div>
+);
+
+const DocumentDetail = ({ label, document, fullWidth }) => (
+  <DetailItem
+    label={label}
+    fullWidth={fullWidth}
+    value={
+      document?.url ? (
+        <span className="registration-document-link">
+          <span>{document.fileName || "Uploaded document"}</span>
+          <a
+            href={document.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`View ${label} document`}
+          >
+            View document
+          </a>
+        </span>
+      ) : (
+        "No documents included"
+      )
+    }
+  />
 );
 
 export default ClientsInformation;

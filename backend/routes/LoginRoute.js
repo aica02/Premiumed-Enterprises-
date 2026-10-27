@@ -12,6 +12,7 @@ import {
   sendEmailWithRetry,
   sendAccountApprovalEmail,
 } from "../utils/emailService.js";
+import { uploadToCloudinary, deleteFromCloudinary } from "../config/cloudinary.js";
 
 dotenv.config();
 
@@ -21,6 +22,18 @@ const upload = multer({
   storage: storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+});
+const registrationUpload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, callback) => {
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+    if (allowedTypes.includes(file.mimetype)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Only PDF, JPG, and PNG files are allowed"));
+    }
   },
 });
 const escapeRegex = (value = "") =>
@@ -105,15 +118,77 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.post("/register-request", async (req, res) => {
-  try {
-    const newRequest = new ClientRequest(req.body);
-    await newRequest.save();
-    res.status(201).json({ message: "Application submitted for review!" });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+router.post(
+  "/register-request",
+  (req, res, next) => {
+    registrationUpload.fields([
+      { name: "dtiDocument", maxCount: 1 },
+      { name: "otherDocument", maxCount: 1 },
+    ])(req, res, (error) => {
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    const uploadedAssets = [];
+    try {
+      const files = req.files || {};
+      const dtiFile = files.dtiDocument?.[0];
+      const otherFile = files.otherDocument?.[0];
+      let dtiDocument;
+      let otherDocument;
+
+      if (dtiFile) {
+        const result = await uploadToCloudinary(dtiFile.buffer, {
+          folder: "client-registration-documents",
+        });
+        uploadedAssets.push(result);
+        dtiDocument = {
+          url: result.secure_url,
+          fileName: dtiFile.originalname,
+        };
+      }
+
+      if (otherFile) {
+        const result = await uploadToCloudinary(otherFile.buffer, {
+          folder: "client-registration-documents",
+        });
+        uploadedAssets.push(result);
+        otherDocument = {
+          documentType: req.body.otherDocumentType || "Other",
+          url: result.secure_url,
+          fileName: otherFile.originalname,
+        };
+      }
+
+      const newRequest = new ClientRequest({
+        ...req.body,
+        dtiDocument,
+        otherDocument,
+      });
+      await newRequest.save();
+      res.status(201).json({ message: "Application submitted for review!" });
+    } catch (err) {
+      await Promise.all(
+        uploadedAssets.map(async (asset) => {
+          try {
+            await deleteFromCloudinary(asset.public_id, {
+              resource_type: asset.resource_type,
+            });
+          } catch (cleanupError) {
+            console.error("Failed to clean up registration document:", cleanupError);
+          }
+        }),
+      );
+      console.error("Registration request error:", err);
+      res.status(err.name === "ValidationError" ? 400 : 500).json({
+        error: err.message || "Failed to submit application.",
+      });
+    }
+  },
+);
 
 router.get("/requests", async (req, res) => {
   try {
@@ -239,6 +314,12 @@ router.post(
         designation: requestData.designation || "N/A",
         procurementMobile: requestData.procurementMobile || "N/A",
         procurementEmail: requestData.procurementEmail || "N/A",
+        dtiDocument: requestData.dtiDocument?.url
+          ? requestData.dtiDocument
+          : undefined,
+        otherDocument: requestData.otherDocument?.url
+          ? requestData.otherDocument
+          : undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

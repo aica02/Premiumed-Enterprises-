@@ -31,6 +31,8 @@
   text-align: left;
 }
 .signup-progress {
+  --progress-circle-size: 31px;
+  --progress-label-offset: 5.17px;
   align-self: center;
   margin-bottom: 20px;
   width: 90%;
@@ -40,8 +42,9 @@
   align-items: center;
 }
 .circle {
-  width: 25px;
-  height: 25px;
+  box-sizing: border-box;
+  width: var(--progress-circle-size);
+  height: var(--progress-circle-size);
   border-radius: 50%;
   border: 3px solid #d5d5d5;
   display: flex;
@@ -66,17 +69,205 @@
   background: var(--gold);
 }
 .progress-labels {
-  max-width: 445px;
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  width: 100%;
+  height: 18px;
   margin-top: 8px;
 }
 .progress-labels span {
-  width: 20px;
+  position: absolute;
+  top: 0;
   transform: translateX(-50%);
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
+}
+.progress-labels span:nth-child(1) {
+  left: calc(var(--progress-circle-size) / 2);
+}
+.progress-labels span:nth-child(2) {
+  left: calc(33.333% + var(--progress-label-offset));
+}
+.progress-labels span:nth-child(3) {
+  left: calc(66.667% - var(--progress-label-offset));
+}
+.progress-labels span:nth-child(4) {
+  left: calc(100% - var(--progress-circle-size) / 2);
+}
+.requirements-intro {
+  margin: -4px 0 2px;
+  color: #707780;
+  font-size: 12px;
+  line-height: 1.5;
+  text-transform: none;
+}
+.document-accordion {
+  overflow: hidden;
+  border: 1px solid #e6e8eb;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fff 0%, #fbfaf6 100%);
+  box-shadow: 0 4px 14px rgba(28, 38, 48, 0.045);
+}
+.document-accordion-trigger {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--black);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.document-accordion-heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.document-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(212, 175, 55, 0.15);
+  color: var(--gold);
+  font-size: 15px;
+}
+.document-chevron {
+  flex: 0 0 auto;
+  color: #717780;
+  font-size: 13px;
+  transition: transform 0.2s ease;
+}
+.document-accordion.expanded .document-chevron {
+  transform: rotate(180deg);
+}
+.document-accordion-content {
+  padding: 0 16px 16px 61px;
+}
+.document-accordion-content > p {
+  margin: 0 0 12px;
+  color: #707780;
+  font-size: 12px;
+  line-height: 1.45;
+  text-transform: none;
+}
+.document-type-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.document-type-field label {
+  color: #414750;
+  font-size: 11px;
+  font-weight: 700;
+}
+.document-type-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 11px;
+  border: 1px solid #e0e2e5;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--black);
+  font: inherit;
+  font-size: 12px;
+
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20d%3D%22M6%209L1.5%204.5L2.91%203.09L6%206.17L9.09%203.09L10.5%204.5L6%209Z%22%20fill%3D%22black%22/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+.document-upload-control {
+  min-height: 76px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed rgba(180, 143, 30, 0.65);
+  border-radius: 9px;
+  background: rgba(212, 175, 55, 0.055);
+  color: #866a19;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+.document-upload-control:hover,
+.document-upload-control:focus-within {
+  border-color: var(--gold);
+  background: rgba(212, 175, 55, 0.11);
+}
+.document-upload-control > svg {
+  font-size: 20px;
+}
+.document-upload-control small {
+  color: #8a8e94;
+  font-size: 10px;
+  font-weight: 500;
+}
+.document-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.document-selected-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 9px 10px;
+  border: 1px solid #e8ebed;
+  border-radius: 8px;
+  background: #fff;
+  color: #525960;
+  font-size: 11px;
+}
+.document-selected-file > svg {
+  flex: 0 0 auto;
+  color: var(--gold);
+}
+.document-selected-file > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: none;
+}
+.document-selected-file button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7d858b;
+  cursor: pointer;
+}
+.document-selected-file button:hover {
+  background: #f4eeee;
+  color: #b34242;
 }
 .step-buttons {
   display: flex;
@@ -591,7 +782,6 @@ img {
   }
   .progress-labels {
     width: 100%;
-    max-width: 265px;
   }
 }
 @media (max-width: 480px) {
@@ -651,15 +841,16 @@ img {
     font-size: 14px;
     padding: 12px;
   }
-  .progress-labels {
-    max-width: 265px;
+  .signup-progress {
+    --progress-circle-size: 28px;
+    --progress-label-offset: 4.67px;
   }
   .progress-labels span {
     font-size: 10px;
   }
   .circle {
-    width: 22px;
-    height: 22px;
+    width: var(--progress-circle-size);
+    height: var(--progress-circle-size);
   }
   .step-buttons {
     gap: 6px;
@@ -688,15 +879,14 @@ img {
   .login-container .form-title {
     font-size: 19px;
   }
-  .progress-labels {
-    max-width: 250px;
+  .signup-progress {
+    --progress-circle-size: 24px;
+    --progress-label-offset: 4px;
   }
   .progress-labels span {
     font-size: 9px;
   }
   .circle {
-    width: 20px;
-    height: 20px;
     border-width: 2px;
   }
   .country-code-select {

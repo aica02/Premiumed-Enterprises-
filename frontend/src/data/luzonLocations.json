@@ -241,14 +241,7 @@
       "Pilar",
       "Samal"
     ],
-    "Batanes": [
-      "Basco",
-      "Itbayat",
-      "Ivana",
-      "Mahatao",
-      "Sabtang",
-      "Uyugan"
-    ],
+    "Batanes": ["Basco", "Itbayat", "Ivana", "Mahatao", "Sabtang", "Uyugan"],
     "Batangas": [
       "Agoncillo",
       "Alitagtag",
@@ -306,7 +299,7 @@
       "Balagtas",
       "Baliuag",
       "Bocaue",
-      "Bulacan",
+      "Bulakan",
       "Bustos",
       "Calumpit",
       "Doña Remedios Trinidad",

@@ -31,6 +31,16 @@ const clientRequestSchema = new mongoose.Schema({
     designation: { type: String, trim: true },
     procurementMobile: { type: String, trim: true },
     procurementEmail: { type: String, lowercase: true, trim: true },
+
+    dtiDocument: {
+      url: { type: String, trim: true },
+      fileName: { type: String, trim: true },
+    },
+    otherDocument: {
+      documentType: { type: String, trim: true },
+      url: { type: String, trim: true },
+      fileName: { type: String, trim: true },
+    },
     
     status: {
       type: String,

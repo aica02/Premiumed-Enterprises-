@@ -5,7 +5,16 @@ import "../styles/formValidation.css";
 import logo from "../assets/Premiumed logo.png";
 import { useNavigate } from "react-router-dom";
 import { Toaster, toast } from "react-hot-toast";
-import { FaArrowLeft, FaCheck, FaEye, FaEyeSlash } from "react-icons/fa";
+import {
+  FaArrowLeft,
+  FaCheck,
+  FaChevronDown,
+  FaCloudUploadAlt,
+  FaEye,
+  FaEyeSlash,
+  FaFileAlt,
+  FaTimes,
+} from "react-icons/fa";
 import AddressFields from "../components/AddressFields";
 import {
   COUNTRY_CODES,
@@ -50,6 +59,19 @@ const Login = () => {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [documentFiles, setDocumentFiles] = useState({
+    dtiDocument: null,
+    otherDocument: null,
+  });
+  const [documentErrors, setDocumentErrors] = useState({
+    dtiDocument: "",
+    otherDocument: "",
+  });
+  const [otherDocumentType, setOtherDocumentType] = useState("BIR Certificate");
+  const [expandedDocuments, setExpandedDocuments] = useState({
+    dti: true,
+    other: false,
+  });
 
   const [formData, setFormData] = useState({
     dialysisCenterName: "",
@@ -191,6 +213,36 @@ const Login = () => {
     }));
   };
 
+  const handleDocumentChange = (e, documentKey) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ["application/pdf", "image/jpeg", "image/png"];
+    if (!allowedTypes.includes(file.type)) {
+      setDocumentFiles((prev) => ({ ...prev, [documentKey]: null }));
+      setDocumentErrors((prev) => ({
+        ...prev,
+        [documentKey]: "Choose a PDF, JPG, or PNG document.",
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setDocumentFiles((prev) => ({ ...prev, [documentKey]: null }));
+      setDocumentErrors((prev) => ({
+        ...prev,
+        [documentKey]: "Documents must be 5 MB or smaller.",
+      }));
+      e.target.value = "";
+      return;
+    }
+
+    setDocumentFiles((prev) => ({ ...prev, [documentKey]: file }));
+    setDocumentErrors((prev) => ({ ...prev, [documentKey]: "" }));
+    setError("");
+  };
+
   // fields per step
   const stepFields = {
     1: [
@@ -281,7 +333,7 @@ const Login = () => {
       return;
     }
 
-    if (currentStep < 3) {
+    if (currentStep < 4) {
       setCurrentStep((prev) => prev + 1);
     }
   };
@@ -465,7 +517,7 @@ const Login = () => {
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
 
-    if (registerLoading) return;
+    if (registerLoading || currentStep !== 4) return;
 
     const isValid = validateStep(3);
 
@@ -522,10 +574,22 @@ const Login = () => {
       procurementEmail: formData.procurementEmail,
     };
 
+    const requestData = new FormData();
+    Object.entries(submissionData).forEach(([key, value]) => {
+      requestData.append(key, String(value));
+    });
+    requestData.append("otherDocumentType", otherDocumentType);
+    if (documentFiles.dtiDocument) {
+      requestData.append("dtiDocument", documentFiles.dtiDocument);
+    }
+    if (documentFiles.otherDocument) {
+      requestData.append("otherDocument", documentFiles.otherDocument);
+    }
+
     try {
       const response = await axios.post(
         `${API_URL}/api/auth/register-request`,
-        submissionData,
+        requestData,
       );
 
       setShowApplicationSuccessModal(true);
@@ -601,9 +665,17 @@ const Login = () => {
       });
 
       setTouchedFields({});
+      setDocumentFiles({ dtiDocument: null, otherDocument: null });
+      setDocumentErrors({ dtiDocument: "", otherDocument: "" });
+      setOtherDocumentType("BIR Certificate");
+      setExpandedDocuments({ dti: true, other: true });
     } catch (err) {
-      const errorMsg = err.response?.data?.error || "Submission failed.";
+      const serverError = err.response?.data?.error || "Submission failed.";
+      const errorMsg = serverError.includes("ClientRequest validation failed")
+        ? "Documents are required"
+        : serverError;
 
+      setError(errorMsg);
       const lowerError = errorMsg.toLowerCase();
 
       // backend validation error
@@ -632,11 +704,7 @@ const Login = () => {
             ? errorMsg
             : prev.procurementMobile,
         }));
-      } else {
-        setError(errorMsg);
       }
-
-      toast.error(errorMsg);
     } finally {
       setRegisterLoading(false);
     }
@@ -645,6 +713,7 @@ const Login = () => {
   // reset signup state when switching to signup
   const switchToSignup = () => {
     setIsLogin(false);
+    setCurrentStep(1);
     setError("");
     setErrors({
       username: "",
@@ -794,12 +863,25 @@ const Login = () => {
                       >
                         3
                       </div>
+
+                      <div
+                        className={`progress-line ${
+                          currentStep >= 4 ? "active" : ""
+                        }`}
+                      ></div>
+
+                      <div
+                        className={`circle ${currentStep >= 4 ? "active" : ""}`}
+                      >
+                        4
+                      </div>
                     </div>
 
                     <div className="progress-labels">
                       <span>Facility</span>
                       <span>Ownership</span>
                       <span>Procurement</span>
+                      <span>Requirements</span>
                     </div>
                   </div>
 
@@ -971,7 +1053,7 @@ const Login = () => {
                   {/* step 2 */}
                   {currentStep === 2 && (
                     <>
-                      <SectionTitle title="OWNERSHIP" />
+                      <SectionTitle title="OWNERSHIP INFORMATION" />
 
                       <div className="radio-group">
                         {["Private", "Partnership", "Government"].map(
@@ -1073,7 +1155,7 @@ const Login = () => {
                   {/* step 3 */}
                   {currentStep === 3 && (
                     <>
-                      <SectionTitle title="PROCUREMENT & ACCOUNTS INFORMATION" />
+                      <SectionTitle title="PROCUREMENT INFORMATION" />
 
                       <NameInputBox
                         label="Purchasing Contact"
@@ -1145,6 +1227,114 @@ const Login = () => {
                           Previous
                         </button>
 
+                        <button
+                          type="button"
+                          className="next-btn"
+                          onClick={nextStep}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* step 4 */}
+                  {currentStep === 4 && (
+                    <>
+                      <SectionTitle title="REQUIREMENTS" />
+                      {error && (
+                        <div className="inline-error-message" role="alert">
+                          {error}
+                        </div>
+                      )}
+                      <p className="requirements-intro">
+                        Add your business registration documents. PDF, JPG, or
+                        PNG files up to 5 MB are accepted.
+                      </p>
+
+                      <DocumentUploadSection
+                        title="DTI"
+                        description="Upload your DTI registration document."
+                        file={documentFiles.dtiDocument}
+                        error={documentErrors.dtiDocument}
+                        fileInputId="dti-document"
+                        expanded={expandedDocuments.dti}
+                        onToggle={() =>
+                          setExpandedDocuments((prev) => ({
+                            ...prev,
+                            dti: !prev.dti,
+                          }))
+                        }
+                        onFileChange={(e) =>
+                          handleDocumentChange(e, "dtiDocument")
+                        }
+                        onRemove={() => {
+                          setDocumentFiles((prev) => ({
+                            ...prev,
+                            dtiDocument: null,
+                          }));
+                          setDocumentErrors((prev) => ({
+                            ...prev,
+                            dtiDocument: "",
+                          }));
+                        }}
+                      />
+
+                      <DocumentUploadSection
+                        title="Other Document"
+                        description="Choose a document type and upload the supporting file."
+                        file={documentFiles.otherDocument}
+                        error={documentErrors.otherDocument}
+                        fileInputId="other-document"
+                        expanded={expandedDocuments.other}
+                        onToggle={() =>
+                          setExpandedDocuments((prev) => ({
+                            ...prev,
+                            other: !prev.other,
+                          }))
+                        }
+                        onFileChange={(e) =>
+                          handleDocumentChange(e, "otherDocument")
+                        }
+                        onRemove={() => {
+                          setDocumentFiles((prev) => ({
+                            ...prev,
+                            otherDocument: null,
+                          }));
+                          setDocumentErrors((prev) => ({
+                            ...prev,
+                            otherDocument: "",
+                          }));
+                        }}
+                      >
+                        <div className="document-type-field">
+                          <label htmlFor="other-document-type">
+                            Document type
+                          </label>
+                          <select
+                            id="other-document-type"
+                            value={otherDocumentType}
+                            onChange={(e) =>
+                              setOtherDocumentType(e.target.value)
+                            }
+                          >
+                            <option>TIN Certificate</option>
+                            <option>BIR Certificate</option>
+                            <option>Mayor's Permit</option>
+                            <option>Business Permit</option>
+                            <option>Other</option>
+                          </select>
+                        </div>
+                      </DocumentUploadSection>
+
+                      <div className="step-buttons">
+                        <button
+                          type="button"
+                          className="prev-btn"
+                          onClick={prevStep}
+                        >
+                          Previous
+                        </button>
                         <button
                           type="submit"
                           className="signup-submit"
@@ -1319,6 +1509,73 @@ const SectionTitle = ({ title }) => (
   <div className="signup-section-header">
     <span className="gold-bar">|</span> {title}
   </div>
+);
+
+const DocumentUploadSection = ({
+  title,
+  description,
+  file,
+  error,
+  fileInputId,
+  expanded,
+  onToggle,
+  onFileChange,
+  onRemove,
+  children,
+}) => (
+  <section className={`document-accordion ${expanded ? "expanded" : ""}`}>
+    <button
+      type="button"
+      className="document-accordion-trigger"
+      aria-expanded={expanded}
+      aria-controls={`${fileInputId}-content`}
+      onClick={onToggle}
+    >
+      <span className="document-accordion-heading">
+        <span className="document-icon">
+          <FaFileAlt />
+        </span>
+        <span>{title}</span>
+      </span>
+      <FaChevronDown className="document-chevron" aria-hidden="true" />
+    </button>
+
+    {expanded && (
+      <div className="document-accordion-content" id={`${fileInputId}-content`}>
+        <p>{description}</p>
+        {children}
+        <label className="document-upload-control" htmlFor={fileInputId}>
+          <input
+            id={fileInputId}
+            className="document-file-input"
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+            onChange={onFileChange}
+          />
+          <FaCloudUploadAlt aria-hidden="true" />
+          <span>{file ? "Choose a different file" : "Upload document"}</span>
+        </label>
+        {file && (
+          <div className="document-selected-file">
+            <FaFileAlt aria-hidden="true" />
+            <span title={file.name}>{file.name}</span>
+            <button
+              type="button"
+              aria-label={`Remove ${file.name}`}
+              onClick={onRemove}
+            >
+              <FaTimes aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        {error && (
+          <div className="inline-error-message" role="alert">
+            {error}
+          </div>
+        )}
+      </div>
+    )}
+  </section>
 );
 
 // input box

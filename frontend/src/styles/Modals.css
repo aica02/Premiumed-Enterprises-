@@ -139,6 +139,34 @@
   gap: 10px 10px;
 }
 
+.client-profile-modal-body .field-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.registration-document-link {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.registration-document-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.registration-document-link > a {
+  flex: 0 0 auto;
+  color: #80620b;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .detail-group.full {
   grid-column: span 2;
   margin: 10px 0;
