@@ -193,7 +193,7 @@ const InventoryChart = () => {
 
   const downloadExcel = async () => {
     if (!excelData || excelData.length === 0) {
-      alert("No inventory data available to download.");
+      toast.error("No inventory data available to download.");
       return;
     }
 

@@ -96,7 +96,7 @@ const ActivityLogs = () => {
     });
 
     if (filteredLogs.length === 0) {
-      alert("No logs match the selected filters.");
+      toast.error("No logs match the selected filters.");
       return;
     }
 
