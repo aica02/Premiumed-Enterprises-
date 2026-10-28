@@ -334,16 +334,18 @@ const ClientsOrder = () => {
   };
 
   const handlePrintOR = (selectedOrder) => {
-    const columns = ["QTY", "Unit Type", "Supplies", "Price", "Subtotal"];
+    const columns = ["QTY", "Supplies", "Unit Type", "Price", "Subtotal"];
     const tableData = selectedOrder.items.map((item) => {
       const quantity = Number(item.quantity);
       const price = Number(item.price);
       const subtotal = quantity * price;
+      const unitType =
+        String(item.unitType || item.unit || "").trim() || "N/A";
 
       return [
         quantity,
-        item.unitType || item.unit || "N/A",
         item.name,
+        unitType,
         price.toFixed(2),
         subtotal.toFixed(2),
       ];

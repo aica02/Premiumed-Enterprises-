@@ -411,8 +411,8 @@ export const generateOrderReceipt = ({
 
     columnStyles: {
       0: { cellWidth: 65, halign: "center" }, // First column
-      1: { cellWidth: 80, halign: "center" }, // Second column
-      2: { cellWidth: 210 }, // Third column
+      1: { cellWidth: 210 }, // Supply name
+      2: { cellWidth: 80, halign: "center" }, // Unit type
       3: { cellWidth: 100, halign: "center" }, // Fourth column
       4: { cellWidth: 100, halign: "center" },
     },
