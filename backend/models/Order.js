@@ -46,18 +46,19 @@ const orderSchema = new mongoose.Schema(
       immutable: true,
     },
     status: {
-      type: String,
-      enum: [
-        "PENDING",
-        "APPROVED",
-        "TO SHIP",
-        "RETURNED",
-        "DELIVERED",
-        "PARTIAL",
-        "CANCELLED",
-      ],
-      default: "PENDING",
-    },
+  type: String,
+  enum: [
+    "PENDING",
+    "PAYMENT REVIEW",   // ← NEW
+    "APPROVED",
+    "TO SHIP",
+    "RETURNED",
+    "DELIVERED",
+    "PARTIAL",
+    "CANCELLED",
+  ],
+  default: "PENDING",
+},
     subtotal: {
       type: Number,
       required: true,
@@ -72,11 +73,11 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
-    paymentStatus: {
-      type: String,
-      enum: ["PENDING", "COMPLETED"],
-      default: "PENDING",
-    },
+   paymentStatus: {
+  type: String,
+  enum: ["PENDING", "REJECTED", "AWAITING REVIEW", "COMPLETED"], // ← add both
+  default: "PENDING",
+},
     paymentSlip: {
       type: String,
       default: "",
@@ -84,6 +85,8 @@ const orderSchema = new mongoose.Schema(
     paymentRejectedAt: {
       type: Date,
     },
+    paymentAcceptedAt: { type: Date },   // ← NEW
+paymentAcceptedBy: { type: String }, // ← NEW
 
     rejectToken: {
       type: String,

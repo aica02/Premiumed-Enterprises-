@@ -463,12 +463,14 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    const slipPath = `/uploads/${req.file.filename}`;
-    order.paymentSlip = slipPath;
-    order.paymentStatus = "COMPLETED";
-    order.status = "TO SHIP";
-    await order.save();
-
+const slipPath = `/uploads/${req.file.filename}`;
+order.paymentSlip = slipPath;
+order.paymentStatus = "AWAITING REVIEW";   // was "COMPLETED"
+order.status = "PAYMENT REVIEW";           // was "TO SHIP"
+order.paymentRejectedAt = undefined;
+order.paymentAcceptedAt = undefined;
+order.paymentAcceptedBy = undefined;
+await order.save();
     const settings = await Settings.findOne();
     const accountantEmail = settings?.accountantEmail;
 
@@ -492,8 +494,8 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
             `Payment slip email sent to accountant: ${accountantEmail}`,
           );
           order.notes = order.notes
-            ? `${order.notes} | Payment Slip has been sent.`
-            : "Payment Slip has been sent.";
+  ? `${order.notes} | Payment slip submitted — awaiting accountant review.`
+  : "Payment slip submitted — awaiting accountant review.";
           await order.save();
         } else {
           emailError = emailResult.error;
@@ -784,86 +786,41 @@ router.patch("/:orderId/status", async (req, res) => {
     }
 
     // Handle TO SHIP (existing logic with accountant email)
-    if (status === "TO SHIP") {
-      let emailSent = false;
-      let emailError = null;
+// Handle TO SHIP (only via accept or explicit admin override)
+if (status === "TO SHIP") {
+  if (!["PAYMENT REVIEW", "APPROVED", "PARTIAL"].includes(order.status)) {
+    return res.status(400).json({
+      message: `Cannot move order to TO SHIP from status ${order.status}. ` +
+               `Accept the payment slip first.`,
+    });
+  }
 
-      if (order.paymentSlip) {
-        try {
-          const settings = await Settings.findOne();
-          const accountantEmail = settings?.accountantEmail;
+  order.status = "TO SHIP";
+  order.paymentStatus = "COMPLETED";
+  order.shippedDate = new Date();
+  await order.save();
 
-          if (accountantEmail) {
-            // Fix: paymentSlip is like "/uploads/1234-file.pdf"
-            // Strip leading slash and join with cwd
-            const relativePath = order.paymentSlip.replace(/^\/+/, "");
-            const slipPath = path.join(process.cwd(), relativePath);
+  await createActivityLog({
+    userId: actor.userId,
+    username: actor.username,
+    role: actor.role,
+    action: "Ship order",
+    module: "Order",
+    description: `Order ${order.orderId} moved to TO SHIP by ${actor.username}.`,
+  });
 
-            console.log(`[TO SHIP] Looking for slip at: ${slipPath}`);
+  await Notification.create({
+    name: order.name,
+    orderId: order.orderId,
+    message: `Order #${order.orderId} is now TO SHIP.`,
+  });
 
-            if (fs.existsSync(slipPath)) {
-              const fileBuffer = fs.readFileSync(slipPath);
-              const fileName = path.basename(order.paymentSlip);
-
-              const emailResult = await sendDepositSlipToAccountant(
-                order,
-                fileBuffer,
-                fileName,
-                accountantEmail,
-              );
-
-              if (emailResult.success) {
-                emailSent = true;
-                order.notes = order.notes
-                  ? `${order.notes} | Payment slip sent to accountant.`
-                  : "Payment slip sent to accountant.";
-              } else {
-                emailError = emailResult.error;
-                console.error(
-                  "Failed to send email to accountant:",
-                  emailError,
-                );
-              }
-            } else {
-              emailError = `Payment slip file not found at: ${slipPath}`;
-              console.error(emailError);
-            }
-          } else {
-            emailError = "Accountant email not configured in settings";
-            console.warn(emailError);
-          }
-        } catch (emailError) {
-          console.error("Error in email sending process:", emailError);
-          emailError = emailError.message;
-        }
-      }
-      await createActivityLog({
-        userId: actor.userId,
-        username: actor.username,
-        role: actor.role,
-        action: "Ship order",
-        module: "Order",
-        description: `Order ${order.orderId} was moved to shipping.${emailSent ? " Payment slip sent to accountant." : ""}${emailError ? " Email failed: " + emailError : ""}`,
-      });
-
-      order.status = "TO SHIP";
-      order.shippedDate = new Date();
-      await order.save();
-
-      await Notification.create({
-        name: order.name,
-        orderId: order.orderId,
-        message: `Order #${order.orderId} status is now TO SHIP.${emailSent ? " Payment slip has been sent to the accountant." : ""}`,
-      });
-
-      return res.json({
-        success: true,
-        message: `Order moved to shipping${emailSent ? " and payment slip sent to accountant" : ""}`,
-        order,
-        emailSent,
-        emailError,
-      });
-    }
+  return res.json({
+    success: true,
+    message: "Order moved to shipping",
+    order,
+  });
+}
 
     // Handle RETURNED
     if (status === "RETURNED") {

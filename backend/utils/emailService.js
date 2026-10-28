@@ -411,6 +411,7 @@ export const sendDepositSlipToAccountant = async (
     }
 
     const backendBase = process.env.BACKEND_URL || "http://localhost:5000";
+    const acceptUrl = `${backendBase}/api/clients/accept-deposit?token=${rejectToken}`;
     const rejectUrl = `${backendBase}/api/clients/reject-deposit?token=${rejectToken}`;
 
     const mailOptions = {
@@ -443,7 +444,10 @@ Contact: ${orderData.contactNumber || orderData.procurementMobile || "N/A"}
 
 The payment slip is attached to this email. Please verify and process accordingly.
 
-If the payment slip is invalid, you can reject it here:
+To ACCEPT this payment slip:
+${acceptUrl}
+
+To REJECT this payment slip:
 ${rejectUrl}
 
 -----------------------------------------
@@ -575,22 +579,39 @@ ${new Date().getFullYear()}
 
                 <!-- Reject button -->
                 <div style="margin: 30px 0; text-align: center;">
-                  <a
-                    href="${rejectUrl}"
-                    style="
-                      display: inline-block;
-                      padding: 14px 24px;
-                      background-color: #b3261e;
-                      color: #ffffff;
-                      text-decoration: none;
-                      font-size: 14px;
-                      font-weight: bold;
-                      border-radius: 4px;
-                    "
-                  >
-                    Reject Payment Slip
-                  </a>
-                </div>
+  <a
+    href="${acceptUrl}"
+    style="
+      display: inline-block;
+      padding: 14px 28px;
+      background-color: #2e7d32;
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: bold;
+      border-radius: 4px;
+      margin-right: 12px;
+    "
+  >
+    Accept Payment Slip
+  </a>
+
+  <a
+    href="${rejectUrl}"
+    style="
+      display: inline-block;
+      padding: 14px 28px;
+      background-color: #b3261e;
+      color: #ffffff;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: bold;
+      border-radius: 4px;
+    "
+  >
+    Reject Payment Slip
+  </a>
+</div>
 
                 <p style="font-size: 13px; color: #777777; line-height: 1.5;">
                   This is an automated message from the Premiumed Enterprises system.

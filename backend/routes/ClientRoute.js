@@ -602,4 +602,110 @@ router.get("/reject-deposit", async (req, res) => {
     );
   }
 });
+router.get("/accept-deposit", async (req, res) => {
+  const { token } = req.query;
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+
+  if (!token) {
+    return res.status(400).send(
+      renderDepositStatusPage({
+        statusCode: 400,
+        tone: "error",
+        title: "Missing secure token.",
+        message:
+          "This acceptance link is incomplete or expired. Please request a fresh link and try again.",
+        url: fullUrl,
+      }),
+    );
+  }
+
+  // Reuse the same verifier — it invalidates the token after use
+  const order = await verifyAndInvalidateToken(token);
+  if (!order) {
+    return res.status(400).send(
+      renderDepositStatusPage({
+        statusCode: 400,
+        tone: "error",
+        title: "This link is invalid or expired.",
+        message:
+          "The payment slip has already been processed or the secure token is no longer valid.",
+        url: fullUrl,
+      }),
+    );
+  }
+
+  // Guard: only accept orders still under review
+  if (order.status !== "PAYMENT REVIEW") {
+    return res.status(400).send(
+      renderDepositStatusPage({
+        statusCode: 400,
+        tone: "error",
+        title: "Order is not awaiting payment review.",
+        message: `Order ${order.orderId || order._id} is currently in status "${order.status}" and cannot be accepted from this link.`,
+        url: fullUrl,
+      }),
+    );
+  }
+
+  try {
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          paymentStatus: "COMPLETED",
+          status: "TO SHIP",
+          paymentAcceptedAt: new Date(),
+          paymentAcceptedBy: req.query.by || "accountant",
+        },
+      },
+    );
+
+    // Notify client (in-app)
+    try {
+      await Notification.create({
+        name: order.name,
+        orderId: order.orderId || order._id?.toString(),
+        message: `Payment for Order #${order.orderId || order._id} has been verified and accepted. It is now TO SHIP.`,
+      });
+    } catch (notifyErr) {
+      console.error("Accept: notification failed:", notifyErr.message);
+    }
+
+    // Optional: activity log
+    try {
+      await createActivityLog({
+        username: "accountant",
+        role: "Accountant",
+        action: "Accept payment slip",
+        module: "Order",
+        description: `Payment slip for order ${order.orderId || order._id} accepted.`,
+      });
+    } catch (logErr) {
+      console.error("Accept: activity log failed:", logErr.message);
+    }
+
+    return res.status(200).send(
+      renderDepositStatusPage({
+        statusCode: 200,
+        tone: "success",
+        title: "Payment slip accepted successfully.",
+        message:
+          "The order has been moved to TO SHIP and will now appear on the driver's side.",
+        url: fullUrl,
+      }),
+    );
+  } catch (error) {
+    console.error("Accept payment slip update failed:", error);
+    return res.status(500).send(
+      renderDepositStatusPage({
+        statusCode: 500,
+        tone: "error",
+        title: "Something went wrong.",
+        message:
+          "We couldn't update the payment record. Please try again or contact support.",
+        url: fullUrl,
+      }),
+    );
+  }
+});
 export default router;
