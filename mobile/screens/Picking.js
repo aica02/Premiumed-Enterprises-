@@ -228,6 +228,8 @@ export default function DeliveryList({ navigation }) {
   const closeCompletionSuccess = () => {
     setCompletionSuccess(null);
     setSelectedOrder(null);
+    resetScanner();          
+  setPickedCounts({});
   };
 
   const highlightedLocations = useMemo(() => {
@@ -652,7 +654,7 @@ export default function DeliveryList({ navigation }) {
           }
           setTimeout(() => {
             setScannerModalVisible(true);
-            setScanned(false);
+             resetScanner();   
             setPickedCounts({});
           }, 500);
         } else {
@@ -1088,7 +1090,8 @@ export default function DeliveryList({ navigation }) {
                 ]}
                 onPress={() => {
                   setScannerModalVisible(false);
-                  setScanned(false);
+                  resetScanner();                      
+                  setPickedCounts({});
                 }}
               >
                 <Text style={pickingStyles.scanBtnText}>CANCEL</Text>

@@ -258,8 +258,8 @@ export const printBarcodeTSPL = async (
   // Only the label content + PRINT goes over the wire now
   const labelCommand =
     `TEXT 40,40,"3",0,1,1,"${itemName.slice(0, 20)}"\n` +
-    `BARCODE 30,100,"128",120,0,0,1,2,"${batchCode}"\n` +
-    `TEXT 40,230,"3",0,1,1,"${batchCode}"\n` +
+    `BARCODE 100,100,"128",120,0,0,1,2,"${batchCode}"\n` +
+    `TEXT 70,230,"3",0,1,1,"${batchCode}"\n` +
     `TEXT 40,340,"3",0,1,1,"Exp: ${formattedExp}"\n` +
     `PRINT ${printQty},1\n`;
 
