@@ -1256,14 +1256,16 @@ router.post("/:orderId/complete", async (req, res) => {
     }
 
     if (user && user.email) {
+      const [orderWithUnitTypes] = await addUnitTypesToOrders([order]);
       const orderData = {
         orderNumber: order.orderId,
         _id: order._id,
         name: order.name,
         shippingAddress: order.shippingAddress,
         procurementMobile: user.procurementMobile || user.phoneNumber || "N/A",
-        items: order.items.map((item) => ({
+        items: orderWithUnitTypes.items.map((item) => ({
           name: item.name,
+          unitType: item.unitType,
           quantity: item.quantity,
           price: item.price,
         })),
@@ -1351,14 +1353,16 @@ router.post("/:orderId/email", async (req, res) => {
       });
     }
 
+    const [orderWithUnitTypes] = await addUnitTypesToOrders([order]);
     const orderData = {
       orderNumber: order.orderId,
       _id: order._id,
       name: order.name,
       shippingAddress: order.shippingAddress,
       procurementMobile: user.procurementMobile || user.phoneNumber || "N/A",
-      items: order.items.map((item) => ({
+      items: orderWithUnitTypes.items.map((item) => ({
         name: item.name,
+        unitType: item.unitType,
         quantity: item.quantity,
         price: item.price,
       })),

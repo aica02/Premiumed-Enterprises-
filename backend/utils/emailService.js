@@ -11,6 +11,14 @@ const brevo = new BrevoClient({
   apiKey: process.env.BREVO_API_KEY,
 });
 
+const formatCurrency = (value) =>
+  new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+
 export const sendEmailWithRetry = async (mailOptions, retries = 3) => {
   for (let i = 0; i < retries; i++) {
     try {
@@ -336,9 +344,7 @@ export const sendDepositSlipToAccountant = async (
     const itemsList =
       orderData.items
         ?.map((item, index) => {
-          return `${index + 1}. ${item.name} - ${item.quantity} Pcs. - ₱${(
-            item.price * item.quantity
-          ).toFixed(2)}`;
+          return `${index + 1}. ${item.name} - ${item.unitType || "N/A"} - ${item.quantity} - ${formatCurrency(item.price * item.quantity)}`;
         })
         .join("\n") || "No items listed";
 
@@ -360,12 +366,16 @@ export const sendDepositSlipToAccountant = async (
             ${item.name}
           </td>
 
+          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; color: #333333;">
+            ${item.unitType || "N/A"}
+          </td>
+
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: center; color: #333333;">
-            ${item.quantity} Pcs.
+            ${item.quantity}
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333;">
-            ₱${(item.price * item.quantity).toFixed(2)}
+            ${formatCurrency(item.price * item.quantity)}
           </td>
         </tr>
       `;
@@ -373,7 +383,7 @@ export const sendDepositSlipToAccountant = async (
         .join("") ||
       `
       <tr>
-        <td colspan="4" style="padding: 15px; text-align: center; color: #777777;">
+        <td colspan="5" style="padding: 15px; text-align: center; color: #777777;">
           No items listed
         </td>
       </tr>
@@ -425,8 +435,8 @@ ORDER DETAILS
 -------------
 ${itemsList}
 
-Subtotal: ₱${totalAmount.toFixed(2)}
-Total: ₱${(orderData.total || totalAmount).toFixed(2)}
+Subtotal: ${formatCurrency(totalAmount)}
+Total: ${formatCurrency(orderData.total || totalAmount)}
 
 Delivery Address: ${orderData.deliveryAddress || orderData.shippingAddress || "N/A"}
 Contact: ${orderData.contactNumber || orderData.procurementMobile || "N/A"}
@@ -508,7 +518,10 @@ ${new Date().getFullYear()}
                           #
                         </th>
                         <th style="padding: 12px; font-size: 13px; text-align: left;">
-                          Item Name
+                          Supply Name
+                        </th>
+                        <th style="padding: 12px; font-size: 13px; text-align: left;">
+                          Unit Type
                         </th>
                         <th style="padding: 12px; font-size: 13px; text-align: center;">
                           Quantity
@@ -527,12 +540,12 @@ ${new Date().getFullYear()}
                 <div style="margin-top: 20px; padding: 20px; background-color: #f8f8f8; border: 1px solid #dddddd;">
                   <p style="margin: 8px 0; font-size: 14px; text-align: left;">
                     <strong>Subtotal:</strong>
-                    ₱${totalAmount.toFixed(2)}
+                    ${formatCurrency(totalAmount)}
                   </p>
 
                   <p style="margin: 8px 0; font-size: 18px; text-align: left; color: #222222;">
                     <strong>Total:</strong>
-                    ₱${(orderData.total || totalAmount).toFixed(2)}
+                    ${formatCurrency(orderData.total || totalAmount)}
                   </p>
                 </div>
 
@@ -727,12 +740,15 @@ export const getDepositSlipRejectedEmail = ({
 
 export const sendOrderReceipt = async (orderData, clientEmail) => {
   try {
+    const getUnitType = (item) =>
+      String(item.unitType || item.unit || "").trim() || "N/A";
+
     const itemsList = orderData.items
       .map((item, index) => {
         const price = Number(item.price) || 0;
         const quantity = Number(item.quantity) || 0;
         const itemSubtotal = price * quantity;
-        return `${index + 1}. ${item.name} - ${quantity} Pcs. - ₱${price.toFixed(2)} - Subtotal: ₱${itemSubtotal.toFixed(2)}`;
+        return `${index + 1}. ${item.name} - ${getUnitType(item)} - ${quantity} Pcs. - ${formatCurrency(price)} - Subtotal: ${formatCurrency(itemSubtotal)}`;
       })
       .join("\n");
 
@@ -755,7 +771,7 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
       landlineNum: "(044) 812-2280",
       totalPrice: orderData.total || total,
       deliveryAddress: orderData.shippingAddress || orderData.address || "N/A",
-      columns: ["QTY", "Unit", "Articles", "Price", "Subtotal"],
+      columns: ["QTY", "Supply Name", "Unit Type", "Price", "Subtotal"],
       data: orderData.items.map((item, index) => {
         const price = Number(item.price) || 0;
         const quantity = Number(item.quantity) || 0;
@@ -763,10 +779,10 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
 
         return [
           `${quantity}`,
-          item.unit,
           item.name,
-          `${price.toFixed(2)}`,
-          `${itemSubtotal.toFixed(2)}`,
+          getUnitType(item),
+          formatCurrency(price),
+          formatCurrency(itemSubtotal),
         ];
       }),
     });
@@ -785,16 +801,20 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
             ${item.name}
           </td>
 
+          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; color: #333333;">
+            ${getUnitType(item)}
+          </td>
+
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: center; color: #333333;">
             ${quantity} Pcs.
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333;">
-            ₱${price.toFixed(2)}
+            ${formatCurrency(price)}
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333;">
-            ₱${(price * quantity).toFixed(2)}
+            ${formatCurrency(price * quantity)}
           </td>
         </tr>
       `;
@@ -826,8 +846,8 @@ ORDER DETAILS
 ------------
 ${itemsList}
 
-Subtotal: ₱${subtotal.toFixed(2)}
-Total: ₱${total.toFixed(2)}
+Subtotal: ${formatCurrency(subtotal)}
+Total: ${formatCurrency(total)}
 
 ------------------
 Thank you for your order! Kindly submit the Payment Slip once you received this email.
@@ -919,7 +939,10 @@ ${new Date().getFullYear()}
                           #
                         </th>
                         <th style="padding: 12px; font-size: 13px; text-align: left;">
-                          Item
+                          Supply Name
+                        </th>
+                        <th style="padding: 12px; font-size: 13px; text-align: left;">
+                          Unit Type
                         </th>
                         <th style="padding: 12px; font-size: 13px; text-align: center;">
                           Qty
@@ -941,11 +964,11 @@ ${new Date().getFullYear()}
                 <div style="margin-top: 20px; padding: 20px; background-color: #f8f8f8; border: 1px solid #dddddd;">
                   <p style="margin: 8px 0; font-size: 14px; text-align: left;">
                     <strong>Subtotal:</strong>
-                    ₱${subtotal.toFixed(2)}
+                    ${formatCurrency(subtotal)}
                   </p>
                   <p style="margin: 8px 0; font-size: 18px; text-align: left; color: #222222;">
                     <strong>Total:</strong>
-                    ₱${total.toFixed(2)}
+                    ${formatCurrency(total)}
                   </p>
                 </div>
 
