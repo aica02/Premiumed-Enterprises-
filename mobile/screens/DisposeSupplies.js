@@ -258,8 +258,8 @@ export default function DisposeSupplies({ navigation }) {
       }
     }
     setSelectedBatch(batch);
+     resetScanner(); 
     setScannerModalVisible(true);
-    setScanned(false);
   };
 
   const renderBatchCard = (batch) => {

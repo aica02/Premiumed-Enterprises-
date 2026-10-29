@@ -462,7 +462,6 @@ const SuppliersInformation = () => {
     }
 
     setShowPrintFilters(false);
-    // Reset filters
     setPrintFilters({
       status: "",
       name: "",
