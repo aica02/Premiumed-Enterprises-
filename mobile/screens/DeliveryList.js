@@ -97,20 +97,35 @@ export default function DeliveryList({ navigation }) {
     }
   };
 
-  const fetchConfirmedOrders = async (showLoading = true) => {
-    try {
-      if (showLoading) setLoading(true);
-      const response = await fetch(API_URL);
-      const data = await response.json();
-      const toShipOrders = data.filter(o => o.status === 'TO SHIP' && o.paymentStatus === 'COMPLETED');
-      setOrders(toShipOrders);
-      setFilteredOrders(toShipOrders);
-    } catch (error) {
-      console.error('Fetch Error:', error);
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  };
+const fetchConfirmedOrders = async (showLoading = true) => {
+  try {
+    if (showLoading) setLoading(true);
+    const response = await fetch(API_URL);
+    const data = await response.json();
+    const toShipOrders = data
+      .filter(o => o.status === 'TO SHIP' && o.paymentStatus === 'COMPLETED')
+      .sort((a, b) => {
+        // Prefer createdAt, fall back to orderDate, then _id
+        const aTime = new Date(a.createdAt || a.orderDate || 0).getTime();
+        const bTime = new Date(b.createdAt || b.orderDate || 0).getTime();
+        if (aTime !== bTime) return bTime - aTime; // newest first
+
+        // Fallback: MongoDB ObjectId is time-ordered
+        const aId = String(a._id || '');
+        const bId = String(b._id || '');
+        if (aId.length === 24 && bId.length === 24) {
+          return bId.localeCompare(aId);
+        }
+        return 0;
+      });
+    setOrders(toShipOrders);
+    setFilteredOrders(toShipOrders);
+  } catch (error) {
+    console.error('Fetch Error:', error);
+  } finally {
+    if (showLoading) setLoading(false);
+  }
+};
 
   const onRefresh = async () => {
     setRefreshing(true);

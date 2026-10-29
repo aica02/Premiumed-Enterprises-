@@ -1459,6 +1459,13 @@ router.patch("/:orderId/partial", async (req, res) => {
         createdAt: new Date(),
         notes: `Partial order created from ${originalOrder.orderId}. Remaining items: ${backorderItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`,
         originalOrderId: originalOrder.orderId,
+        paymentSlip: undefined,
+        paymentStatus: "PENDING",
+        paymentAcceptedAt: undefined,
+        paymentRejectedAt: undefined,
+        paymentAcceptedBy: undefined,
+        rejectToken: undefined,
+        rejectTokenExpiry: undefined,
       });
 
       await partialOrder.save();

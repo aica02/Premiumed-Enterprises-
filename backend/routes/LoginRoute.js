@@ -79,7 +79,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (user.role !== "Admin") {
+    if (user.role !== "Admin" && user.role !== "User") {
       await createActivityLog({
         userId: user._id,
         username: user.username,

@@ -511,6 +511,48 @@ export default function InventoryKit({
     }
   };
 
+
+  // Returns { [itemId]: { available, required, status } } for the current box count
+const getInclusionStockIssues = () => {
+  const boxCount = Number(kitFormData.box) || 0;
+  const issues = {};
+
+  kitItems.forEach((kitItem) => {
+    const source = items.find((i) => i._id === kitItem._id);
+    if (!source) return;
+
+    // Reuse the same availability calc as getKitInclusionItems()
+    const validBatches = (batches || []).filter(
+      (b) =>
+        b.itemCode === source.itemCode &&
+        b.status === "stored" &&
+        new Date(b.expirationDate) >= new Date(),
+    );
+    const availableQty = validBatches.reduce(
+      (sum, b) => sum + (Number(b.quantity) || 0),
+      0,
+    );
+
+    const required = (Number(kitItem.quantity) || 0) * boxCount;
+    if (required <= 0) return;
+
+    if (availableQty <= 0) {
+      issues[kitItem._id] = {
+        available: 0,
+        required,
+        status: "out",
+      };
+    } else if (availableQty < required) {
+      issues[kitItem._id] = {
+        available: availableQty,
+        required,
+        status: "insufficient",
+      };
+    }
+  });
+
+  return issues;
+};
   const resetScanState = () => {
     setScanningModalVisible(false);
     setScanQueue([]);
@@ -601,6 +643,16 @@ export default function InventoryKit({
       }
     });
 
+        const stockIssues = getInclusionStockIssues();
+    if (Object.keys(stockIssues).length > 0) {
+      const firstIssue = Object.values(stockIssues)[0];
+      setConfirmError(
+        firstIssue.status === "out"
+          ? "One or more kit inclusions are out of stock. Adjust the box count or inclusions."
+          : "One or more kit inclusions have insufficient stock. Adjust the box count or inclusions.",
+      );
+      return false;
+    }
     if (!kitFormData.box || Number(kitFormData.box) <= 0) {
       setConfirmError("Box must be greater than zero.");
       return false;
@@ -1887,6 +1939,28 @@ export default function InventoryKit({
                                   {kitItemErrors[item._id]}
                                 </Text>
                               )}
+                              {(() => {
+                                if (!isAdded) return null;
+                                const issues = getInclusionStockIssues()[item._id];
+                                if (!issues) return null;
+                                const isOut = issues.status === "out";
+                                return (
+                                  <Text
+                                    style={{
+                                      color: isOut ? "#B91C1C" : "#B45309",
+                                      fontSize: 11,
+                                      fontWeight: "600",
+                                      marginTop: 2,
+                                      marginLeft: 10,
+                                      marginBottom: 4,
+                                    }}
+                                  >
+                                    {isOut
+                                      ? `Out of stock — need ${issues.required} for ${kitFormData.box || 0} box(es)`
+                                      : `Insufficient stock — only ${issues.available} available, need ${issues.required}`}
+                                  </Text>
+                                );
+                              })()}
                             </View>
                           );
                         })}

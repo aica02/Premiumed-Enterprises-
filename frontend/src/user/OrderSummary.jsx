@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaLongArrowAltLeft } from "react-icons/fa";
-import { FaCartShopping, FaTriangleExclamation } from "react-icons/fa6";
+import { FaCartShopping } from "react-icons/fa6";
 import axios from "axios";
 import { BACKEND_URL } from "../config";
 import "../styles/ordersummary.css";
@@ -14,16 +14,7 @@ export default function OrderSummary() {
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState("");
   const [notes, setNotes] = useState("");
-
-  // Stock-check state
-  const [checkingStock, setCheckingStock] = useState(false);
-  const [isStockSufficient, setIsStockSufficient] = useState(true);
-  const [insufficientItems, setInsufficientItems] = useState([]);
-  const [productStockLevels, setProductStockLevels] = useState({});
-
-  // Modal state
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [showPartialModal, setShowPartialModal] = useState(false);
 
   const [clientInfo, setClientInfo] = useState({
     fullName: "Loading...",
@@ -53,7 +44,7 @@ export default function OrderSummary() {
       if (!username) return;
       try {
         const response = await axios.get(
-          `${BACKEND_URL}/api/auth/profile/${username}`,
+          `${BACKEND_URL}/api/auth/profile/${username}`
         );
         const data = response.data;
         setClientInfo({
@@ -74,49 +65,7 @@ export default function OrderSummary() {
     fetchClientData();
   }, [navigate]);
 
-  const checkStockAvailability = async () => {
-    setCheckingStock(true);
-    try {
-      const response = await axios.post(
-        `${BACKEND_URL}/api/orders/check-stock`,
-        {
-          items: items.map((item) => ({
-            itemCode: item.itemCode,
-            quantity: Number(item.quantity) || 0,
-          })),
-        },
-      );
-
-      const insufficient = response.data.insufficientItems || [];
-
-      // Build lookup { itemCode: available }
-      const levels = {};
-      response.data.stockLevels?.forEach((s) => {
-        levels[s.itemCode] = Number(s.available) || 0;
-      });
-
-      setInsufficientItems(insufficient);
-      setIsStockSufficient(insufficient.length === 0);
-      setProductStockLevels(levels);
-
-      return { insufficient, levels };
-    } catch (error) {
-      console.error("Error checking stock:", error);
-      setInsufficientItems([]);
-      setIsStockSufficient(true);
-      setProductStockLevels({});
-      // Return a safe fallback: treat everything as available
-      const fallbackLevels = {};
-      items.forEach((it) => {
-        fallbackLevels[it.itemCode] = Number(it.quantity) || 0;
-      });
-      return { insufficient: [], levels: fallbackLevels };
-    } finally {
-      setCheckingStock(false);
-    }
-  };
-
-  const handleProceed = async () => {
+  const handleProceed = () => {
     if (items.length === 0) {
       toast.error("Your cart is empty.");
       return;
@@ -125,73 +74,7 @@ export default function OrderSummary() {
       toast.error("Please select a requested delivery date.");
       return;
     }
-
-    const { insufficient, levels } = await checkStockAvailability();
-
-    // Guard: everything is out of stock
-    const totalAvailable = Object.values(levels).reduce(
-      (a, b) => a + Number(b || 0),
-      0,
-    );
-    if (totalAvailable === 0 && items.length > 0) {
-      toast.error("All selected items are out of stock.");
-      return;
-    }
-
-    if (insufficient.length === 0) {
-      setShowCheckoutModal(true);
-    } else {
-      setShowPartialModal(true);
-    }
-  };
-
-  const buildOrderPayload = (levels = productStockLevels) => {
-    const username = localStorage.getItem("username");
-    const userId = localStorage.getItem("userId");
-    const role = localStorage.getItem("role");
-
-    const transformedItems = items.map((item) => {
-      const requestedQty = Number(item.quantity) || 1;
-      const availableQty =
-        levels[item.itemCode] !== undefined
-          ? Number(levels[item.itemCode])
-          : requestedQty;
-      const deliveredQty = Math.min(requestedQty, availableQty);
-
-      return {
-        productId: item._id || item.id || item.itemCode,
-        itemCode: item.itemCode,
-        name: item.name,
-        category: item.category || "Medical Supply",
-        unitType: item.unitType || "Piece",
-        quantity: requestedQty,
-        deliveredQty,
-        price: Number(item.price) || 0,
-        image: item.itemImage || item.image || "",
-        orderMode: item.orderMode === "box" ? "box" : "piece",
-        boxes: item.orderMode === "box" ? Number(item.boxes) || 0 : 0,
-        quantityPerBox: Number(item.quantityPerBox) || 0,
-      };
-    });
-
-    const subtotal = items.reduce(
-      (acc, item) =>
-        acc + (Number(item.price) || 0) * (Number(item.quantity) || 1),
-      0,
-    );
-
-    return {
-      username,
-      userId: userId || null,
-      role: role || "User",
-      name: clientInfo.fullName,
-      items: transformedItems,
-      subtotal,
-      total: subtotal,
-      shippingAddress: clientInfo.address,
-      notes: notes || `Requested Delivery Date: ${deliveryDate}`,
-      requestedDeliveryDate: deliveryDate,
-    };
+    setShowCheckoutModal(true);
   };
 
   const handleCheckout = async () => {
@@ -216,62 +99,79 @@ export default function OrderSummary() {
         return;
       }
 
-      // Always re-run stock check right before ordering
-      const { levels } = await checkStockAvailability();
-      const orderPayload = buildOrderPayload(levels);
+      const transformedItems = items.map((item) => ({
+        productId: item._id || item.id || item.itemCode,
+        itemCode: item.itemCode,
+        name: item.name,
+        category: item.category || "Medical Supply",
+        unitType: item.unitType || "Piece",
+        quantity: Number(item.quantity) || 1,
+        price: Number(item.price) || 0,
+        image: item.itemImage || item.image || "",
+        orderMode: item.orderMode === "box" ? "box" : "piece",
+        boxes: item.orderMode === "box" ? Number(item.boxes) || 0 : 0,
+        quantityPerBox: Number(item.quantityPerBox) || 0,
+      }));
 
-      // For the normal endpoint, strip deliveredQty (schema strictness safety)
-      if (isStockSufficient) {
-        orderPayload.items = orderPayload.items.map(
-          ({ deliveredQty, ...rest }) => rest,
-        );
-      }
+      const orderPayload = {
+        username: username,
+        userId: userId || null,
+        role: role || "User",
+        name: clientInfo.fullName,
+        items: transformedItems,
+        subtotal: items.reduce(
+          (acc, item) =>
+            acc + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+          0
+        ),
+        total: items.reduce(
+          (acc, item) =>
+            acc + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+          0
+        ),
+        shippingAddress: clientInfo.address,
+        notes: notes || `Requested Delivery Date: ${deliveryDate}`,
+        requestedDeliveryDate: deliveryDate,
+      };
 
-      const endpoint = isStockSufficient
-        ? `${BACKEND_URL}/api/orders`
-        : `${BACKEND_URL}/api/orders/checkout-with-split`;
+      const response = await axios.post(
+        `${BACKEND_URL}/api/orders`,
+        orderPayload,
+        {
+          headers: {
+            "X-Username": username,
+            "X-User-Id": userId || "",
+            "X-Role": role || "User",
+          },
+        }
+      );
 
-      const response = await axios.post(endpoint, orderPayload, {
-        headers: {
-          "X-Username": username,
-          "X-User-Id": userId || "",
-          "X-Role": role || "User",
-        },
-      });
-
-      if (response.status === 201 || response.status === 200) {
-        // Remove checked-out items from server cart
+      if (response.status === 201) {
         const checkedOutItemCodes = items.map((item) => item.itemCode);
+
         try {
           await axios.delete(`${BACKEND_URL}/api/orders/remove-items`, {
-            data: { username, itemCodes: checkedOutItemCodes },
+            data: { username: username, itemCodes: checkedOutItemCodes },
           });
         } catch (err) {
-          console.error("Error removing items from server cart:", err);
+          console.error("Error removing items from cart:", err);
         }
 
-        // Clear local checkout + cart
         sessionStorage.removeItem("checkoutItems");
+
         const currentCart = JSON.parse(
-          localStorage.getItem("cartItems") || "[]",
+          localStorage.getItem("cartItems") || "[]"
         );
         const updatedCart = currentCart.filter(
-          (cartItem) => !checkedOutItemCodes.includes(cartItem.itemCode),
+          (cartItem) => !checkedOutItemCodes.includes(cartItem.itemCode)
         );
         localStorage.setItem("cartItems", JSON.stringify(updatedCart));
 
-        toast.success(
-          isStockSufficient
-            ? "Order Successful!"
-            : "Order placed with partial backorder!",
-        );
-
-        setTimeout(() => {
-          navigate("/order-transaction");
-        }, 1500);
+        toast.success("Order Successful!");
+        setTimeout(() => navigate("/order-transaction"), 1500);
       }
     } catch (error) {
-      console.error("Checkout Error:", error.response?.data || error);
+      console.error("Checkout Error:", error.response?.data);
       const errorMessage =
         error.response?.data?.message || "Internal Server Error";
       toast.error(`Checkout failed: ${errorMessage}`);
@@ -355,17 +255,12 @@ export default function OrderSummary() {
           <button
             className="os-proceed-btn"
             onClick={handleProceed}
-            disabled={isCheckingOut || checkingStock || items.length === 0}
+            disabled={isCheckingOut || items.length === 0}
           >
-            {checkingStock
-              ? "CHECKING STOCK..."
-              : isCheckingOut
-                ? "PROCESSING..."
-                : "PROCEED"}
+            {isCheckingOut ? "PROCESSING..." : "PROCEED"}
           </button>
         </div>
 
-        {/* ---------- NORMAL CONFIRM MODAL ---------- */}
         {showCheckoutModal && (
           <div className="confirm-modal-overlay">
             <div className="confirm-modal-card">
@@ -394,63 +289,12 @@ export default function OrderSummary() {
                     handleCheckout();
                   }}
                   disabled={isCheckingOut}
-                  style={{ background: "#22a06b", borderColor: "#22a06b" }}
+                  style={{
+                    background: "#22a06b",
+                    borderColor: "#22a06b",
+                  }}
                 >
                   {isCheckingOut ? "Processing..." : "Yes, Proceed"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ---------- PARTIAL / INSUFFICIENT MODAL ---------- */}
-        {showPartialModal && (
-          <div className="confirm-modal-overlay">
-            <div className="confirm-modal-card">
-              <div
-                className="confirm-modal-icon"
-                style={{ color: "#e0a800" }}
-              >
-                <FaTriangleExclamation />
-              </div>
-
-              <h3 className="confirm-modal-title">Insufficient Stock</h3>
-
-              <p className="confirm-modal-message">
-                The requested item quantity exceeds available stock. Would you
-                like to confirm partial delivery for the unavailable items?
-              </p>
-
-              <div className="confirm-modal-details">
-                {insufficientItems.map((it, idx) => (
-                  <div key={idx} className="confirm-modal-detail-row">
-                    <span className="confirm-modal-detail-label">
-                      {it.productName || it.name || it.itemCode}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="confirm-modal-footer">
-                <button
-                  type="button"
-                  className="confirm-modal-btn confirm-modal-btn-cancel"
-                  onClick={() => navigate("/Cart")}
-                  disabled={isCheckingOut}
-                >
-                  No, Back to Cart
-                </button>
-                <button
-                  type="button"
-                  className="confirm-modal-btn confirm-modal-btn-confirm"
-                  onClick={() => {
-                    setShowPartialModal(false);
-                    handleCheckout();
-                  }}
-                  disabled={isCheckingOut}
-                  style={{ background: "#e0a800", borderColor: "#e0a800" }}
-                >
-                  {isCheckingOut ? "Processing..." : "Yes, Place Order"}
                 </button>
               </div>
             </div>
