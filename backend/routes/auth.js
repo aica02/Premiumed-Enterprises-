@@ -28,10 +28,7 @@ router.get("/get/:username", async (req, res) => {
 });
 
 // UPDATE USER PROFILE (combined with image upload)
-router.put(
-  "/update/:username",
-  upload.single("profileImage"),
-  async (req, res) => {
+router.put("/update/:username",upload.single("profileImage"),async (req, res) => {
     try {
       const { username } = req.params;
       const updateData = { ...req.body };

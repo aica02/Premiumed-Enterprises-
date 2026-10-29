@@ -79,6 +79,20 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    if (user.role !== "Admin") {
+      await createActivityLog({
+        userId: user._id,
+        username: user.username,
+        role: user.role,
+        action: "Failed login",
+        module: "Authentication",
+        description: `Access denied for "${user.username}" (role: ${user.role}). Only Admins and Client Users may log in.`,
+      });
+      return res.status(403).json({
+        error: "Access denied. Only Admin and Client Users are allowed to log in.",
+      });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
@@ -117,7 +131,6 @@ router.post("/login", async (req, res) => {
     res.status(500).json({ error: "server error" });
   }
 });
-
 router.post(
   "/register-request",
   (req, res, next) => {

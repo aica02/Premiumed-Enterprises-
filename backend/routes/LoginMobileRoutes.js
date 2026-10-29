@@ -36,6 +36,25 @@ router.post("/", async (req, res) => {
       });
     }
 
+    const ALLOWED_ROLES = ["Staff", "Driver"];
+    if (!ALLOWED_ROLES.includes(user.role)) {
+      await createActivityLog({
+        userId: user._id,
+        username: user.username,
+        role: user.role,
+        action: "Failed login",
+        module: "Mobile Authentication",
+        description: `Access denied for "${user.username}" (role: ${user.role}). Only Staff and Driver may log in via the mobile app.`,
+      });
+
+      return res.status(403).json({
+        success: false,
+        code: "ROLE_NOT_ALLOWED",
+        message:
+          "Access denied. This app is only for Staff and Driver accounts.",
+      });
+    }
+
     const isPasswordValid =
       (await compare(password, user.password)) ||
       (typeof user.password === "string" && user.password === password) ||
@@ -59,7 +78,6 @@ router.post("/", async (req, res) => {
     );
 
     await createActivityLog({
-      //logs for login mobile
       userId: user._id,
       username: user.username,
       role: user.role,
