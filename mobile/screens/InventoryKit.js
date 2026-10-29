@@ -26,7 +26,7 @@ import {
   AlertTriangle,
   ScanLine,
   Check,
-  Wifi, //need icomment
+  Wifi,
   WifiOff,
   Printer,
 } from "lucide-react-native";
@@ -37,8 +37,6 @@ import NetInfo from "@react-native-community/netinfo";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
 import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
-
-//need icomment
 import {
   autoConnectPrinter,
   connectToPrinter,
@@ -93,7 +91,6 @@ export default function InventoryKit({
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [restockSuccessData, setRestockSuccessData] = useState(null);
 
-  //need icomment
   const [printQty, setPrintQty] = useState("1");
   const [printerDevice, setPrinterDevice] = useState(null);
   const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
@@ -108,6 +105,7 @@ export default function InventoryKit({
   const [quantityError, setQuantityError] = useState("");
   const [kitFormErrors, setKitFormErrors] = useState({});
   const [confirmError, setConfirmError] = useState("");
+  const [insufficientStockSummary, setInsufficientStockSummary] = useState([]);
 
   const [scanningModalVisible, setScanningModalVisible] = useState(false);
   const [scanQueue, setScanQueue] = useState([]);
@@ -123,7 +121,6 @@ export default function InventoryKit({
 
   const [permission, requestPermission] = useCameraPermissions();
 
-  //need icomment
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
@@ -225,7 +222,6 @@ export default function InventoryKit({
       setIsPrinting(false);
     }
   };
-  //need icomment
 
   const [kitFormData, setKitFormData] = useState({
     itemCode: "",
@@ -511,48 +507,6 @@ export default function InventoryKit({
     }
   };
 
-
-  // Returns { [itemId]: { available, required, status } } for the current box count
-const getInclusionStockIssues = () => {
-  const boxCount = Number(kitFormData.box) || 0;
-  const issues = {};
-
-  kitItems.forEach((kitItem) => {
-    const source = items.find((i) => i._id === kitItem._id);
-    if (!source) return;
-
-    // Reuse the same availability calc as getKitInclusionItems()
-    const validBatches = (batches || []).filter(
-      (b) =>
-        b.itemCode === source.itemCode &&
-        b.status === "stored" &&
-        new Date(b.expirationDate) >= new Date(),
-    );
-    const availableQty = validBatches.reduce(
-      (sum, b) => sum + (Number(b.quantity) || 0),
-      0,
-    );
-
-    const required = (Number(kitItem.quantity) || 0) * boxCount;
-    if (required <= 0) return;
-
-    if (availableQty <= 0) {
-      issues[kitItem._id] = {
-        available: 0,
-        required,
-        status: "out",
-      };
-    } else if (availableQty < required) {
-      issues[kitItem._id] = {
-        available: availableQty,
-        required,
-        status: "insufficient",
-      };
-    }
-  });
-
-  return issues;
-};
   const resetScanState = () => {
     setScanningModalVisible(false);
     setScanQueue([]);
@@ -582,12 +536,14 @@ const getInclusionStockIssues = () => {
     setKitItemErrors({});
     setQuantityError("");
     setKitFormErrors({});
+    setInsufficientStockSummary([]);
     setImage(null);
     resetScanState();
   };
 
   const removeKitItemFromKit = (index) => {
     setKitItems((prev) => prev.filter((_, i) => i !== index));
+    setInsufficientStockSummary([]);
   };
 
   const updateKitItemQuantity = (index, value) => {
@@ -623,6 +579,52 @@ const getInclusionStockIssues = () => {
     }
   };
 
+  /**
+   * Get available stock for a kit-inclusion itemCode.
+   * Only counts batches with a countable status and positive qty.
+   */
+  const getAvailableStock = (itemCode) => {
+    if (!itemCode) return 0;
+    const existingQuantity = batches
+      .filter(
+        (batch) =>
+          batch.itemCode === itemCode &&
+          COUNTED_BATCH_STATUSES.includes(batch.status),
+      )
+      .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
+    return Math.max(existingQuantity, 0);
+  };
+
+  /**
+   * Compute per-item insufficient stock info based on the current form.
+   * Returns an array of { _id, name, itemCode, perBox, boxCount, required, available, shortage }
+   */
+  const computeInsufficientStockItems = () => {
+    const boxCount = Number(kitFormData.box) || 0;
+    if (boxCount <= 0) return [];
+
+    const results = [];
+    kitItems.forEach((item) => {
+      const perBox = Number(item.quantity);
+      if (!Number.isFinite(perBox) || perBox <= 0) return;
+      const required = perBox * boxCount;
+      const available = getAvailableStock(item.itemCode);
+      if (required > available) {
+        results.push({
+          _id: item._id,
+          name: item.name,
+          itemCode: item.itemCode,
+          perBox,
+          boxCount,
+          required,
+          available,
+          shortage: required - available,
+        });
+      }
+    });
+    return results;
+  };
+
   const validateKitBeforeSave = () => {
     const errors = {};
 
@@ -643,16 +645,6 @@ const getInclusionStockIssues = () => {
       }
     });
 
-        const stockIssues = getInclusionStockIssues();
-    if (Object.keys(stockIssues).length > 0) {
-      const firstIssue = Object.values(stockIssues)[0];
-      setConfirmError(
-        firstIssue.status === "out"
-          ? "One or more kit inclusions are out of stock. Adjust the box count or inclusions."
-          : "One or more kit inclusions have insufficient stock. Adjust the box count or inclusions.",
-      );
-      return false;
-    }
     if (!kitFormData.box || Number(kitFormData.box) <= 0) {
       setConfirmError("Box must be greater than zero.");
       return false;
@@ -699,27 +691,49 @@ const getInclusionStockIssues = () => {
     setKitFormErrors({});
 
     const errors = {};
+    const boxCount = Number(kitFormData.box) || 0;
 
     kitItems.forEach((item) => {
       const qty = item.quantity;
 
       if (qty === "" || qty === null || qty === undefined) {
         errors[item._id] = "Quantity is required.";
-      } else if (Number(qty) <= 0) {
+        return;
+      }
+
+      const numQty = Number(qty);
+
+      if (numQty <= 0) {
         errors[item._id] = "Quantity must be greater than 0.";
-      } else if (Number(qty) > MAX_QUANTITY) {
+        return;
+      }
+
+      if (numQty > MAX_QUANTITY) {
         errors[item._id] = `Quantity cannot exceed ${MAX_QUANTITY}.`;
+        return;
+      }
+
+      const requiredTotal = numQty * boxCount;
+      const available = getAvailableStock(item.itemCode);
+
+      if (requiredTotal > available) {
+        errors[item._id] =
+          `Insufficient stock: need ${requiredTotal} (${numQty} × ${boxCount} boxes), only ${available} available.`;
+        return;
       }
     });
 
     setKitItemErrors(errors);
 
-    if (Object.keys(errors).length > 0) return;
+    const summary = computeInsufficientStockItems();
+    setInsufficientStockSummary(summary);
 
-    const boxCount = Number(kitFormData.box);
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
     const quantityPerBox = KIT_QUANTITY_PER_BOX;
     const totalQuantity = boxCount * quantityPerBox;
-
     const existingQuantity = batches
       .filter(
         (batch) =>
@@ -727,7 +741,8 @@ const getInclusionStockIssues = () => {
           COUNTED_BATCH_STATUSES.includes(batch.status),
       )
       .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
-    const availableQuantity = Math.max(MAX_QUANTITY - existingQuantity, 0);
+
+    const availableQuantity = getAvailableStock(kitFormData.itemCode);
 
     if (totalQuantity > availableQuantity) {
       setQuantityError(
@@ -743,7 +758,6 @@ const getInclusionStockIssues = () => {
     setShowConfirmKitModal(true);
   };
 
-  // ====== BUILD SCAN QUEUE ======
   const buildScanQueue = () => {
     const boxCount = Number(kitFormData.box) || 0;
     const inclusions =
@@ -903,7 +917,6 @@ const getInclusionStockIssues = () => {
       return;
     }
 
-    // FEFO: is this the earliest-expiring batch with remaining stock?
     const batchesForItem = foundItem.batches
       .filter((b) => {
         if (!b) return false;
@@ -923,7 +936,6 @@ const getInclusionStockIssues = () => {
 
     const earliestBatch = batchesForItem[0];
 
-    // Get already-scanned qty per batch for this item
     const itemAllocations = scanAllocations[item.itemCode] || {};
     const getRemainingInBatch = (batch) => {
       const already = itemAllocations[batch.batchCode] || 0;
@@ -931,12 +943,9 @@ const getInclusionStockIssues = () => {
     };
 
     if (earliestBatch.batchCode !== scannedBatch.batchCode) {
-      // The scanned batch is not the earliest — show FEFO warning
       const remainingInScanned = getRemainingInBatch(scannedBatch);
 
       if (remainingInScanned > 0) {
-        // Verify the earliest batch still has stock after prior scans
-        // Walk earliest batches in order, skip any that are fully allocated
         let actualEarliest = null;
         for (const b of batchesForItem) {
           if (getRemainingInBatch(b) > 0) {
@@ -1218,6 +1227,7 @@ const getInclusionStockIssues = () => {
         isMedicalKit(item) && item.name.toLowerCase().includes(searchLower),
     );
   };
+
   const getKitInclusionItems = () => {
     return items
       .filter(
@@ -1241,7 +1251,11 @@ const getInclusionStockIssues = () => {
 
         return { ...item, availableQty, validBatches };
       })
-      .filter((item) => item.availableQty > 0);
+      .filter((item) => {
+        // Show if it has stock OR is already selected in kitItems
+        if (item.availableQty > 0) return true;
+        return kitItems.some((k) => k._id === item._id);
+      });
   };
 
   const isRestockMode = !!kitFormData.itemCode;
@@ -1338,7 +1352,6 @@ const getInclusionStockIssues = () => {
 
   return (
     <>
-      {/* need icomment */}
       <View
         style={{
           flexDirection: "row",
@@ -1415,7 +1428,6 @@ const getInclusionStockIssues = () => {
         </View>
       )}
 
-      {/* //need icomment */}
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1465,7 +1477,6 @@ const getInclusionStockIssues = () => {
           </View>
         </View>
       </Modal>
-      {/* //need icomment */}
 
       {/* Add / Restock Kit Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
@@ -1623,6 +1634,10 @@ const getInclusionStockIssues = () => {
                     onChangeText={(v) => {
                       setKitFormData({ ...kitFormData, box: v });
                       setKitFormErrors((prev) => ({ ...prev, box: "" }));
+                      // Recalculate insufficient-stock summary as box count changes
+                      if (insufficientStockSummary.length > 0) {
+                        setInsufficientStockSummary([]);
+                      }
                     }}
                   />
                   {kitFormErrors.box ? (
@@ -1708,6 +1723,53 @@ const getInclusionStockIssues = () => {
                   </Text>
                 ) : null}
 
+                {/* ===== NEW: inline insufficient stock banner ===== */}
+                {insufficientStockSummary.length > 0 && (
+                  <View
+                    style={{
+                      padding: 12,
+                      backgroundColor: "#FEF2F2",
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: "#FECACA",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <AlertTriangle size={18} color="#B91C1C" />
+                      <Text
+                        style={{
+                          color: "#B91C1C",
+                          fontWeight: "700",
+                          fontSize: 13,
+                          marginLeft: 6,
+                        }}
+                      >
+                        Insufficient Stock for Kit Supplies
+                      </Text>
+                    </View>
+                    {insufficientStockSummary.map((s, i) => (
+                      <Text
+                        key={s._id || i}
+                        style={{
+                          color: "#991B1B",
+                          fontSize: 12,
+                          lineHeight: 18,
+                          marginBottom: 3,
+                        }}
+                      >
+                        • {s.name}: needs {s.required} per kit-box, available: {s.available}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+
                 {isRestockMode ? (
                   <View style={{ marginBottom: 10, opacity: 0.7 }}>
                     {kitItems.length > 0 ? (
@@ -1778,6 +1840,12 @@ const getInclusionStockIssues = () => {
                             (k) => k._id === item._id,
                           );
                           const displayQty = item.availableQty || 0;
+                          const perBox = Number(addedItem?.quantity) || 0;
+                          const boxCount = Number(kitFormData.box) || 0;
+                          const requiredTotal = perBox * boxCount;
+                          const hasQty = perBox > 0 && boxCount > 0;
+                          const isInsufficient =
+                            isAdded && hasQty && requiredTotal > displayQty;
 
                           return (
                             <View key={item._id} style={{ marginBottom: 4 }}>
@@ -1789,9 +1857,11 @@ const getInclusionStockIssues = () => {
                                   paddingHorizontal: 10,
                                   borderBottomWidth: 1,
                                   borderBottomColor: "#E5E7EB",
-                                  backgroundColor: isAdded
-                                    ? "#F0FDF4"
-                                    : "#FFFFFF",
+                                  backgroundColor: isInsufficient
+                                    ? "#FEF2F2"
+                                    : isAdded
+                                      ? "#F0FDF4"
+                                      : "#FFFFFF",
                                   borderRadius: 8,
                                 }}
                               >
@@ -1841,6 +1911,8 @@ const getInclusionStockIssues = () => {
                                         [item._id]: "",
                                       }));
                                     }
+                                    // recompute banner
+                                    setInsufficientStockSummary([]);
                                   }}
                                 >
                                   {isAdded && (
@@ -1900,7 +1972,9 @@ const getInclusionStockIssues = () => {
                                         borderWidth: 1,
                                         borderColor: kitItemErrors[item._id]
                                           ? "#EF4444"
-                                          : "#D1D5DB",
+                                          : isInsufficient
+                                            ? "#EF4444"
+                                            : "#D1D5DB",
                                         borderRadius: 6,
                                         paddingHorizontal: 8,
                                         fontSize: 14,
@@ -1920,6 +1994,8 @@ const getInclusionStockIssues = () => {
                                         if (index !== -1) {
                                           updateKitItemQuantity(index, value);
                                         }
+                                        // recompute banner on every keystroke
+                                        setInsufficientStockSummary([]);
                                       }}
                                     />
                                   </View>
@@ -1939,28 +2015,23 @@ const getInclusionStockIssues = () => {
                                   {kitItemErrors[item._id]}
                                 </Text>
                               )}
-                              {(() => {
-                                if (!isAdded) return null;
-                                const issues = getInclusionStockIssues()[item._id];
-                                if (!issues) return null;
-                                const isOut = issues.status === "out";
-                                return (
-                                  <Text
-                                    style={{
-                                      color: isOut ? "#B91C1C" : "#B45309",
-                                      fontSize: 11,
-                                      fontWeight: "600",
-                                      marginTop: 2,
-                                      marginLeft: 10,
-                                      marginBottom: 4,
-                                    }}
-                                  >
-                                    {isOut
-                                      ? `Out of stock — need ${issues.required} for ${kitFormData.box || 0} box(es)`
-                                      : `Insufficient stock — only ${issues.available} available, need ${issues.required}`}
-                                  </Text>
-                                );
-                              })()}
+
+                              {/* Live per-item hint (no submit required) */}
+                              {isAdded && isInsufficient && !kitItemErrors[item._id] && (
+                                <Text
+                                  style={{
+                                    color: "#B91C1C",
+                                    fontSize: 11,
+                                    marginTop: 4,
+                                    marginLeft: 10,
+                                    marginBottom: 4,
+                                  }}
+                                >
+                                  Needs {requiredTotal} 
+                                  , only {displayQty}{" "}
+                                  available.
+                                </Text>
+                              )}
                             </View>
                           );
                         })}
@@ -2912,7 +2983,6 @@ const getInclusionStockIssues = () => {
         </View>
       </Modal>
 
-      {/* //need icomment */}
       {errorFeedback && (
         <Modal
           visible={Boolean(errorFeedback)}
@@ -2939,7 +3009,6 @@ const getInclusionStockIssues = () => {
           </View>
         </Modal>
       )}
-      {/* //need icomment */}
 
       {/* Success Modal */}
       <Modal
@@ -3027,7 +3096,6 @@ const getInclusionStockIssues = () => {
               </Text>
             </View>
 
-            {/* //need icomment */}
             {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
@@ -3055,7 +3123,6 @@ const getInclusionStockIssues = () => {
                 )}
               </TouchableOpacity>
             )}
-            {/* //need icomment */}
 
             <TouchableOpacity
               onPress={() => {
@@ -3069,7 +3136,6 @@ const getInclusionStockIssues = () => {
         </View>
       </Modal>
 
-      {/* //need icomment */}
       {successFeedback && (
         <Modal
           visible={Boolean(successFeedback)}
@@ -3093,7 +3159,6 @@ const getInclusionStockIssues = () => {
           </View>
         </Modal>
       )}
-      {/* //need icomment */}
     </>
   );
 }
