@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const warehouseLocationSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, trim: true },
-    type: { type: String, required: true, enum: ["rack", "pallet"] },
+    type: { type: String, required: true, enum: ["rack", "pallet", "table"] },
     top: { type: Number, required: true, min: 0, max: 100 },
     left: { type: Number, required: true, min: 0, max: 100 },
     width: { type: Number, required: true, min: 0, max: 100 },
