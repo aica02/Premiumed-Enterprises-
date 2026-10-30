@@ -32,7 +32,7 @@
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.ACCESS_FINE_LOCATION"
       ],
-      "package": "com.premiumedmobile"
+      "package": "com.premiumedenterprises.warehouse"
     },
     "web": {
       "favicon": "./assets/favicon.png"
