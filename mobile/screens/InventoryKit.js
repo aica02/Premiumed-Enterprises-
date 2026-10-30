@@ -1,4 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  // useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -26,7 +31,7 @@ import {
   AlertTriangle,
   ScanLine,
   Check,
-  Wifi,
+  Wifi, //comment this
   WifiOff,
   Printer,
 } from "lucide-react-native";
@@ -37,6 +42,8 @@ import NetInfo from "@react-native-community/netinfo";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
 import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
+
+//comment this
 import {
   autoConnectPrinter,
   connectToPrinter,
@@ -44,12 +51,13 @@ import {
   scanForPrinters,
   stopPrinterScan,
 } from "../utils/PrinterService";
+//comment this
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET =
   process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-const MAX_QUANTITY = 1000;
+const MAX_QUANTITY = 10000;
 const KIT_QUANTITY_PER_BOX = 100;
 const COUNTED_BATCH_STATUSES = ["stored", "for disposal"];
 
@@ -91,6 +99,7 @@ export default function InventoryKit({
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [restockSuccessData, setRestockSuccessData] = useState(null);
 
+  //comment this
   const [printQty, setPrintQty] = useState("1");
   const [printerDevice, setPrinterDevice] = useState(null);
   const [printerStatus, setPrinterStatus] = useState("Printer Disconnected");
@@ -98,6 +107,7 @@ export default function InventoryKit({
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [successFeedback, setSuccessFeedback] = useState(null);
+  //comment this
 
   const [kitItems, setKitItems] = useState([]);
   const [showConfirmKitModal, setShowConfirmKitModal] = useState(false);
@@ -121,6 +131,7 @@ export default function InventoryKit({
 
   const [permission, requestPermission] = useCameraPermissions();
 
+  //comment this
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
@@ -222,6 +233,7 @@ export default function InventoryKit({
       setIsPrinting(false);
     }
   };
+  //comment this
 
   const [kitFormData, setKitFormData] = useState({
     itemCode: "",
@@ -231,7 +243,7 @@ export default function InventoryKit({
     box: "",
     quantity: String(KIT_QUANTITY_PER_BOX),
     expirationDate: getDefaultKitExpiration(),
-    location: "P1-A",
+    location: "R1-A",
     supplierName: "Premiumed Enterprises",
     reorderLevel: "50",
     kitItems: [],
@@ -309,8 +321,7 @@ export default function InventoryKit({
         .map((batch) => batch.storageLocation),
     );
     const locations = additionalLocations.filter(
-      (location) =>
-        location.type === "pallet" && !occupiedLocations.has(location.id),
+      (location) => !occupiedLocations.has(location.id),
     );
 
     return locations.map(({ id }) => (
@@ -524,7 +535,7 @@ export default function InventoryKit({
       box: "",
       quantity: String(KIT_QUANTITY_PER_BOX),
       expirationDate: getDefaultKitExpiration(),
-      location: "P1-A",
+      location: "R1-A",
       supplierName: "Premiumed Enterprises",
       unitType: "Set",
       reorderLevel: "50",
@@ -578,10 +589,6 @@ export default function InventoryKit({
     }
   };
 
-  /**
-   * Get available stock for a kit-inclusion itemCode.
-   * Only counts batches with a countable status and positive qty.
-   */
   const getAvailableStock = (itemCode) => {
     if (!itemCode) return 0;
     const existingQuantity = batches
@@ -594,10 +601,6 @@ export default function InventoryKit({
     return Math.max(existingQuantity, 0);
   };
 
-  /**
-   * Compute per-item insufficient stock info based on the current form.
-   * Returns an array of { _id, name, itemCode, perBox, boxCount, required, available, shortage }
-   */
   const computeInsufficientStockItems = () => {
     const boxCount = Number(kitFormData.box) || 0;
     if (boxCount <= 0) return [];
@@ -1351,6 +1354,7 @@ export default function InventoryKit({
 
   return (
     <>
+      {/* comment this */}
       <View
         style={{
           flexDirection: "row",
@@ -1393,6 +1397,7 @@ export default function InventoryKit({
           </Text>
         </TouchableOpacity>
       </View>
+      {/* comment this */}
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1427,6 +1432,7 @@ export default function InventoryKit({
         </View>
       )}
 
+      {/* comment this */}
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1476,6 +1482,7 @@ export default function InventoryKit({
           </View>
         </View>
       </Modal>
+      {/* comment this */}
 
       {/* Add / Restock Kit Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
@@ -3097,6 +3104,7 @@ export default function InventoryKit({
               </Text>
             </View>
 
+            {/* comment this */}
             {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
@@ -3124,6 +3132,7 @@ export default function InventoryKit({
                 )}
               </TouchableOpacity>
             )}
+            {/* comment this */}
 
             <TouchableOpacity
               onPress={() => {
@@ -3137,6 +3146,7 @@ export default function InventoryKit({
         </View>
       </Modal>
 
+      {/* comment this */}
       {successFeedback && (
         <Modal
           visible={Boolean(successFeedback)}
@@ -3160,6 +3170,7 @@ export default function InventoryKit({
           </View>
         </Modal>
       )}
+      {/* comment this */}
     </>
   );
 }

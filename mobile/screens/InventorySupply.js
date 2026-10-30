@@ -28,7 +28,7 @@ import {
   Info,
   AlertTriangle,
   Check,
-  Wifi, //need icomment
+  Wifi, //comment this
   WifiOff,
   Printer,
 } from "lucide-react-native";
@@ -43,7 +43,7 @@ import { offlineFetch as fetch } from "../shared/offlineApi";
 import { readJsonResponse } from "../shared/readJsonResponse";
 import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
 
-//need icomment
+// comment this
 import {
   autoConnectPrinter,
   scanForPrinters,
@@ -51,19 +51,15 @@ import {
   printBarcodeTSPL,
   stopPrinterScan,
 } from "../utils/PrinterService";
+// comment this
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_LOCAL_URL;
 const CLOUDINARY_CLOUD_NAME = process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET =
   process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 const USER_URL = `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/login/profile`;
-const MAX_QUANTITY = 1000;
+const MAX_QUANTITY = 10000;
 const COUNTED_BATCH_STATUSES = ["stored", "for disposal"];
-const PPE_CATEGORY = "Personal Protective Equipment (PPE)";
-const INJECTION_SHARPS_CATEGORY = "Injection & Sharps Supplies";
-const INTRAVENOUS_FLUIDS_CATEGORY = "Intravenous Fluids & Solutions";
-const MEDICAL_KITS_CATEGORY = "Medical Kits";
-const KIT_INCLUSIONS_CATEGORY = "Kit Inclusions";
 
 export default function InventorySupply({
   navigation,
@@ -102,7 +98,7 @@ export default function InventorySupply({
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [errorFeedback, setErrorFeedback] = useState(null);
 
-  //need icomment
+  // comment this
   const [successFeedback, setSuccessFeedback] = useState(null);
   const [printQty, setPrintQty] = useState("1");
   const [printerDevice, setPrinterDevice] = useState(null);
@@ -110,6 +106,7 @@ export default function InventorySupply({
   const [availablePrinters, setAvailablePrinters] = useState([]);
   const [showPrinterModal, setShowPrinterModal] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  // comment this
 
   const [image, setImage] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -133,7 +130,7 @@ export default function InventorySupply({
   const boxFieldLabel = formData.unitType === "Box" ? "Case" : "Box";
   const quantityFieldLabel = `No. of ${formData.unitType} per ${boxFieldLabel}`;
 
-  //need icomment
+  // comment this
   useEffect(() => {
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
@@ -148,7 +145,7 @@ export default function InventorySupply({
       stopPrinterScan();
     };
   }, []);
-  //need icomment
+  // comment this
 
   const getFefoStatus = (expirationDate) => {
     const today = new Date();
@@ -170,7 +167,7 @@ export default function InventorySupply({
     return { label: "Available", color: "#10B981", bg: "#D1FAE5" };
   };
 
-  const getSelectableLocations = (category) => {
+  const getSelectableLocations = () => {
     const occupiedLocations = new Set(
       batches
         .filter(
@@ -178,40 +175,12 @@ export default function InventorySupply({
         )
         .map((batch) => batch.storageLocation),
     );
-    const racks = additionalLocations
-      .filter((location) => location.type === "rack")
-      .sort((firstRack, secondRack) => {
-        const firstMatch = firstRack.id.match(/^R(\d+)-(.+)$/);
-        const secondMatch = secondRack.id.match(/^R(\d+)-(.+)$/);
-        if (firstMatch && secondMatch) {
-          return (
-            Number(firstMatch[1]) - Number(secondMatch[1]) ||
-            firstMatch[2].localeCompare(secondMatch[2])
-          );
-        }
-        if (firstMatch) return -1;
-        if (secondMatch) return 1;
-        return firstRack.id.localeCompare(secondRack.id);
-      });
-    const usesPallets = [
-      PPE_CATEGORY,
-      INJECTION_SHARPS_CATEGORY,
-      MEDICAL_KITS_CATEGORY,
-      INTRAVENOUS_FLUIDS_CATEGORY,
-    ].includes(category);
-    const locations = usesPallets
-      ? additionalLocations.filter((location) => location.type === "pallet")
-      : racks.filter((location) =>
-          category === KIT_INCLUSIONS_CATEGORY
-            ? location.id.startsWith("R6-")
-            : !location.id.startsWith("R6-"),
-        );
 
-    return locations.filter(({ id }) => !occupiedLocations.has(id));
+    return additionalLocations.filter(({ id }) => !occupiedLocations.has(id));
   };
 
   const renderRackItems = () => {
-    return getSelectableLocations(formData.category).map(({ id }) => (
+    return getSelectableLocations().map(({ id }) => (
       <Picker.Item key={id} label={id} value={id} />
     ));
   };
@@ -609,7 +578,7 @@ export default function InventorySupply({
     );
   };
 
-  //need icomment
+  // comment this
   const handleScanPrinters = async () => {
     setAvailablePrinters([]);
     setShowPrinterModal(true);
@@ -703,7 +672,7 @@ export default function InventorySupply({
       setIsPrinting(false);
     }
   };
-  //need icomment
+  // comment this
 
   const performSave = async () => {
     try {
@@ -938,7 +907,7 @@ export default function InventorySupply({
 
   return (
     <>
-      {/* //need icomment */}
+      {/* comment this */}
       <View
         style={{
           flexDirection: "row",
@@ -981,7 +950,7 @@ export default function InventorySupply({
           </Text>
         </TouchableOpacity>
       </View>
-      {/* //need icomment */}
+      {/* comment this */}
 
       <View style={styles.actionContainer}>
         <View style={styles.searchBar}>
@@ -1017,7 +986,7 @@ export default function InventorySupply({
         </View>
       )}
 
-      {/* //need icomment */}
+      {/* comment this */}
       <Modal visible={showPrinterModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
@@ -1063,7 +1032,7 @@ export default function InventorySupply({
           </View>
         </View>
       </Modal>
-      {/* //need icomment */}
+      {/* comment this */}
 
       {/* Add/Restock Modal */}
       <Modal visible={showAddModal} transparent animationType="fade">
@@ -1210,7 +1179,7 @@ export default function InventorySupply({
                   enabled={!formData.itemCode}
                   selectedValue={formData.category}
                   onValueChange={(category) => {
-                    const availableLocations = getSelectableLocations(category);
+                    const availableLocations = getSelectableLocations();
                     setFormData((current) => ({
                       ...current,
                       category,
@@ -1918,7 +1887,7 @@ export default function InventorySupply({
               </Text>
             </View>
 
-            {/* //need icomment */}
+            {/* comment this */}
             {!restockSuccessData?.queued && (
               <View style={styles.printSection}>
                 <Text style={styles.printLabel}>Labels to print:</Text>
@@ -1946,7 +1915,7 @@ export default function InventorySupply({
                 )}
               </TouchableOpacity>
             )}
-            {/* //need icomment */}
+            {/* comment this */}
 
             <TouchableOpacity
               onPress={() => setShowSuccessModal(false)}
@@ -1958,7 +1927,7 @@ export default function InventorySupply({
         </View>
       </Modal>
 
-      {/* //need icomment */}
+      {/* comment this */}
       {successFeedback && (
         <Modal
           visible={Boolean(successFeedback)}
@@ -1982,6 +1951,7 @@ export default function InventorySupply({
           </View>
         </Modal>
       )}
+      {/* comment this */}
 
       {errorFeedback && (
         <Modal
