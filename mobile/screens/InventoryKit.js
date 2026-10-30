@@ -308,15 +308,14 @@ export default function InventoryKit({
         )
         .map((batch) => batch.storageLocation),
     );
-
     const locations = additionalLocations.filter(
       (location) =>
-        location.type === "pallet" && location.id.startsWith("P1-"),
+        location.type === "pallet" && !occupiedLocations.has(location.id),
     );
 
-    return locations
-      .filter(({ id }) => kitFormData.itemCode || !occupiedLocations.has(id))
-      .map(({ id }) => <Picker.Item key={id} label={id} value={id} />);
+    return locations.map(({ id }) => (
+      <Picker.Item key={id} label={id} value={id} />
+    ));
   };
 
   const uploadToCloudinary = async (imageUri, itemName) => {
@@ -1764,7 +1763,8 @@ export default function InventoryKit({
                           marginBottom: 3,
                         }}
                       >
-                        • {s.name}: needs {s.required} per kit-box, available: {s.available}
+                        • {s.name}: needs {s.required} per kit-box, available:{" "}
+                        {s.available}
                       </Text>
                     ))}
                   </View>
@@ -2017,21 +2017,22 @@ export default function InventoryKit({
                               )}
 
                               {/* Live per-item hint (no submit required) */}
-                              {isAdded && isInsufficient && !kitItemErrors[item._id] && (
-                                <Text
-                                  style={{
-                                    color: "#B91C1C",
-                                    fontSize: 11,
-                                    marginTop: 4,
-                                    marginLeft: 10,
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  Needs {requiredTotal} 
-                                  , only {displayQty}{" "}
-                                  available.
-                                </Text>
-                              )}
+                              {isAdded &&
+                                isInsufficient &&
+                                !kitItemErrors[item._id] && (
+                                  <Text
+                                    style={{
+                                      color: "#B91C1C",
+                                      fontSize: 11,
+                                      marginTop: 4,
+                                      marginLeft: 10,
+                                      marginBottom: 4,
+                                    }}
+                                  >
+                                    Needs {requiredTotal}, only {displayQty}{" "}
+                                    available.
+                                  </Text>
+                                )}
                             </View>
                           );
                         })}

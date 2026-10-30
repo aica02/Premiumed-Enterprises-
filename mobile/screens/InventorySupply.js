@@ -178,7 +178,6 @@ export default function InventorySupply({
         )
         .map((batch) => batch.storageLocation),
     );
-
     const racks = additionalLocations
       .filter((location) => location.type === "rack")
       .sort((firstRack, secondRack) => {
@@ -194,33 +193,21 @@ export default function InventorySupply({
         if (secondMatch) return 1;
         return firstRack.id.localeCompare(secondRack.id);
       });
-    const palletPrefixes =
-      category === PPE_CATEGORY
-        ? ["P4"]
-        : category === INJECTION_SHARPS_CATEGORY
-          ? ["P3"]
-          : category === MEDICAL_KITS_CATEGORY
-            ? ["P1"]
-            : category === INTRAVENOUS_FLUIDS_CATEGORY
-              ? ["P2", "P5"]
-              : null;
-    const locations = palletPrefixes
-      ? additionalLocations.filter(
-          (location) =>
-            location.type === "pallet" &&
-            palletPrefixes.some((prefix) =>
-              location.id.startsWith(`${prefix}-`),
-            ),
-        )
+    const usesPallets = [
+      PPE_CATEGORY,
+      INJECTION_SHARPS_CATEGORY,
+      MEDICAL_KITS_CATEGORY,
+      INTRAVENOUS_FLUIDS_CATEGORY,
+    ].includes(category);
+    const locations = usesPallets
+      ? additionalLocations.filter((location) => location.type === "pallet")
       : racks.filter((location) =>
           category === KIT_INCLUSIONS_CATEGORY
             ? location.id.startsWith("R6-")
             : !location.id.startsWith("R6-"),
         );
 
-    return locations.filter(
-      ({ id }) => formData.itemCode || !occupiedLocations.has(id),
-    );
+    return locations.filter(({ id }) => !occupiedLocations.has(id));
   };
 
   const renderRackItems = () => {
