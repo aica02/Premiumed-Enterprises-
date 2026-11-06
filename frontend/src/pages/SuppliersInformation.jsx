@@ -45,6 +45,16 @@ const BACKEND_URL =
 const API_URL = `${BACKEND_URL}/api/suppliers`;
 const BATCH_API = `${BACKEND_URL}/api/putaway/all`;
 const ITEMS_API = `${BACKEND_URL}/api/products`;
+// Identifies this admin page so /api/products also returns client-reserved supplies.
+const staffRequestConfig = () => {
+  const token = localStorage.getItem("token");
+  return {
+    headers: {
+      "X-Role": localStorage.getItem("role") || "Admin",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  };
+};
 const SUPPLIER_VALIDATION_FIELDS = [
   "name",
   "contact",
@@ -536,7 +546,7 @@ const SuppliersInformation = () => {
 
   const fetchItems = async () => {
     try {
-      const res = await axios.get(ITEMS_API);
+      const res = await axios.get(ITEMS_API, staffRequestConfig());
       const items = Array.isArray(res.data) ? res.data : res.data.items || [];
       setItemsData(items);
     } catch (err) {
@@ -600,7 +610,7 @@ const SuppliersInformation = () => {
 
   const fetchAllItems = async () => {
     try {
-      const res = await axios.get(ITEMS_API);
+      const res = await axios.get(ITEMS_API, staffRequestConfig());
       const items = Array.isArray(res.data) ? res.data : res.data.items || [];
 
       // Create a unique list of all items for the dropdown

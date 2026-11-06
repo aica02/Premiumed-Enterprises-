@@ -1,7 +1,43 @@
 import { Router } from "express";
+import mongoose from "mongoose";
 import Cart from "../models/Cart.js";
+import Product from "../models/Product.js";
+import {
+  canClientSee,
+  normalizeUsername,
+  RESERVED_SUPPLY_MESSAGE,
+} from "../utils/productAccess.js";
 
 const router = Router();
+
+// Cart items store an itemCode, which older carts may have filled with the
+// product _id instead. Look products up both ways.
+const findProductsForCodes = async (codes) => {
+  const unique = [...new Set(codes.filter(Boolean).map(String))];
+  if (unique.length === 0) return new Map();
+  const ids = unique.filter((c) => mongoose.isValidObjectId(c));
+  const products = await Product.find({
+    $or: [{ itemCode: { $in: unique } }, ...(ids.length ? [{ _id: { $in: ids } }] : [])],
+  })
+    .select("_id itemCode reservedFor")
+    .lean();
+  const byCode = new Map();
+  for (const p of products) {
+    if (p.itemCode) byCode.set(String(p.itemCode), p);
+    byCode.set(String(p._id), p);
+  }
+  return byCode;
+};
+
+// Codes in the list that belong to supplies reserved for someone else.
+// Checked against the cart's owner, since that is whose cart gets changed.
+const findBlockedCodes = async (codes, username) => {
+  const byCode = await findProductsForCodes(codes);
+  return codes.filter((code) => {
+    const product = byCode.get(String(code));
+    return product && !canClientSee(product, username);
+  });
+};
 
 // Helper function to update cart totals
 const updateCartTotals = async (cart) => {
@@ -16,16 +52,33 @@ router.get("/:username", async (req, res) => {
     const { username } = req.params;
 
     let cart = await Cart.findOne({ username });
+    let removedReservedItems = [];
 
     if (!cart) {
       cart = new Cart({ username, items: [] });
       await updateCartTotals(cart);
       await cart.save();
+    } else if (cart.items.length > 0) {
+      // A supply reserved after it was added to this cart must not stay orderable.
+      const blocked = await findBlockedCodes(
+        cart.items.map((i) => i.itemCode),
+        normalizeUsername(username),
+      );
+      if (blocked.length > 0) {
+        removedReservedItems = cart.items
+          .filter((i) => blocked.includes(i.itemCode))
+          .map((i) => i.name || i.itemCode);
+        cart.items = cart.items.filter((i) => !blocked.includes(i.itemCode));
+        await updateCartTotals(cart);
+        await cart.save();
+      }
     }
 
     res.json({
       success: true,
       cart: cart,
+      // Names of items dropped because they are now reserved for another client.
+      removedReservedItems,
     });
   } catch (error) {
     console.error("Error fetching cart:", error);
@@ -49,6 +102,19 @@ router.post("/add", async (req, res) => {
     }
 
     const incomingCode = item.itemCode || item._id;
+
+    const blocked = await findBlockedCodes(
+      [incomingCode],
+      normalizeUsername(username),
+    );
+    if (blocked.length > 0) {
+      return res.status(403).json({
+        success: false,
+        message: RESERVED_SUPPLY_MESSAGE,
+        error: RESERVED_SUPPLY_MESSAGE,
+      });
+    }
+
     const orderMode = item.orderMode === "box" ? "box" : "piece";
     const quantityPerBox = Number(item.quantityPerBox) || 0;
     const boxes = orderMode === "box" ? Number(item.boxes) || 0 : 0;
@@ -258,8 +324,18 @@ router.post("/sync", async (req, res) => {
       cart = new Cart({ username, items: [] });
     }
 
+    let removedReservedItems = [];
     if (localItems && Array.isArray(localItems)) {
-      localItems.forEach((localItem) => {
+      const blocked = await findBlockedCodes(
+        localItems.map((i) => i.itemCode),
+        normalizeUsername(username),
+      );
+      removedReservedItems = localItems
+        .filter((localItem) => blocked.includes(localItem.itemCode))
+        .map((localItem) => localItem.name || localItem.itemCode);
+      localItems
+        .filter((localItem) => !blocked.includes(localItem.itemCode))
+        .forEach((localItem) => {
         const existingIndex = cart.items.findIndex(
           (i) => i.itemCode === localItem.itemCode,
         );
@@ -287,6 +363,7 @@ router.post("/sync", async (req, res) => {
     res.json({
       success: true,
       cart: cart,
+      removedReservedItems,
       message: "Cart synced successfully",
     });
   } catch (error) {

@@ -13,6 +13,13 @@ import User from "../models/User.js";
 import createActivityLog from "../utils/createActivityLogs.js";
 import Settings from "../models/Settings.js";
 import {
+  canClientSee,
+  isStaffRequest,
+  normalizeUsername,
+  resolveClientUsername,
+  RESERVED_SUPPLY_MESSAGE,
+} from "../utils/productAccess.js";
+import {
   sendEmailWithRetry,
   sendOrderReceipt,
   sendDepositSlipToAccountant,
@@ -46,6 +53,25 @@ const getActor = (req) => ({
   username: req.actor?.username || "Unknown",
   role: req.actor?.role || "Unknown",
 });
+
+// Returns an error message if any item is reserved for a client other than
+// the one the order is filed under, or null if every item may be ordered.
+// A verified client login must also be allowed, so a client cannot order
+// under another center's name. Staff logins ordering on a client's behalf
+// are checked only against that client.
+const findReservedOrderItem = async (req, username, items) => {
+  const orderingAs = [normalizeUsername(username)];
+  if (req.user?.username && !isStaffRequest(req)) {
+    orderingAs.push(resolveClientUsername(req));
+  }
+  for (const item of items) {
+    const product = await findProductForOrderItem(item.itemCode);
+    if (product && !orderingAs.every((u) => canClientSee(product, u))) {
+      return `${product.name}: ${RESERVED_SUPPLY_MESSAGE}`;
+    }
+  }
+  return null;
+};
 
 const findProductForOrderItem = async (itemCode) => {
   if (!itemCode) return null;
@@ -262,6 +288,17 @@ router.post("/", async (req, res) => {
 
   try {
     const username = req.headers["x-username"] || req.body.username || name;
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: "No items to order." });
+    }
+
+    // Check every item before anything is saved, so a rejected order leaves
+    // no order, counter increment or notification behind.
+    const reservedMessage = await findReservedOrderItem(req, username, items);
+    if (reservedMessage) {
+      return res.status(403).json({ success: false, message: reservedMessage });
+    }
 
     const newOrderId = await getNextOrderId(username);
 
@@ -1656,6 +1693,15 @@ router.post("/checkout-with-split", async (req, res) => {
   } = req.body;
 
   try {
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: "No items to order." });
+    }
+
+    const reservedMessage = await findReservedOrderItem(req, username, items);
+    if (reservedMessage) {
+      return res.status(403).json({ success: false, message: reservedMessage });
+    }
+
     const deliveredItems = [];
     const backorderItems = [];
     const newOrderID = await getNextOrderId(username);

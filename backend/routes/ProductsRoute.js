@@ -3,6 +3,15 @@ import express from "express";
 import Product from "../models/Product.js";
 import Batch from "../models/Batch.js";
 import createActivityLog from "../utils/createActivityLogs.js";
+import mongoose from "mongoose";
+import User from "../models/User.js";
+import ClientProfile from "../models/ClientProfile.js";
+import {
+  canClientSee,
+  isStaffRequest,
+  normalizeUsername,
+  resolveClientUsername,
+} from "../utils/productAccess.js";
 const router = express.Router();
 
 // GET all inventory items with their batches
@@ -16,6 +25,15 @@ router.get("/", async (req, res) => {
       }),
     );
 
+    // Client ordering page: hide supplies reserved for other clients.
+    // Admin/staff pages (e.g. Suppliers) still get every supply.
+    const staffView = isStaffRequest(req);
+    const clientUsername = resolveClientUsername(
+      req,
+      req.headers["x-username"],
+      req.query.username,
+    );
+
     const filteredProducts = productsWithBatches.filter((product) => {
       const hasPriceZero = product.price === 0 || product.price === "0";
 
@@ -27,10 +45,15 @@ router.get("/", async (req, res) => {
         return false;
       }
 
-      return true;
+      return staffView || canClientSee(product, clientUsername);
     });
 
-    res.json(filteredProducts);
+    // Clients never need to see which other centers a supply is reserved for.
+    res.json(
+      staffView
+        ? filteredProducts
+        : filteredProducts.map(({ reservedFor, ...product }) => product),
+    );
   } catch (err) {
     console.error("GET /api/inventoryPage error:", err);
     res.status(500).json({ message: "Server error" });
@@ -402,6 +425,88 @@ router.put("/updatePrices", async (req, res) => {
   } catch (error) {
     console.error("Price update error:", error);
     res.status(500).json({ error: "Failed to update prices" });
+  }
+});
+
+// GET client accounts that a supply can be reserved for (admin pricing modal)
+router.get("/reservable-clients", async (req, res) => {
+  try {
+    const users = await User.find({ role: "User" })
+      .select("_id username fullName status")
+      .sort({ fullName: 1 })
+      .lean();
+    const profiles = await ClientProfile.find({
+      userId: { $in: users.map((u) => u._id) },
+    })
+      .select("userId dialysisCenterName")
+      .lean();
+    const centerByUserId = new Map(
+      profiles.map((p) => [String(p.userId), p.dialysisCenterName]),
+    );
+
+    res.json(
+      users.map((u) => ({
+        username: normalizeUsername(u.username),
+        fullName: u.fullName,
+        dialysisCenterName: centerByUserId.get(String(u._id)) || u.fullName,
+        status: u.status,
+      })),
+    );
+  } catch (error) {
+    console.error("Reservable clients fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch clients" });
+  }
+});
+
+// PUT - reserve a supply for specific clients (empty list = all clients)
+router.put("/:id/reserve", async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: "Invalid supply id" });
+    }
+    if (!Array.isArray(req.body?.reservedFor)) {
+      return res.status(400).json({ error: "reservedFor must be a list of usernames" });
+    }
+
+    const requested = [
+      ...new Set(req.body.reservedFor.map(normalizeUsername).filter(Boolean)),
+    ];
+
+    // Only real client accounts can be saved, so typos never reach the database.
+    const clients = await User.find({ role: "User" }).select("username").lean();
+    const clientUsernames = new Set(clients.map((c) => normalizeUsername(c.username)));
+    const unknown = requested.filter((u) => !clientUsernames.has(u));
+    if (unknown.length > 0) {
+      return res.status(400).json({
+        error: `Not a client account: ${unknown.join(", ")}`,
+      });
+    }
+
+    // One atomic $set: concurrent saves never leave a half-written list.
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { $set: { reservedFor: requested } },
+      { new: true, runValidators: true },
+    );
+    if (!product) {
+      return res.status(404).json({ error: "Supply not found" });
+    }
+
+    await createActivityLog({
+      userId: req.actor?.userId || null,
+      username: req.actor?.username || "Unknown",
+      role: req.actor?.role || "Admin",
+      action: "Reserve supply",
+      module: "Inventory",
+      description: requested.length
+        ? `"${product.name}" (${product.itemCode}) reserved for ${requested.join(", ")}.`
+        : `"${product.name}" (${product.itemCode}) made available to all clients.`,
+    });
+
+    res.json({ success: true, product });
+  } catch (error) {
+    console.error("Reserve supply error:", error);
+    res.status(500).json({ error: "Failed to update reservation" });
   }
 });
 

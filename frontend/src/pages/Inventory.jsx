@@ -595,7 +595,17 @@ const Inventory = () => {
                             : ""
                         }
                       >
-                        <td>{item.name}</td>
+                        <td>
+                          {item.name}
+                          {item.reservedFor?.length > 0 && (
+                            <span
+                              className="reserved-tag"
+                              title="Reserved for specific clients (see Pricing)"
+                            >
+                              RESERVED
+                            </span>
+                          )}
+                        </td>
                         <td>{batch.batchCode || "N/A"}</td>
                         <td>{item.category}</td>
                         <td>{batch.quantity}</td>

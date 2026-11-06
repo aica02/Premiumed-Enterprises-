@@ -37,7 +37,9 @@ const CartService = {
     return response.data;
   },
 
-  async fetchCart() {
+  // onReservedRemoved(names) is called when the server dropped items that are
+  // now reserved for another client.
+  async fetchCart({ onReservedRemoved } = {}) {
     const username = localStorage.getItem("username");
     const token = localStorage.getItem("token");
 
@@ -51,6 +53,11 @@ const CartService = {
         "X-Username": username,
       },
     });
+
+    const removed = response.data.removedReservedItems;
+    if (onReservedRemoved && Array.isArray(removed) && removed.length > 0) {
+      onReservedRemoved(removed);
+    }
 
     return response.data.cart.items.map((item) => ({
       ...item,

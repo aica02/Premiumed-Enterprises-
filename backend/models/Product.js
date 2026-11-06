@@ -36,6 +36,8 @@ const productSchema = new mongoose.Schema(
     price: { type: Number, default: 0, min: 0 },
     isKit: { type: Boolean, default: false },
     kitItems: { type: Array, default: [] },
+    // Client usernames this supply is reserved for. Empty = visible to all clients.
+    reservedFor: { type: [String], default: [] },
   },
   { timestamps: true }
 );

@@ -448,7 +448,16 @@ function LandingPageContent() {
 
   const fetchProducts = async () => {
     try {
+      // Sending who is logged in lets the server hide supplies reserved for other clients.
+      const username = localStorage.getItem("username");
+      const token = localStorage.getItem("token");
+      const headers = {};
+      if (username && username !== "guest" && username !== "null") {
+        headers["X-Username"] = username;
+      }
+      if (token) headers.Authorization = `Bearer ${token}`;
       const response = await fetch(`${BACKEND_URL}/api/products`, {
+        headers,
         cache: "no-store",
       });
       if (!response.ok) throw new Error("Failed to fetch products");

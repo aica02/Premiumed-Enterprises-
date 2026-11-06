@@ -10,10 +10,24 @@ const BACKEND_URL =
     ? "http://localhost:5000"
     : "");
 
+const actorHeaders = () => ({
+  "X-Username": localStorage.getItem("username") || "",
+  "X-User-Id": localStorage.getItem("userId") || "",
+  "X-Role": localStorage.getItem("role") || "Admin",
+});
+
 const PricingModal = ({ open, onClose, items, fetchItems }) => {
   const [pricing, setPricing] = useState({});
   const [saving, setSaving] = useState(false);
   const [initialized, setInitialized] = useState(false);
+
+  // Reserved-for-client state
+  const [clients, setClients] = useState([]);
+  const [reservations, setReservations] = useState({});
+  const [reserveTarget, setReserveTarget] = useState(null);
+  const [reserveSelection, setReserveSelection] = useState([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [savingReserve, setSavingReserve] = useState(false);
 
   const uniqueSupplies = useMemo(() => {
     return Array.from(
@@ -26,6 +40,7 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
             name: item.name,
             category: item.category,
             price: item.price || "",
+            reservedFor: Array.isArray(item.reservedFor) ? item.reservedFor : [],
           },
         ])
       ).values()
@@ -40,13 +55,84 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
 
     if (!initialized) {
       const initialPrices = {};
+      const initialReservations = {};
       uniqueSupplies.forEach((item) => {
         initialPrices[item.id] = item.price;
+        initialReservations[item.id] = item.reservedFor;
       });
       setPricing(initialPrices);
+      setReservations(initialReservations);
       setInitialized(true);
     }
   }, [open, uniqueSupplies, initialized]);
+
+  useEffect(() => {
+    if (!open) return;
+    axios
+      .get(`${BACKEND_URL}/api/products/reservable-clients`)
+      .then((res) => setClients(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => {
+        console.error(err);
+        toast.error("Failed to load client list.");
+      });
+  }, [open]);
+
+  const clientLabel = (username) => {
+    const client = clients.find((c) => c.username === username);
+    return client ? client.dialysisCenterName : `${username} (no account)`;
+  };
+
+  const openReservePicker = (item) => {
+    setReserveTarget(item);
+    setReserveSelection(reservations[item.id] || []);
+    setClientSearch("");
+  };
+
+  const toggleReserveClient = (username) => {
+    setReserveSelection((prev) =>
+      prev.includes(username)
+        ? prev.filter((u) => u !== username)
+        : [...prev, username],
+    );
+  };
+
+  const saveReservation = async () => {
+    if (!reserveTarget) return;
+    try {
+      setSavingReserve(true);
+      const res = await axios.put(
+        `${BACKEND_URL}/api/products/${reserveTarget.id}/reserve`,
+        { reservedFor: reserveSelection },
+        { headers: actorHeaders() },
+      );
+      setReservations((prev) => ({
+        ...prev,
+        [reserveTarget.id]: res.data?.product?.reservedFor || reserveSelection,
+      }));
+      toast.success(
+        reserveSelection.length
+          ? `${reserveTarget.name} is now reserved.`
+          : `${reserveTarget.name} is now available to all clients.`,
+      );
+      setReserveTarget(null);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.error || "Failed to update reservation.");
+    } finally {
+      setSavingReserve(false);
+    }
+  };
+
+  const filteredClients = clients.filter((c) => {
+    const q = clientSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      c.dialysisCenterName?.toLowerCase().includes(q) ||
+      c.username.includes(q) ||
+      c.fullName?.toLowerCase().includes(q)
+    );
+  });
 
   const handlePriceChange = (id, value) => {
     const numericValue = parseFloat(value);
@@ -123,6 +209,7 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
                 <th>Item Code</th>
                 <th>Category</th>
                 <th>Price (₱)</th>
+                <th>Reserved For</th>
               </tr>
             </thead>
 
@@ -151,6 +238,21 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
                       }
                     />
 
+                  </td>
+
+                  <td>
+                    <button
+                      type="button"
+                      className={`reserve-cell-btn${
+                        (reservations[item.id] || []).length ? " is-reserved" : ""
+                      }`}
+                      onClick={() => openReservePicker(item)}
+                      title="Choose which clients can see and order this supply"
+                    >
+                      {(reservations[item.id] || []).length
+                        ? (reservations[item.id] || []).map(clientLabel).join(", ")
+                        : "All clients"}
+                    </button>
                   </td>
 
                 </tr>
@@ -183,6 +285,77 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
         </div>
 
       </div>
+
+      {reserveTarget && (
+        <div className="inventory-modal-overlay reserve-overlay">
+          <div className="batch-modal-container reserve-modal-container">
+            <div className="batch-modal-header">
+              <h3>Reserve Supply</h3>
+              <FaTimes
+                className="batch-close-icon"
+                onClick={() => setReserveTarget(null)}
+              />
+            </div>
+
+            <p className="reserve-intro">
+              <strong>{reserveTarget.name}</strong> ({reserveTarget.itemCode})
+              <br />
+              Only the selected clients can see and order this supply. Leave
+              all unchecked to make it available to every client.
+            </p>
+
+            <input
+              type="text"
+              className="reserve-search"
+              placeholder="Search dialysis center or username"
+              value={clientSearch}
+              onChange={(e) => setClientSearch(e.target.value)}
+            />
+
+            <div className="reserve-client-list">
+              {filteredClients.length === 0 ? (
+                <p className="reserve-empty">No client accounts found.</p>
+              ) : (
+                filteredClients.map((c) => (
+                  <label key={c.username} className="reserve-client-row">
+                    <input
+                      type="checkbox"
+                      checked={reserveSelection.includes(c.username)}
+                      onChange={() => toggleReserveClient(c.username)}
+                    />
+                    <span>
+                      <span className="reserve-client-name">
+                        {c.dialysisCenterName}
+                      </span>
+                      <span className="reserve-client-user">
+                        {c.username}
+                        {c.status === "Inactive" ? " · Inactive" : ""}
+                      </span>
+                    </span>
+                  </label>
+                ))
+              )}
+            </div>
+
+            <div className="modal-action-footer">
+              <button
+                className="btn-cancel"
+                onClick={() => setReserveSelection([])}
+                disabled={savingReserve || reserveSelection.length === 0}
+              >
+                Clear (All clients)
+              </button>
+              <button
+                className="btn-save"
+                onClick={saveReservation}
+                disabled={savingReserve}
+              >
+                {savingReserve ? "Saving..." : "Save Reservation"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

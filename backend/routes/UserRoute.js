@@ -12,6 +12,8 @@ import {
   sendEmailWithRetry,
   sendEmployeeAccountEmail,
 } from "../utils/emailService.js";
+import Product from "../models/Product.js";
+import { normalizeUsername } from "../utils/productAccess.js";
 
 dotenv.config();
 
@@ -452,6 +454,22 @@ router.delete("/:id", async (req, res) => {
       try {
         await deleteFromCloudinary(user.profileImagePublicId);
       } catch (error) {}
+    }
+
+    // MongoDB has no foreign keys: remove the deleted client from supplies that
+    // are also reserved for other clients. A supply reserved only for this
+    // client keeps its entry, so it stays hidden instead of suddenly becoming
+    // visible to every client; Pricing shows it as "(no account)".
+    if (user.role === "User") {
+      const deletedUsername = normalizeUsername(user.username);
+      try {
+        await Product.updateMany(
+          { reservedFor: deletedUsername, "reservedFor.1": { $exists: true } },
+          { $pull: { reservedFor: deletedUsername } },
+        );
+      } catch (error) {
+        console.error("Failed to clear supply reservations for deleted client:", error);
+      }
     }
 
     const actor = getActor(req);

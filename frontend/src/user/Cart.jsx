@@ -47,7 +47,13 @@ export default function Cart() {
       const isLoggedIn = isUserLoggedIn();
 
       if (isLoggedIn) {
-        const dbItems = await cartService.fetchCart();
+        const dbItems = await cartService.fetchCart({
+          onReservedRemoved: (names) =>
+            toast.error(
+              `Removed from your cart (no longer available to your account): ${names.join(", ")}`,
+              { duration: 6000 },
+            ),
+        });
         const itemsWithPrice = dbItems.map((item) => ({
           ...item,
           price: Number(item.price) || 0,
