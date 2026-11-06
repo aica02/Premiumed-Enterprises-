@@ -11,5 +11,4 @@ export const CATEGORIES = [
   "Antiseptics & Disinfectants & Sterilization",
   "Surgical & Clinical Instruments",
   "Medical Kits",
-  "Kit Inclusions",
 ];

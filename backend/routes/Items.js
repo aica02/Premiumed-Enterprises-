@@ -472,71 +472,13 @@ router.post("/kit", async (req, res) => {
 
     if (existingProduct) {
       // ---- RESTOCK ----
+      // Inclusions are typed descriptions that cannot be edited on a restock,
+      // so only make sure the saved kit actually lists some.
       if (!existingProduct.kitItems || existingProduct.kitItems.length === 0) {
         return res.status(400).json({
           success: false,
           message:
-            "Cannot restock: This kit has no items defined. Please recreate the kit.",
-        });
-      }
-
-      const validationResults = await Promise.all(
-        existingProduct.kitItems.map(async (kitItem) => {
-          const productItem = await Product.findOne({
-            itemCode: kitItem.itemCode,
-          });
-          return { kitItem, exists: !!productItem, productItem };
-        }),
-      );
-
-      const missingItems = validationResults.filter((r) => !r.exists);
-      if (missingItems.length > 0) {
-        const missingNames = missingItems.map((r) => r.kitItem.name).join(", ");
-        return res.status(400).json({
-          success: false,
-          message: `Cannot restock: The following kit items no longer exist in the database: ${missingNames}. Please recreate the kit.`,
-          missingItems: missingItems.map((r) => r.kitItem),
-        });
-      }
-
-      // Inclusion qty is now PER KIT-BOX.
-      // For validation, total required = item.quantity × boxCount.
-      const stockCheck = await Promise.all(
-        validationResults.map(async (r) => {
-          const batches = await Batch.find({
-            itemCode: r.kitItem.itemCode,
-            status: "stored",
-          });
-
-          const totalAvailable = batches.reduce(
-            (sum, b) => sum + b.quantity,
-            0,
-          );
-          const requiredPerBox = r.kitItem.quantity || 1;
-          const totalRequired = requiredPerBox * boxCount;
-
-          return {
-            itemCode: r.kitItem.itemCode,
-            name: r.kitItem.name,
-            required: totalRequired,
-            available: totalAvailable,
-            hasStock: totalAvailable >= totalRequired,
-          };
-        }),
-      );
-
-      const insufficientStock = stockCheck.filter((s) => !s.hasStock);
-      if (insufficientStock.length > 0) {
-        const stockDetails = insufficientStock
-          .map(
-            (s) => `${s.name} (needs ${s.required}, available: ${s.available})`,
-          )
-          .join("; ");
-
-        return res.status(400).json({
-          success: false,
-          message: `Cannot restock: Insufficient stock for kit items: ${stockDetails}`,
-          insufficientStock,
+            "Cannot restock: This kit has no inclusions defined. Please recreate the kit.",
         });
       }
 
@@ -558,82 +500,68 @@ router.post("/kit", async (req, res) => {
         });
       }
 
-      const itemValidation = await Promise.all(
-        kitItems.map(async (item) => {
-          const productItem = await Product.findOne({
-            itemCode: item.itemCode,
-          });
-          return { item, exists: !!productItem, productItem };
-        }),
-      );
-
-      const missingItems = itemValidation.filter((r) => !r.exists);
-      if (missingItems.length > 0) {
-        const missingNames = missingItems.map((r) => r.item.name).join(", ");
+      // Inclusions are typed descriptions (not stock items), so they are
+      // only checked for shape: a name and a whole quantity per kit-box.
+      if (!Array.isArray(kitItems)) {
         return res.status(400).json({
           success: false,
-          message: `Cannot create kit: The following items do not exist in the database: ${missingNames}`,
-          missingItems: missingItems.map((r) => r.item),
+          message: "Kit inclusions must be a list.",
         });
       }
 
-      // Inclusion qty is PER KIT-BOX.
-      // Total required for this batch = item.quantity × boxCount.
-      const stockValidation = await Promise.all(
-        itemValidation.map(async (r) => {
-          const batches = await Batch.find({
-            itemCode: r.item.itemCode,
-            status: "stored",
+      const MAX_INCLUSION_NAME_LENGTH = 60;
+      const MAX_INCLUSION_QUANTITY = 10000;
+      const seenInclusionNames = new Set();
+      const resolvedKitItems = [];
+
+      for (const item of kitItems) {
+        const inclusionName = String(item?.name || "")
+          .trim()
+          .replace(/\s+/g, " ");
+        // Only real numbers or digit strings count; Number() alone would
+        // accept values like true or " ".
+        const rawQty = item?.quantity;
+        const inclusionQty =
+          typeof rawQty === "number" ||
+          (typeof rawQty === "string" && /^\s*\d+\s*$/.test(rawQty))
+            ? Number(rawQty)
+            : NaN;
+
+        if (!inclusionName) {
+          return res.status(400).json({
+            success: false,
+            message: "Every kit inclusion needs a name.",
           });
+        }
+        if (inclusionName.length > MAX_INCLUSION_NAME_LENGTH) {
+          return res.status(400).json({
+            success: false,
+            message: `Inclusion name "${inclusionName}" cannot exceed ${MAX_INCLUSION_NAME_LENGTH} characters.`,
+          });
+        }
+        if (
+          !Number.isInteger(inclusionQty) ||
+          inclusionQty <= 0 ||
+          inclusionQty > MAX_INCLUSION_QUANTITY
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: `Quantity for "${inclusionName}" must be a whole number from 1 to ${MAX_INCLUSION_QUANTITY}.`,
+          });
+        }
 
-          const totalAvailable = batches.reduce(
-            (sum, b) => sum + b.quantity,
-            0,
-          );
-          const requiredPerBox = r.item.quantity || 1;
-          const totalRequired = requiredPerBox * boxCount;
+        const lowered = inclusionName.toLowerCase();
+        if (seenInclusionNames.has(lowered)) {
+          return res.status(400).json({
+            success: false,
+            message: `"${inclusionName}" is listed more than once.`,
+          });
+        }
+        seenInclusionNames.add(lowered);
 
-          return {
-            itemCode: r.item.itemCode,
-            name: r.item.name,
-            required: totalRequired,
-            available: totalAvailable,
-            hasStock: totalAvailable >= totalRequired,
-          };
-        }),
-      );
-
-      const insufficientStock = stockValidation.filter((s) => !s.hasStock);
-      if (insufficientStock.length > 0) {
-        const stockDetails = insufficientStock
-          .map(
-            (s) => `${s.name} (needs ${s.required}, available: ${s.available})`,
-          )
-          .join("; ");
-
-        return res.status(400).json({
-          success: false,
-          message: `Cannot create kit: Insufficient stock for kit items: ${stockDetails}`,
-          insufficientStock,
-        });
+        // quantity is PER KIT-BOX
+        resolvedKitItems.push({ name: inclusionName, quantity: inclusionQty });
       }
-
-      // Store inclusion quantity as PER KIT-BOX directly (no multiplication).
-      const resolvedKitItems = await Promise.all(
-        kitItems.map(async (item) => {
-          const productItem = await Product.findOne({
-            itemCode: item.itemCode,
-          });
-          return {
-            _id: productItem._id,
-            name: productItem.name,
-            itemCode: productItem.itemCode,
-            quantity: item.quantity || 1, // per kit-box
-            category: productItem.category,
-            unitType: productItem.unitType || "Piece",
-          };
-        }),
-      );
 
       const productData = {
         name,
@@ -760,112 +688,21 @@ router.patch("/batch/stored", async (req, res) => {
       }
     };
 
-    let deductionResults = [];
-
-    if (
-      product.isKit === true &&
-      product.kitItems &&
-      product.kitItems.length > 0
-    ) {
+    if (product.isKit === true) {
       // ===== KIT PUTAWAY =====
-      for (const kitItem of product.kitItems) {
-        try {
-          const itemToDeduct = await Product.findById(kitItem._id);
-          if (!itemToDeduct) {
-            console.warn("Product", kitItem._id, "not found, skipping");
-            continue;
-          }
-
-          // Inclusion qty is PER KIT-BOX; multiply by batch.box
-          const deductQty = (kitItem.quantity || 1) * (batch.box || 0);
-
-          if (deductQty <= 0) {
-            console.warn(
-              "Invalid deduction qty for",
-              itemToDeduct.name + ":",
-              deductQty,
-            );
-            continue;
-          }
-
-          const availableBatches = await Batch.find({
-            itemCode: itemToDeduct.itemCode,
-            status: "stored",
-            quantity: { $gt: 0 },
-            expirationDate: { $gt: new Date() },
-          }).sort({ expirationDate: 1 });
-
-          const totalStoredQty = availableBatches.reduce(
-            (sum, b) => sum + b.quantity,
-            0,
-          );
-          const actualDeduct = Math.min(deductQty, totalStoredQty);
-
-          // Deduct totalQuantity, then derive totalBoxes
-          itemToDeduct.totalQuantity = Math.max(
-            0,
-            itemToDeduct.totalQuantity - actualDeduct,
-          );
-          deriveTotalBoxes(itemToDeduct);
-          await itemToDeduct.save();
-
-          // FEFO deduction from individual batches
-          let remainingToDeduct = actualDeduct;
-          let batchesUpdated = 0;
-
-          for (const batchToDeduct of availableBatches) {
-            if (remainingToDeduct <= 0) break;
-
-            const take = Math.min(batchToDeduct.quantity, remainingToDeduct);
-            batchToDeduct.quantity = Math.max(0, batchToDeduct.quantity - take);
-            remainingToDeduct -= take;
-            batchesUpdated++;
-
-            await batchToDeduct.save();
-          }
-
-          deductionResults.push({
-            item: itemToDeduct.name,
-            itemCode: itemToDeduct.itemCode,
-            deducted: actualDeduct,
-            remaining: itemToDeduct.totalQuantity,
-            remainingBoxes: itemToDeduct.totalBoxes,
-            batchesUpdated,
-            wasShort: totalStoredQty < deductQty,
-          });
-        } catch (deductError) {
-          console.error(
-            "Error deducting",
-            kitItem.name + ":",
-            deductError.message,
-          );
-        }
-      }
-
-      // Mark batch stored
+      // Kit inclusions are typed descriptions, not stock items, so storing a
+      // kit batch only adds the kits themselves; nothing is deducted.
       batch.status = "stored";
       await batch.save();
 
-      // Increment kit totals, then derive boxes
       product.totalQuantity =
         (Number(product.totalQuantity) || 0) + (Number(batch.quantity) || 0);
       deriveTotalBoxes(product);
       await product.save();
+
       checkBatchById(batch._id).catch((err) =>
         console.error("[Hook] checkBatchById failed:", err),
       );
-
-      // Also check every kit component's stock (kit putaway deducts them)
-      if (product.isKit && product.kitItems?.length) {
-        const codes = product.kitItems.map((k) => k.itemCode);
-        Promise.all(codes.map((c) => checkProductStock(c))).catch((err) =>
-          console.error("[Hook] kit component stock check failed:", err),
-        );
-      } else {
-        checkProductStock(product.itemCode).catch((err) =>
-          console.error("[Hook] checkProductStock failed:", err),
-        );
-      }
 
       const actor = getActor(req);
       await createActivityLog({
@@ -874,15 +711,14 @@ router.patch("/batch/stored", async (req, res) => {
         role: actor.role,
         action: "Store kit batch",
         module: "Putaway",
-        description: `Kit ${product.name} batch ${batch.batchCode} was stored. Components deducted. Total kit quantity: ${product.totalQuantity}`,
+        description: `Kit ${product.name} batch ${batch.batchCode} was stored. Total kit quantity: ${product.totalQuantity}`,
       });
 
       return res.status(200).json({
         success: true,
-        message: "Kit batch stored and inventory deducted (FEFO)",
+        message: "Kit batch stored",
         batch: batch,
         product: product,
-        deductions: deductionResults,
         isKit: true,
       });
     } else {

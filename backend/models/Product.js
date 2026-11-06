@@ -13,6 +13,8 @@ const categoryMap = {
   "Antiseptics & Disinfectants & Sterilization": "ANTK",
   "Surgical & Clinical Instruments": "SURG",
   "Medical Kits": "KITS",
+  // Retired: kit inclusions are now typed text on the kit. Kept only so that
+  // supplies already saved with this category still pass validation.
   "Kit Inclusions": "KITI",
 };
 

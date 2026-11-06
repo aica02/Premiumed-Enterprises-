@@ -675,7 +675,7 @@ export default function PutawayList({ navigation }) {
                 {storeSuccess.queued
                   ? "The putaway update is saved on this device and will sync when you reconnect."
                   : storeSuccess.isKit
-                    ? "The kit was stored and its inventory components were deducted."
+                    ? "The kit was stored and is now available in inventory."
                     : "The batch is now available in stored inventory."}
               </Text>
 

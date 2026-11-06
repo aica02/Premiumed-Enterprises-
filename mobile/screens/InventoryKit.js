@@ -19,7 +19,6 @@ import {
   StyleSheet,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import {
   Search,
   PlusCircle,
@@ -29,7 +28,6 @@ import {
   RotateCcw,
   CheckCircle,
   AlertTriangle,
-  ScanLine,
   Check,
   Wifi, //comment this
   WifiOff,
@@ -59,6 +57,7 @@ const CLOUDINARY_UPLOAD_PRESET =
   process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 const MAX_QUANTITY = 10000;
 const KIT_QUANTITY_PER_BOX = 100;
+const MAX_INCLUSION_NAME_LENGTH = 60;
 const COUNTED_BATCH_STATUSES = ["stored", "for disposal"];
 
 const getDefaultKitExpiration = () => {
@@ -112,24 +111,9 @@ export default function InventoryKit({
   const [kitItems, setKitItems] = useState([]);
   const [showConfirmKitModal, setShowConfirmKitModal] = useState(false);
   const [kitItemErrors, setKitItemErrors] = useState({});
-  const [quantityError, setQuantityError] = useState("");
   const [kitFormErrors, setKitFormErrors] = useState({});
   const [confirmError, setConfirmError] = useState("");
-  const [insufficientStockSummary, setInsufficientStockSummary] = useState([]);
-
-  const [scanningModalVisible, setScanningModalVisible] = useState(false);
-  const [scanQueue, setScanQueue] = useState([]);
-  const [scanQueueIndex, setScanQueueIndex] = useState(0);
-  const [scanAllocations, setScanAllocations] = useState({});
-  const [scanned, setScanned] = useState(false);
-  const [scanFeedback, setScanFeedback] = useState(null);
-  const [showCancelScanConfirm, setShowCancelScanConfirm] = useState(false);
-  const [incompleteScanShortfalls, setIncompleteScanShortfalls] = useState([]);
-  const [showIncompleteScanConfirm, setShowIncompleteScanConfirm] =
-    useState(false);
-  const isProcessing = useRef(false);
-
-  const [permission, requestPermission] = useCameraPermissions();
+  const inclusionKeyCounter = useRef(0);
 
   //comment this
   useEffect(() => {
@@ -517,16 +501,6 @@ export default function InventoryKit({
     }
   };
 
-  const resetScanState = () => {
-    setScanningModalVisible(false);
-    setScanQueue([]);
-    setScanQueueIndex(0);
-    setScanAllocations({});
-    setScanned(false);
-    setScanFeedback(null);
-    isProcessing.current = false;
-  };
-
   const resetKitForm = () => {
     setKitFormData({
       itemCode: "",
@@ -544,16 +518,12 @@ export default function InventoryKit({
 
     setKitItems([]);
     setKitItemErrors({});
-    setQuantityError("");
     setKitFormErrors({});
-    setInsufficientStockSummary([]);
     setImage(null);
-    resetScanState();
   };
 
   const removeKitItemFromKit = (index) => {
     setKitItems((prev) => prev.filter((_, i) => i !== index));
-    setInsufficientStockSummary([]);
   };
 
   const updateKitItemQuantity = (index, value) => {
@@ -589,47 +559,74 @@ export default function InventoryKit({
     }
   };
 
-  const getAvailableStock = (itemCode) => {
-    if (!itemCode) return 0;
-    const existingQuantity = batches
-      .filter(
-        (batch) =>
-          batch.itemCode === itemCode &&
-          COUNTED_BATCH_STATUSES.includes(batch.status),
-      )
-      .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
-    return Math.max(existingQuantity, 0);
+  const normalizeInclusionName = (name) =>
+    String(name || "")
+      .trim()
+      .replace(/\s+/g, " ");
+
+  const addKitInclusion = () => {
+    inclusionKeyCounter.current += 1;
+    const key = `new-inclusion-${inclusionKeyCounter.current}`;
+    setKitItems((prev) => [...prev, { _id: key, name: "", quantity: "" }]);
+    setKitFormErrors((prev) => ({ ...prev, items: "" }));
   };
 
-  const computeInsufficientStockItems = () => {
-    const boxCount = Number(kitFormData.box) || 0;
-    if (boxCount <= 0) return [];
+  const updateKitInclusionName = (index, value) => {
+    const key = kitItems[index]?._id;
+    setKitItems((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, name: value } : item)),
+    );
+    if (key) setKitItemErrors((prev) => ({ ...prev, [key]: "" }));
+  };
 
-    const results = [];
+  // Inclusions are typed text, not stock items: only the name and the
+  // quantity per kit-box are checked.
+  const validateKitInclusions = () => {
+    const errors = {};
+    const seen = new Set();
+
     kitItems.forEach((item) => {
-      const perBox = Number(item.quantity);
-      if (!Number.isFinite(perBox) || perBox <= 0) return;
-      const required = perBox * boxCount;
-      const available = getAvailableStock(item.itemCode);
-      if (required > available) {
-        results.push({
-          _id: item._id,
-          name: item.name,
-          itemCode: item.itemCode,
-          perBox,
-          boxCount,
-          required,
-          available,
-          shortage: required - available,
-        });
+      const key = item._id;
+      const name = normalizeInclusionName(item.name);
+
+      if (!name) {
+        errors[key] = "Inclusion name is required.";
+        return;
+      }
+      if (name.length > MAX_INCLUSION_NAME_LENGTH) {
+        errors[key] =
+          `Name cannot exceed ${MAX_INCLUSION_NAME_LENGTH} characters.`;
+        return;
+      }
+      const lowered = name.toLowerCase();
+      if (seen.has(lowered)) {
+        errors[key] = "This inclusion is already listed.";
+        return;
+      }
+      seen.add(lowered);
+
+      if (
+        item.quantity === "" ||
+        item.quantity === null ||
+        item.quantity === undefined
+      ) {
+        errors[key] = "Quantity is required.";
+        return;
+      }
+      const qty = Number(item.quantity);
+      if (!Number.isInteger(qty) || qty <= 0) {
+        errors[key] = "Quantity must be a whole number greater than 0.";
+        return;
+      }
+      if (qty > MAX_QUANTITY) {
+        errors[key] = `Quantity cannot exceed ${MAX_QUANTITY}.`;
       }
     });
-    return results;
+
+    return errors;
   };
 
   const validateKitBeforeSave = () => {
-    const errors = {};
-
     if (!kitFormData.name?.trim()) {
       setConfirmError("Kit name is required.");
       return false;
@@ -639,13 +636,6 @@ export default function InventoryKit({
       setConfirmError("Add at least one kit inclusion before confirming.");
       return false;
     }
-
-    kitItems.forEach((item) => {
-      const quantity = Number(item.quantity);
-      if (!Number.isFinite(quantity) || quantity <= 0) {
-        errors[item._id] = "Enter a valid quantity.";
-      }
-    });
 
     if (!kitFormData.box || Number(kitFormData.box) <= 0) {
       setConfirmError("Box must be greater than zero.");
@@ -657,10 +647,14 @@ export default function InventoryKit({
       return false;
     }
 
-    if (Object.keys(errors).length > 0) {
-      setKitItemErrors(errors);
-      setConfirmError("Complete the highlighted kit item quantities.");
-      return false;
+    // A restock reuses the saved inclusions, which cannot be edited.
+    if (!kitFormData.itemCode) {
+      const errors = validateKitInclusions();
+      if (Object.keys(errors).length > 0) {
+        setKitItemErrors(errors);
+        setConfirmError("Complete the highlighted kit inclusions.");
+        return false;
+      }
     }
 
     setKitItemErrors({});
@@ -685,391 +679,22 @@ export default function InventoryKit({
       }
     }
 
-    if (Object.keys(formErrors).length > 0) {
+    const inclusionErrors = kitFormData.itemCode ? {} : validateKitInclusions();
+    setKitItemErrors(inclusionErrors);
+
+    if (
+      Object.keys(formErrors).length > 0 ||
+      Object.keys(inclusionErrors).length > 0
+    ) {
       setKitFormErrors(formErrors);
       return;
     }
 
     setKitFormErrors({});
-
-    const errors = {};
-    const boxCount = Number(kitFormData.box) || 0;
-
-    kitItems.forEach((item) => {
-      const qty = item.quantity;
-
-      if (qty === "" || qty === null || qty === undefined) {
-        errors[item._id] = "Quantity is required.";
-        return;
-      }
-
-      const numQty = Number(qty);
-
-      if (numQty <= 0) {
-        errors[item._id] = "Quantity must be greater than 0.";
-        return;
-      }
-
-      if (numQty > MAX_QUANTITY) {
-        errors[item._id] = `Quantity cannot exceed ${MAX_QUANTITY}.`;
-        return;
-      }
-
-      const requiredTotal = numQty * boxCount;
-      const available = getAvailableStock(item.itemCode);
-
-      if (requiredTotal > available) {
-        errors[item._id] =
-          `Insufficient stock: need ${requiredTotal} (${numQty} × ${boxCount} boxes), only ${available} available.`;
-        return;
-      }
-    });
-
-    setKitItemErrors(errors);
-
-    const summary = computeInsufficientStockItems();
-    setInsufficientStockSummary(summary);
-
-    if (Object.keys(errors).length > 0) {
-      return;
-    }
-
-    const quantityPerBox = KIT_QUANTITY_PER_BOX;
-    const totalQuantity = boxCount * quantityPerBox;
-    const existingQuantity = batches
-      .filter(
-        (batch) =>
-          batch.itemCode === kitFormData.itemCode &&
-          COUNTED_BATCH_STATUSES.includes(batch.status),
-      )
-      .reduce((total, batch) => total + (Number(batch.quantity) || 0), 0);
-
-    const availableQuantity = getAvailableStock(kitFormData.itemCode);
-
-    if (totalQuantity > availableQuantity) {
-      setQuantityError(
-        `Only ${availableQuantity} quantity is available to be stored.`,
-      );
-      return;
-    }
-
-    setQuantityError("");
     setConfirmError("");
 
     setShowAddModal(false);
     setShowConfirmKitModal(true);
-  };
-
-  const buildScanQueue = () => {
-    const boxCount = Number(kitFormData.box) || 0;
-    const inclusions =
-      kitItems.length > 0 ? kitItems : kitFormData.kitItems || [];
-
-    return inclusions
-      .map((item) => {
-        const perBox = Number(item.quantity) || 0;
-        return {
-          itemCode: item.itemCode,
-          _id: item._id,
-          name: item.name,
-          perBox,
-          totalRequired: perBox * boxCount,
-        };
-      })
-      .filter((i) => i.totalRequired > 0 && i.itemCode);
-  };
-
-  const startScanning = async () => {
-    if (!permission?.granted) {
-      const result = await requestPermission();
-      if (!result.granted) {
-        Alert.alert(
-          "Permission Denied",
-          "Camera access is required to scan inclusion batches.",
-        );
-        return;
-      }
-    }
-
-    const queue = buildScanQueue();
-
-    if (queue.length === 0) {
-      Alert.alert(
-        "No Inclusions",
-        "This kit has no inclusion quantities to scan.",
-      );
-      return;
-    }
-
-    setScanQueue(queue);
-    setScanQueueIndex(0);
-    setScanAllocations({});
-    setScanned(false);
-    setScanFeedback(null);
-    isProcessing.current = false;
-
-    setShowConfirmKitModal(false);
-    setScanningModalVisible(true);
-  };
-
-  const resetScanner = () => {
-    isProcessing.current = false;
-    setScanned(false);
-  };
-
-  const closeScanFeedback = () => {
-    setScanFeedback(null);
-    resetScanner();
-  };
-
-  const currentScanItem = useMemo(() => {
-    if (!scanningModalVisible) return null;
-    return scanQueue[scanQueueIndex] || null;
-  }, [scanningModalVisible, scanQueue, scanQueueIndex]);
-
-  const getScannedQtyForItem = (itemCode) => {
-    const map = scanAllocations[itemCode] || {};
-    return Object.values(map).reduce((sum, q) => sum + (Number(q) || 0), 0);
-  };
-
-  const handleBarCodeScanned = ({ data }) => {
-    if (isProcessing.current) return;
-    isProcessing.current = true;
-    setScanned(true);
-    processScannedBarcode(data);
-  };
-
-  const processScannedBarcode = (data) => {
-    const item = currentScanItem;
-
-    if (!item) {
-      resetScanner();
-      return;
-    }
-
-    const scannedBatchCode = String(data).trim();
-
-    let foundItem = null;
-    let scannedBatch = null;
-
-    for (const invItem of items) {
-      if (invItem && invItem.batches) {
-        const batch = invItem.batches.find(
-          (b) =>
-            b && b.batchCode && String(b.batchCode).trim() === scannedBatchCode,
-        );
-        if (batch) {
-          foundItem = invItem;
-          scannedBatch = batch;
-          break;
-        }
-      }
-    }
-
-    if (!scannedBatch) {
-      Alert.alert("Invalid Barcode", "Batch not found in inventory.", [
-        { text: "OK", onPress: resetScanner },
-      ]);
-      return;
-    }
-
-    if (
-      scannedBatch.status === "disposed" ||
-      scannedBatch.status === "on-hold" ||
-      scannedBatch.status === "pending"
-    ) {
-      Alert.alert(
-        "Batch Unavailable",
-        `Batch status is ${scannedBatch.status}. Cannot use for kit inclusion.`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
-      return;
-    }
-
-    if (foundItem.itemCode !== item.itemCode) {
-      Alert.alert(
-        "Wrong Item",
-        `Expected ${item.name} (${item.itemCode}).\nScanned: ${
-          foundItem.name || foundItem.itemCode
-        }.\n\nPlease scan the correct inclusion batch.`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
-      return;
-    }
-
-    const alreadyScanned = getScannedQtyForItem(item.itemCode);
-    const remainingNeeded = item.totalRequired - alreadyScanned;
-
-    if (remainingNeeded <= 0) {
-      Alert.alert(
-        "Already Fulfilled",
-        `${item.name} is already satisfied (${item.totalRequired}/${item.totalRequired}).`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
-      return;
-    }
-
-    const today = new Date();
-    if (new Date(scannedBatch.expirationDate) <= today) {
-      Alert.alert(
-        "Expired Batch",
-        `Batch ${scannedBatch.batchCode} is expired.`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
-      return;
-    }
-
-    const batchesForItem = foundItem.batches
-      .filter((b) => {
-        if (!b) return false;
-        if (b.quantity <= 0) return false;
-        if (b.status === "disposed" || b.status === "pending") return false;
-        if (new Date(b.expirationDate) <= today) return false;
-        return true;
-      })
-      .sort((a, b) => new Date(a.expirationDate) - new Date(b.expirationDate));
-
-    if (batchesForItem.length === 0) {
-      Alert.alert("No Stock", "No valid batches available for this item.", [
-        { text: "OK", onPress: resetScanner },
-      ]);
-      return;
-    }
-
-    const earliestBatch = batchesForItem[0];
-
-    const itemAllocations = scanAllocations[item.itemCode] || {};
-    const getRemainingInBatch = (batch) => {
-      const already = itemAllocations[batch.batchCode] || 0;
-      return Math.max(0, Number(batch.quantity) - already);
-    };
-
-    if (earliestBatch.batchCode !== scannedBatch.batchCode) {
-      const remainingInScanned = getRemainingInBatch(scannedBatch);
-
-      if (remainingInScanned > 0) {
-        let actualEarliest = null;
-        for (const b of batchesForItem) {
-          if (getRemainingInBatch(b) > 0) {
-            actualEarliest = b;
-            break;
-          }
-        }
-
-        if (
-          actualEarliest &&
-          actualEarliest.batchCode !== scannedBatch.batchCode
-        ) {
-          setScanFeedback({
-            type: "fefo",
-            earliestBatch: actualEarliest,
-            scannedBatch,
-          });
-          return;
-        }
-      }
-    }
-
-    const remainingInThisBatch = getRemainingInBatch(scannedBatch);
-
-    if (remainingInThisBatch <= 0) {
-      Alert.alert(
-        "Batch Depleted",
-        `Batch ${scannedBatch.batchCode} has no remaining stock.`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
-      return;
-    }
-
-    const amountToPick = Math.min(remainingInThisBatch, remainingNeeded);
-
-    if (amountToPick <= 0) {
-      Alert.alert("Error", "Unable to scan from this batch.", [
-        { text: "OK", onPress: resetScanner },
-      ]);
-      return;
-    }
-
-    // Update allocations
-    setScanAllocations((prev) => {
-      const forItem = { ...(prev[item.itemCode] || {}) };
-      forItem[scannedBatch.batchCode] =
-        (forItem[scannedBatch.batchCode] || 0) + amountToPick;
-      return { ...prev, [item.itemCode]: forItem };
-    });
-
-    // Check whether current inclusion is now fulfilled
-    const newScannedTotal = getScannedQtyForItem(item.itemCode) + amountToPick;
-
-    if (newScannedTotal >= item.totalRequired) {
-      // Auto-advance to next inclusion (or finish)
-      setTimeout(() => {
-        setScanQueueIndex((prevIndex) => {
-          const nextIndex = prevIndex + 1;
-          return nextIndex;
-        });
-        resetScanner();
-      }, 400);
-    } else {
-      resetScanner();
-    }
-  };
-
-  const totalScannedForQueue = useMemo(() => {
-    return scanQueue.reduce(
-      (sum, q) => sum + getScannedQtyForItem(q.itemCode),
-      0,
-    );
-  }, [scanQueue, scanAllocations]);
-
-  const totalRequiredForQueue = useMemo(() => {
-    return scanQueue.reduce((sum, q) => sum + q.totalRequired, 0);
-  }, [scanQueue]);
-
-  const isQueueComplete = useMemo(() => {
-    if (scanQueue.length === 0) return false;
-    return scanQueue.every(
-      (q) => getScannedQtyForItem(q.itemCode) >= q.totalRequired,
-    );
-  }, [scanQueue, scanAllocations]);
-
-  const allInclusionsFulfilled = isQueueComplete;
-
-  const handleSkipOrContinueShortfall = () => {
-    // Warn the user about shortfalls, but allow Save
-    const shortfalls = scanQueue
-      .map((q) => {
-        const scanned = getScannedQtyForItem(q.itemCode);
-        return scanned < q.totalRequired
-          ? `${q.name}: ${scanned}/${q.totalRequired} scanned`
-          : null;
-      })
-      .filter(Boolean);
-
-    if (shortfalls.length === 0) {
-      setScanningModalVisible(false);
-      performSaveKit();
-      return;
-    }
-
-    setIncompleteScanShortfalls(shortfalls);
-    setShowIncompleteScanConfirm(true);
-  };
-
-  const confirmSaveWithShortfall = () => {
-    setShowIncompleteScanConfirm(false);
-    setScanningModalVisible(false);
-    performSaveKit();
-  };
-
-  const handleCancelScan = () => {
-    setShowCancelScanConfirm(true);
-  };
-
-  const confirmCancelScan = () => {
-    setShowCancelScanConfirm(false);
-    setScanningModalVisible(false);
-    setShowAddModal(true);
   };
 
   const performSaveKit = async () => {
@@ -1096,12 +721,10 @@ export default function InventoryKit({
 
       let kitItemsPayload = [];
       if (!isRestock) {
+        // Inclusions are typed text: only the name and quantity per kit-box.
         kitItemsPayload = kitItems.map((item) => ({
-          _id: item._id,
-          name: item.name,
-          itemCode: item.itemCode,
-          quantity: item.quantity,
-          category: item.category || "Kit Inclusions",
+          name: normalizeInclusionName(item.name),
+          quantity: Number(item.quantity),
         }));
       }
 
@@ -1152,31 +775,6 @@ export default function InventoryKit({
       const productResult = await productResponse.json();
 
       if (!productResponse.ok) {
-        if (productResult.missingItems) {
-          const missingNames = productResult.missingItems
-            .map((i) => i.name)
-            .join(", ");
-          setErrorFeedback({
-            title: "Cannot restock kit",
-            message: `These items are no longer available: ${missingNames}. Please recreate the kit.`,
-          });
-          return;
-        }
-
-        if (productResult.insufficientStock) {
-          const stockDetails = productResult.insufficientStock
-            .map(
-              (s) =>
-                `${s.name} (needs ${s.required}, available: ${s.available})`,
-            )
-            .join("\n");
-          setErrorFeedback({
-            title: "Insufficient stock",
-            message: `The kit cannot be restocked because these items do not have enough stock:\n\n${stockDetails}`,
-          });
-          return;
-        }
-
         throw new Error(
           productResult.message || "Failed to create kit product",
         );
@@ -1184,6 +782,7 @@ export default function InventoryKit({
 
       setUploadProgress(100);
 
+      setShowConfirmKitModal(false);
       setShowAddModal(false);
       setRestockSuccessData({
         itemName: kitFormData.name,
@@ -1205,6 +804,9 @@ export default function InventoryKit({
       await fetchBatches();
     } catch (err) {
       console.error("Save kit error:", err);
+      // Bring the form back so nothing has to be retyped.
+      setShowConfirmKitModal(false);
+      setShowAddModal(true);
       setErrorFeedback({
         title: "Unable to save kit",
         message: err.message || "Failed to save kit. Please try again.",
@@ -1228,36 +830,6 @@ export default function InventoryKit({
       (item) =>
         isMedicalKit(item) && item.name.toLowerCase().includes(searchLower),
     );
-  };
-
-  const getKitInclusionItems = () => {
-    return items
-      .filter(
-        (item) => item.category === "Kit Inclusions" && !isMedicalKit(item),
-      )
-      .map((item) => {
-        const itemBatches = batches.filter(
-          (b) => b.itemCode === item.itemCode && b.status === "stored",
-        );
-
-        const validBatches = itemBatches.filter((batch) => {
-          const expDate = new Date(batch.expirationDate);
-          const today = new Date();
-          return expDate >= today;
-        });
-
-        const availableQty = validBatches.reduce(
-          (sum, b) => sum + (b.quantity || 0),
-          0,
-        );
-
-        return { ...item, availableQty, validBatches };
-      })
-      .filter((item) => {
-        // Show if it has stock OR is already selected in kitItems
-        if (item.availableQty > 0) return true;
-        return kitItems.some((k) => k._id === item._id);
-      });
   };
 
   const isRestockMode = !!kitFormData.itemCode;
@@ -1505,7 +1077,10 @@ export default function InventoryKit({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ padding: 20 }}>
+            <ScrollView
+              style={{ padding: 20 }}
+              keyboardShouldPersistTaps="handled"
+            >
               <View
                 style={{
                   flexDirection: "row",
@@ -1640,10 +1215,6 @@ export default function InventoryKit({
                     onChangeText={(v) => {
                       setKitFormData({ ...kitFormData, box: v });
                       setKitFormErrors((prev) => ({ ...prev, box: "" }));
-                      // Recalculate insufficient-stock summary as box count changes
-                      if (insufficientStockSummary.length > 0) {
-                        setInsufficientStockSummary([]);
-                      }
                     }}
                   />
                   {kitFormErrors.box ? (
@@ -1717,7 +1288,7 @@ export default function InventoryKit({
                 <Text
                   style={[styles.label, { fontSize: 16, fontWeight: "bold" }]}
                 >
-                  KIT SUPPLIES
+                  KIT INCLUSIONS
                   {!kitFormData.itemCode && (
                     <Text style={{ color: "#EF4444" }}> *</Text>
                   )}
@@ -1728,54 +1299,6 @@ export default function InventoryKit({
                     {kitFormErrors.items}
                   </Text>
                 ) : null}
-
-                {/* ===== NEW: inline insufficient stock banner ===== */}
-                {insufficientStockSummary.length > 0 && (
-                  <View
-                    style={{
-                      padding: 12,
-                      backgroundColor: "#FEF2F2",
-                      borderRadius: 8,
-                      borderWidth: 1,
-                      borderColor: "#FECACA",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <AlertTriangle size={18} color="#B91C1C" />
-                      <Text
-                        style={{
-                          color: "#B91C1C",
-                          fontWeight: "700",
-                          fontSize: 13,
-                          marginLeft: 6,
-                        }}
-                      >
-                        Insufficient Stock for Kit Supplies
-                      </Text>
-                    </View>
-                    {insufficientStockSummary.map((s, i) => (
-                      <Text
-                        key={s._id || i}
-                        style={{
-                          color: "#991B1B",
-                          fontSize: 12,
-                          lineHeight: 18,
-                          marginBottom: 3,
-                        }}
-                      >
-                        • {s.name}: needs {s.required} per kit-box, available:{" "}
-                        {s.available}
-                      </Text>
-                    ))}
-                  </View>
-                )}
 
                 {isRestockMode ? (
                   <View style={{ marginBottom: 10, opacity: 0.7 }}>
@@ -1837,274 +1360,125 @@ export default function InventoryKit({
                   </View>
                 ) : (
                   <>
-                    {getKitInclusionItems().length > 0 ? (
-                      <View style={{ marginBottom: 10 }}>
-                        {getKitInclusionItems().map((item) => {
-                          const isAdded = kitItems.some(
-                            (k) => k._id === item._id,
-                          );
-                          const addedItem = kitItems.find(
-                            (k) => k._id === item._id,
-                          );
-                          const displayQty = item.availableQty || 0;
-                          const perBox = Number(addedItem?.quantity) || 0;
-                          const boxCount = Number(kitFormData.box) || 0;
-                          const requiredTotal = perBox * boxCount;
-                          const hasQty = perBox > 0 && boxCount > 0;
-                          const isInsufficient =
-                            isAdded && hasQty && requiredTotal > displayQty;
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: "#6B7280",
+                        marginBottom: 8,
+                        lineHeight: 17,
+                      }}
+                    >
+                      Type what is included in this kit. Inclusions are not
+                      sold separately, so no barcode scanning is needed.
+                      Quantity is per kit-box.
+                    </Text>
 
-                          return (
-                            <View key={item._id} style={{ marginBottom: 4 }}>
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  paddingVertical: 12,
-                                  paddingHorizontal: 10,
-                                  borderBottomWidth: 1,
-                                  borderBottomColor: "#E5E7EB",
-                                  backgroundColor: isInsufficient
-                                    ? "#FEF2F2"
-                                    : isAdded
-                                      ? "#F0FDF4"
-                                      : "#FFFFFF",
-                                  borderRadius: 8,
-                                }}
-                              >
-                                <TouchableOpacity
-                                  accessibilityRole="checkbox"
-                                  accessibilityState={{ checked: isAdded }}
-                                  accessibilityLabel={`Add ${item.name} to kit`}
-                                  style={{
-                                    width: 24,
-                                    height: 24,
-                                    borderRadius: 5,
-                                    borderWidth: 2,
-                                    borderColor: isAdded
-                                      ? "#D4AF37"
-                                      : "#D1D5DB",
-                                    backgroundColor: isAdded
-                                      ? "#D4AF37"
-                                      : "transparent",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                    marginRight: 12,
-                                  }}
-                                  onPress={() => {
-                                    if (isAdded) {
-                                      const index = kitItems.findIndex(
-                                        (k) => k._id === item._id,
-                                      );
-                                      if (index !== -1) {
-                                        removeKitItemFromKit(index);
-                                        setKitItemErrors((prev) => {
-                                          const updated = { ...prev };
-                                          delete updated[item._id];
-                                          return updated;
-                                        });
-                                      }
-                                    } else {
-                                      const newItem = {
-                                        _id: item._id,
-                                        name: item.name,
-                                        itemCode: item.itemCode,
-                                        quantity: 1,
-                                        category: item.category,
-                                      };
-                                      setKitItems((prev) => [...prev, newItem]);
-                                      setKitItemErrors((prev) => ({
-                                        ...prev,
-                                        [item._id]: "",
-                                      }));
-                                    }
-                                    // recompute banner
-                                    setInsufficientStockSummary([]);
-                                  }}
-                                >
-                                  {isAdded && (
-                                    <Check
-                                      size={16}
-                                      color="#FFF"
-                                      strokeWidth={3}
-                                    />
-                                  )}
-                                </TouchableOpacity>
-
-                                <View style={{ flex: 1 }}>
-                                  <Text
-                                    style={{
-                                      fontWeight: "500",
-                                      fontSize: 14,
-                                    }}
-                                  >
-                                    {item.name}
-                                  </Text>
-                                  <Text
-                                    style={{
-                                      fontSize: 11,
-                                      color: "#6B7280",
-                                    }}
-                                  >
-                                    {displayQty} available •{" "}
-                                    {item.itemCode || "N/A"}
-                                  </Text>
-                                </View>
-
-                                {isAdded && (
-                                  <View
-                                    style={{
-                                      flexDirection: "row",
-                                      alignItems: "center",
-                                      marginLeft: 10,
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        fontSize: 12,
-                                        color: "#6B7280",
-                                        marginRight: 6,
-                                      }}
-                                    >
-                                      Quantity:
-                                      <Text style={{ color: "#EF4444" }}>
-                                        *
-                                      </Text>
-                                    </Text>
-
-                                    <TextInput
-                                      style={{
-                                        width: 55,
-                                        height: 35,
-                                        borderWidth: 1,
-                                        borderColor: kitItemErrors[item._id]
-                                          ? "#EF4444"
-                                          : isInsufficient
-                                            ? "#EF4444"
-                                            : "#D1D5DB",
-                                        borderRadius: 6,
-                                        paddingHorizontal: 8,
-                                        fontSize: 14,
-                                        textAlign: "center",
-                                        backgroundColor: "#FFF",
-                                      }}
-                                      keyboardType="numeric"
-                                      value={
-                                        addedItem?.quantity === ""
-                                          ? ""
-                                          : String(addedItem?.quantity ?? "")
-                                      }
-                                      onChangeText={(value) => {
-                                        const index = kitItems.findIndex(
-                                          (k) => k._id === item._id,
-                                        );
-                                        if (index !== -1) {
-                                          updateKitItemQuantity(index, value);
-                                        }
-                                        // recompute banner on every keystroke
-                                        setInsufficientStockSummary([]);
-                                      }}
-                                    />
-                                  </View>
-                                )}
-                              </View>
-
-                              {isAdded && kitItemErrors[item._id] && (
-                                <Text
-                                  style={{
-                                    color: "#EF4444",
-                                    fontSize: 11,
-                                    marginTop: 4,
-                                    marginLeft: 10,
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  {kitItemErrors[item._id]}
-                                </Text>
-                              )}
-
-                              {/* Live per-item hint (no submit required) */}
-                              {isAdded &&
-                                isInsufficient &&
-                                !kitItemErrors[item._id] && (
-                                  <Text
-                                    style={{
-                                      color: "#B91C1C",
-                                      fontSize: 11,
-                                      marginTop: 4,
-                                      marginLeft: 10,
-                                      marginBottom: 4,
-                                    }}
-                                  >
-                                    Needs {requiredTotal}, only {displayQty}{" "}
-                                    available.
-                                  </Text>
-                                )}
-                            </View>
-                          );
-                        })}
-                      </View>
-                    ) : (
-                      <View
-                        style={{
-                          padding: 20,
-                          alignItems: "center",
-                          backgroundColor: "#F9FAFB",
-                          borderRadius: 8,
-                        }}
-                      >
-                        <Text style={{ color: "#6B7280", textAlign: "center" }}>
-                          No supplies with category "Kit Inclusions" found.
-                        </Text>
-                      </View>
-                    )}
-
-                    {kitItems.length > 0 && (
-                      <View
-                        style={{
-                          marginTop: 10,
-                          padding: 12,
-                          backgroundColor: "#F0FDF4",
-                          borderRadius: 8,
-                          borderWidth: 1,
-                          borderColor: "#D1FAE5",
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontWeight: "bold",
-                            color: "#10B981",
-                            marginBottom: 5,
-                          }}
-                        >
-                          Selected Items ({kitItems.length})
-                        </Text>
-                        {kitItems.map((item, index) => (
+                    {kitItems.map((item, index) => {
+                      const error = kitItemErrors[item._id];
+                      return (
+                        <View key={item._id} style={{ marginBottom: 8 }}>
                           <View
-                            key={index}
-                            style={{
-                              flexDirection: "row",
-                              justifyContent: "space-between",
-                              paddingVertical: 3,
-                              borderBottomWidth:
-                                index < kitItems.length - 1 ? 1 : 0,
-                              borderBottomColor: "#E5E7EB",
-                            }}
+                            style={{ flexDirection: "row", alignItems: "center" }}
                           >
-                            <Text style={{ fontSize: 13 }}>{item.name}</Text>
-                            <Text
+                            <TextInput
                               style={{
-                                fontSize: 13,
-                                fontWeight: "500",
-                                color: "#D4AF37",
+                                flex: 1,
+                                height: 42,
+                                borderWidth: 1,
+                                borderColor: error ? "#EF4444" : "#D1D5DB",
+                                borderRadius: 8,
+                                paddingHorizontal: 10,
+                                fontSize: 14,
+                                backgroundColor: "#FFF",
+                                marginRight: 8,
+                              }}
+                              placeholder="Inclusion name (e.g. Gauze Pads)"
+                              placeholderTextColor="#9CA3AF"
+                              maxLength={MAX_INCLUSION_NAME_LENGTH}
+                              value={item.name}
+                              onChangeText={(value) =>
+                                updateKitInclusionName(index, value)
+                              }
+                            />
+                            <TextInput
+                              style={{
+                                width: 64,
+                                height: 42,
+                                borderWidth: 1,
+                                borderColor: error ? "#EF4444" : "#D1D5DB",
+                                borderRadius: 8,
+                                paddingHorizontal: 8,
+                                fontSize: 14,
+                                textAlign: "center",
+                                backgroundColor: "#FFF",
+                                marginRight: 8,
+                              }}
+                              placeholder="Qty"
+                              placeholderTextColor="#9CA3AF"
+                              keyboardType="numeric"
+                              maxLength={5}
+                              value={
+                                item.quantity === ""
+                                  ? ""
+                                  : String(item.quantity ?? "")
+                              }
+                              onChangeText={(value) =>
+                                updateKitItemQuantity(
+                                  index,
+                                  value.replace(/[^0-9]/g, ""),
+                                )
+                              }
+                            />
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel={`Remove inclusion ${index + 1}`}
+                              onPress={() => {
+                                removeKitItemFromKit(index);
+                                setKitItemErrors((prev) => {
+                                  const updated = { ...prev };
+                                  delete updated[item._id];
+                                  return updated;
+                                });
                               }}
                             >
-                              {item.quantity} per kit-box
-                            </Text>
+                              <XCircle size={24} color="#EF4444" />
+                            </TouchableOpacity>
                           </View>
-                        ))}
-                      </View>
-                    )}
+                          {error ? (
+                            <Text style={styles.fieldErrorText}>{error}</Text>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Add inclusion"
+                      onPress={addKitInclusion}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        paddingVertical: 11,
+                        borderWidth: 1,
+                        borderStyle: "dashed",
+                        borderColor: "#D4AF37",
+                        borderRadius: 8,
+                        backgroundColor: "#FFFBEB",
+                      }}
+                    >
+                      <PlusCircle size={18} color="#D4AF37" />
+                      <Text
+                        style={{
+                          marginLeft: 6,
+                          color: "#8A6D14",
+                          fontWeight: "700",
+                          fontSize: 13,
+                        }}
+                      >
+                        ADD INCLUSION
+                      </Text>
+                    </TouchableOpacity>
                   </>
                 )}
               </View>
@@ -2384,9 +1758,8 @@ export default function InventoryKit({
             <View style={styles.confirmNotice}>
               <CheckCircle size={16} color="#D4AF37" />
               <Text style={styles.confirmNoticeText}>
-                {kitFormData.itemCode
-                  ? "Next step: scan inclusion batches to verify FEFO."
-                  : "Next step: scan inclusion batches to verify FEFO."}
+                The kit batch will be saved as pending until it is stored
+                in Putaway.
               </Text>
             </View>
 
@@ -2403,450 +1776,28 @@ export default function InventoryKit({
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.confirmButton}
+                style={[styles.confirmButton, uploading && { opacity: 0.7 }]}
+                disabled={uploading}
                 onPress={async () => {
                   if (!validateKitBeforeSave()) return;
-                  await startScanning();
+                  await performSaveKit();
                 }}
               >
-                <ScanLine size={18} color="#FFFFFF" />
-                <Text style={styles.confirmButtonText}>
-                  {kitFormData.itemCode ? "Yes, Restock" : "Yes, Add"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      {/* SCANNING MODAL  */}
-      <Modal
-        visible={scanningModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={handleCancelScan}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.batchModalContainer, { paddingBottom: 0 }]}>
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.modalSubTitle}>
-                  VERIFY INCLUSIONS ({scanQueueIndex + 1}/{scanQueue.length})
-                </Text>
-                <Text style={styles.modalTitle}>
-                  {currentScanItem?.name || "Scanning complete"}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={handleCancelScan}>
-                <XCircle size={28} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Current inclusion banner */}
-            {currentScanItem ? (
-              <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-                <Text style={{ fontSize: 13, color: "#6B7280" }}>
-                  Scan {currentScanItem.perBox} per kit-box ×{" "}
-                  {Number(kitFormData.box) || 0} boxes ={" "}
-                  <Text style={{ fontWeight: "700", color: "#111827" }}>
-                    {currentScanItem.totalRequired} pcs
-                  </Text>{" "}
-                  required
-                </Text>
-                <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 4 }}>
-                  Scanned:{" "}
-                  <Text style={{ fontWeight: "700", color: "#111827" }}>
-                    {getScannedQtyForItem(currentScanItem.itemCode)}/
-                    {currentScanItem.totalRequired}
-                  </Text>
-                </Text>
-              </View>
-            ) : null}
-
-            {/* Camera */}
-            <View
-              style={{
-                height: 150,
-                margin: 16,
-                borderRadius: 12,
-                overflow: "hidden",
-                backgroundColor: "#000",
-              }}
-            >
-              {!scanned ? (
-                <CameraView
-                  style={StyleSheet.absoluteFill}
-                  onBarcodeScanned={handleBarCodeScanned}
-                  barcodeSettings={{
-                    barcodeTypes: ["qr", "ean13", "code128", "code39"],
-                  }}
-                />
-              ) : (
-                <View
-                  style={[
-                    StyleSheet.absoluteFill,
-                    {
-                      justifyContent: "center",
-                      alignItems: "center",
-                      backgroundColor: "#000",
-                    },
-                  ]}
-                >
-                  <TouchableOpacity
-                    style={{
-                      backgroundColor: "#D4AF37",
-                      padding: 15,
-                      borderRadius: 10,
-                    }}
-                    onPress={resetScanner}
-                  >
-                    <Text style={{ color: "#FFF", fontWeight: "bold" }}>
-                      SCAN NEXT BATCH
+                {uploading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <CheckCircle size={18} color="#FFFFFF" />
+                    <Text style={styles.confirmButtonText}>
+                      {kitFormData.itemCode ? "Yes, Restock" : "Yes, Add"}
                     </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-
-            {/* Progress list */}
-            <ScrollView style={{ maxHeight: 160, paddingHorizontal: 16 }}>
-              {scanQueue.map((q, idx) => {
-                const scanned = getScannedQtyForItem(q.itemCode);
-                const isDone = scanned >= q.totalRequired;
-                const isCurrent = idx === scanQueueIndex;
-                return (
-                  <View
-                    key={q.itemCode + idx}
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      paddingVertical: 8,
-                      borderBottomWidth: 1,
-                      borderBottomColor: "#E5E7EB",
-                      backgroundColor: isCurrent ? "#FEF3C7" : "transparent",
-                      paddingHorizontal: 6,
-                      borderRadius: 6,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        color: isDone ? "#059669" : "#374151",
-                        flex: 1,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {q.name}
-                    </Text>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 12,
-                          fontWeight: "600",
-                          color: isDone ? "#059669" : "#6B7280",
-                        }}
-                      >
-                        {scanned}/{q.totalRequired}
-                      </Text>
-                      {isDone && (
-                        <Check size={16} color="#10B981" strokeWidth={3} />
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-
-            {/* Actions */}
-            <View
-              style={{ flexDirection: "row", paddingHorizontal: 16, gap: 10 }}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.saveBtn,
-                  { flex: 1, backgroundColor: "#6B7280" },
-                ]}
-                onPress={handleCancelScan}
-              >
-                <Text style={styles.saveBtnText}>CANCEL</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.saveBtn,
-                  { flex: 1, backgroundColor: "#059669" },
-                ]}
-                onPress={handleSkipOrContinueShortfall}
-              >
-                <Text style={styles.saveBtnText}>SAVE KIT</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-      <Modal
-        visible={showIncompleteScanConfirm}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowIncompleteScanConfirm(false)}
-      >
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={styles.confirmHeader}>
-              <View style={styles.confirmIcon}>
-                <AlertTriangle size={24} color="#D97706" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.confirmTitle}>Incomplete Scan</Text>
-                <Text style={styles.confirmSubtitle}>
-                  Some inclusions have not been fully scanned.
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setShowIncompleteScanConfirm(false)}
-                style={styles.confirmClose}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel saving"
-              >
-                <XCircle size={28} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={{ maxHeight: 220 }}
-              showsVerticalScrollIndicator={false}
-            >
-              {incompleteScanShortfalls.map((shortfall, index) => (
-                <View
-                  key={`${shortfall}-${index}`}
-                  style={{
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    marginBottom: 6,
-                    borderRadius: 8,
-                    backgroundColor: "#FFFBEB",
-                    borderWidth: 1,
-                    borderColor: "#FDE68A",
-                  }}
-                >
-                  <Text style={{ color: "#92400E", fontSize: 13 }}>
-                    {shortfall}
-                  </Text>
-                </View>
-              ))}
-            </ScrollView>
-
-            <Text
-              style={{
-                color: "#6B7280",
-                fontSize: 12,
-                lineHeight: 18,
-                marginTop: 12,
-              }}
-            >
-              Putaway will deduct whatever stock is available at that time
-              (FEFO). Continue saving?
-            </Text>
-
-            <View style={styles.confirmActions}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setShowIncompleteScanConfirm(false)}
-              >
-                <Text style={styles.cancelButtonText}>Keep Scanning</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.confirmButton}
-                onPress={confirmSaveWithShortfall}
-              >
-                <Text style={styles.confirmButtonText}>Continue</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      <Modal
-        visible={showCancelScanConfirm}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCancelScanConfirm(false)}
-      >
-        <View style={styles.confirmOverlay}>
-          <View style={styles.confirmModal}>
-            <View style={styles.confirmHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.confirmTitle}>Cancel Scanning?</Text>
-                <Text style={styles.confirmSubtitle}>
-                  Your kit details will be preserved. You can try scanning
-                  again.
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setShowCancelScanConfirm(false)}
-                style={styles.confirmClose}
-                accessibilityRole="button"
-                accessibilityLabel="Keep scanning"
-              >
-                <XCircle size={28} color="#EF4444" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.confirmActions}>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setShowCancelScanConfirm(false)}
-              >
-                <Text style={styles.cancelButtonText}>Keep Scanning</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmButton, { backgroundColor: "#EF4444" }]}
-                onPress={confirmCancelScan}
-              >
-                <Text style={styles.confirmButtonText}>Cancel Scan</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      {/* FEFO Warning Modal (mirrors picking) */}
-      {scanFeedback && (
-        <Modal
-          transparent
-          visible={Boolean(scanFeedback)}
-          animationType="fade"
-          statusBarTranslucent
-          onRequestClose={() => {}}
-        >
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(0,0,0,0.5)",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: 24,
-            }}
-          >
-            <View
-              style={{
-                backgroundColor: "#FFF",
-                borderRadius: 16,
-                padding: 22,
-                width: "100%",
-                maxWidth: 400,
-              }}
-            >
-              <View
-                style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 30,
-                  backgroundColor: "#FEF3C7",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  alignSelf: "center",
-                  marginBottom: 12,
-                }}
-              >
-                <AlertTriangle size={30} color="#B45309" />
-              </View>
-
-              <Text
-                style={{
-                  textAlign: "center",
-                  fontSize: 11,
-                  letterSpacing: 1.2,
-                  color: "#B45309",
-                  fontWeight: "700",
-                }}
-              >
-                FEFO
-              </Text>
-              <Text
-                style={{
-                  textAlign: "center",
-                  fontSize: 17,
-                  fontWeight: "700",
-                  color: "#111827",
-                  marginTop: 4,
-                }}
-              >
-                Pick the earliest expiry first
-              </Text>
-
-              <View style={{ marginTop: 16 }}>
-                <Text
-                  style={{
-                    fontSize: 11,
-                    letterSpacing: 1.2,
-                    color: "#6B7280",
-                    fontWeight: "700",
-                  }}
-                >
-                  SCAN NEXT
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: "700",
-                    color: "#111827",
-                    marginTop: 4,
-                  }}
-                >
-                  {scanFeedback.earliestBatch.batchCode}
-                </Text>
-                <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 4 }}>
-                  Expires{" "}
-                  {new Date(
-                    scanFeedback.earliestBatch.expirationDate,
-                  ).toLocaleDateString()}
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: "#9CA3AF",
-                    marginTop: 8,
-                  }}
-                >
-                  Batch {scanFeedback.scannedBatch.batchCode} should be picked
-                  later.
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={{
-                  marginTop: 20,
-                  backgroundColor: "#B45309",
-                  borderRadius: 10,
-                  paddingVertical: 14,
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-                onPress={closeScanFeedback}
-              >
-                <ScanLine size={18} color="#FFFFFF" />
-                <Text
-                  style={{
-                    color: "#FFFFFF",
-                    fontWeight: "700",
-                    fontSize: 13,
-                    letterSpacing: 0.6,
-                  }}
-                >
-                  SCAN CORRECT BATCH
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
       {/* Batch Modal */}
       <Modal visible={showBatchModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
