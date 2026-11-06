@@ -932,31 +932,89 @@ button:disabled {
   width: 960px;
 }
 
+/* Fixed column widths keep the table inside the modal; long center
+   names truncate in the Reserved For cell instead of pushing it out. */
+.pricing-table {
+  table-layout: fixed;
+}
+
+.pricing-table th:nth-child(1) { width: 15%; }
+.pricing-table th:nth-child(2) { width: 14%; }
+.pricing-table th:nth-child(3) { width: 21%; }
+.pricing-table th:nth-child(4) { width: 16%; }
+.pricing-table th:nth-child(5) { width: 34%; }
+
+.pricing-table tbody td {
+  overflow-wrap: break-word;
+}
+
+.pricing-table .price-input {
+  width: 100%;
+  max-width: 130px;
+  box-sizing: border-box;
+}
+
 .reserve-cell-btn {
-  max-width: 220px;
-  padding: 6px 12px;
-  border: 1px dashed #c9c9c9;
-  border-radius: 999px;
-  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: #6b7280;
   font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
   cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.reserve-cell-btn:hover {
+  background: #f0f0f0;
+  color: var(--dark);
+}
+
+.reserve-cell-btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.reserve-cell-btn.is-reserved {
+  background: #f6efd7;
+  border-color: #e6d49a;
+  color: #7a5e0f;
+  font-weight: 600;
+}
+
+.reserve-cell-btn.is-reserved:hover {
+  background: #f1e5bf;
+  border-color: var(--gold);
+}
+
+.reserve-cell-icon {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.reserve-cell-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.reserve-cell-btn:hover {
-  border-color: var(--gold);
-  color: var(--dark);
-}
-
-.reserve-cell-btn.is-reserved {
-  border-style: solid;
-  border-color: var(--gold);
-  background: #f6efd7;
-  color: #8a6d14;
-  font-weight: 600;
+.reserve-cell-more {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fff;
+  color: #7a5e0f;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .reserve-overlay {
@@ -1039,19 +1097,6 @@ button:disabled {
   text-align: center;
 }
 
-/* "Reserved" tag next to a supply name in the inventory table */
-.reserved-tag {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: #f6efd7;
-  color: #8a6d14;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  vertical-align: middle;
-}
 
 /* Confirm Disposal Modal Specific Styles */
 /* .confirm-disposal-modal .batch-modal-body {

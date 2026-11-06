@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { FaTimes } from "react-icons/fa";
+import { FaLock, FaTimes, FaUsers } from "react-icons/fa";
 import { toast } from "react-hot-toast";
 import "../styles/Modals.css";
 
@@ -124,6 +124,38 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
     }
   };
 
+  // Compact cell: first center name, "+N" for the rest, full list on hover.
+  const renderReserveCell = (item) => {
+    const reserved = reservations[item.id] || [];
+    const labels = reserved.map(clientLabel);
+    const isReserved = labels.length > 0;
+    const description = isReserved
+      ? `Reserved for: ${labels.join(", ")}`
+      : "Available to all clients";
+
+    return (
+      <button
+        type="button"
+        className={`reserve-cell-btn${isReserved ? " is-reserved" : ""}`}
+        onClick={() => openReservePicker(item)}
+        title={`${description}. Click to change.`}
+        aria-label={`${item.name}: ${description}. Change reservation.`}
+      >
+        {isReserved ? (
+          <FaLock className="reserve-cell-icon" aria-hidden="true" />
+        ) : (
+          <FaUsers className="reserve-cell-icon" aria-hidden="true" />
+        )}
+        <span className="reserve-cell-label">
+          {isReserved ? labels[0] : "All clients"}
+        </span>
+        {labels.length > 1 && (
+          <span className="reserve-cell-more">+{labels.length - 1}</span>
+        )}
+      </button>
+    );
+  };
+
   const filteredClients = clients.filter((c) => {
     const q = clientSearch.trim().toLowerCase();
     if (!q) return true;
@@ -240,20 +272,7 @@ const PricingModal = ({ open, onClose, items, fetchItems }) => {
 
                   </td>
 
-                  <td>
-                    <button
-                      type="button"
-                      className={`reserve-cell-btn${
-                        (reservations[item.id] || []).length ? " is-reserved" : ""
-                      }`}
-                      onClick={() => openReservePicker(item)}
-                      title="Choose which clients can see and order this supply"
-                    >
-                      {(reservations[item.id] || []).length
-                        ? (reservations[item.id] || []).map(clientLabel).join(", ")
-                        : "All clients"}
-                    </button>
-                  </td>
+                  <td>{renderReserveCell(item)}</td>
 
                 </tr>
 
