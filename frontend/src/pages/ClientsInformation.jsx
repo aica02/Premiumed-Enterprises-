@@ -688,7 +688,7 @@ const ClientProfileModal = ({ client, onClose }) => {
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       logo,
       client: safeClient,

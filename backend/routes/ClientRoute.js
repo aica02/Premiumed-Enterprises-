@@ -513,7 +513,7 @@ router.get("/reject-deposit", async (req, res) => {
   try {
     await Order.updateOne(
       { _id: order._id },
-      { $set: { paymentStatus: "REJECTED", paymentslip: "" } },
+      { $set: { paymentStatus: "REJECTED", paymentSlip: "" } },
     );
 
     // 3. Look up the client's email via the order's username

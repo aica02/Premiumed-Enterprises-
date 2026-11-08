@@ -19,6 +19,24 @@ const formatCurrency = (value) =>
     maximumFractionDigits: 2,
   }).format(Number(value) || 0);
 
+// Emails always show Philippine time, whatever time zone the server runs in.
+const formatDateTime = (value = new Date()) =>
+  new Date(value).toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+const statusColor = (status) =>
+  ["TO SHIP", "DELIVERED", "COMPLETED", "APPROVED"].includes(status)
+    ? "#2e7d32"
+    : status === "CANCELLED" || status === "REJECTED"
+      ? "#b8251e"
+      : "#8a6d14";
+
 export const sendEmailWithRetry = async (mailOptions, retries = 3) => {
   for (let i = 0; i < retries; i++) {
     try {
@@ -60,7 +78,21 @@ export const sendOrderStatusUpdate = async (
       `Your order status has been updated to: ${newStatus}`;
     let dateChangeInfo = "";
 
-    if (newStatus === "RETURNED" && (orderData.oldDate || orderData.newDate)) {
+    const history = Array.isArray(orderData.dateChangeHistory)
+      ? orderData.dateChangeHistory
+      : [];
+    const lastChange = history.length ? history[history.length - 1] : {};
+    const oldDate =
+      orderData.oldDate || lastChange.oldDate || orderData.requestedDeliveryDate;
+    const newDate = orderData.newDate || lastChange.newDate;
+    const changeReason =
+      orderData.dateChangeReason ||
+      orderData.dateNote ||
+      lastChange.reason ||
+      "No reason provided";
+    const hasDateChange = newStatus === "RETURNED" && Boolean(newDate);
+
+    if (hasDateChange) {
       dateChangeInfo = `
         <div style="margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
           <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #222222;">
@@ -68,15 +100,15 @@ export const sendOrderStatusUpdate = async (
           </h3>
 
           <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
-            <strong>Old Date:</strong> ${orderData.oldDate || "N/A"}
+            <strong>Old Date:</strong> ${oldDate || "N/A"}
           </p>
 
           <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
-            <strong>New Date:</strong> ${orderData.newDate || "N/A"}
+            <strong>New Date:</strong> ${newDate || "N/A"}
           </p>
 
           <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
-            <strong>Reason:</strong> ${orderData.dateChangeReason || orderData.dateNote || "No reason provided"}
+            <strong>Reason:</strong> ${changeReason}
           </p>
 
           <p style="margin: 15px 0 0; font-size: 14px; line-height: 1.5;">
@@ -123,7 +155,7 @@ export const sendOrderStatusUpdate = async (
           const backorderQty = quantity - deliveredQty;
 
           let itemDetails = `
-          <div style="margin-bottom: 15px; padding: 15px; background-color: #f8f8f8; border-left: 3px solid #d4af37;">
+          <div style="margin-bottom: 12px; padding: 15px 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
             <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5;">
               <strong>${index + 1}. ${itemName}</strong>
             </p>
@@ -169,17 +201,17 @@ ORDER STATUS UPDATE
 
 Order Number: ${orderData.orderId || orderData.orderNumber || orderData._id}
 New Status: ${newStatus}
-Update Date: ${new Date().toLocaleString()}
+Update Date: ${formatDateTime()}
 
 ${statusMessage}
 
 ${
-  newStatus === "RETURNED" && (orderData.oldDate || orderData.newDate)
+  hasDateChange
     ? `
 DATE CHANGE DETAILS
-Old Date: ${orderData.oldDate || "N/A"}
-New Date: ${orderData.newDate || "N/A"}
-Reason: ${orderData.dateChangeReason || orderData.dateNote || "No reason provided"}
+Old Date: ${oldDate || "N/A"}
+New Date: ${newDate || "N/A"}
+Reason: ${changeReason}
 
 Please review and approve the new delivery date by logging into your account.
 `
@@ -222,7 +254,7 @@ For more details, please log in to your account and check the Orders & Transacti
 This is an automated message. Please do not reply to this email.
 
 Premiumed Enterprises
-${new Date().getFullYear()}
+© ${new Date().getFullYear()} Premiumed Enterprises
       `.trim(),
       htmlContent: `
         <div style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
@@ -257,7 +289,7 @@ ${new Date().getFullYear()}
                 </p>
 
                 <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
-                  <strong>Update Date:</strong> ${new Date().toLocaleString()}
+                  <strong>Update Date:</strong> ${formatDateTime()}
                 </p>
               </div>
 
@@ -270,7 +302,7 @@ ${new Date().getFullYear()}
 
                 ${itemsList}
 
-                <div style="margin-top: 20px; padding: 15px; background-color: #f8f8f8; border-top: 1px solid #dddddd; border-left: 4px solid #d4af37;">
+                <div style="margin-top: 20px; padding: 15px 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
                   <p style="margin: 0; font-size: 14px; line-height: 1.5;">
                     <strong>Total Items Requested:</strong> ${totalItems}
                   </p>
@@ -344,7 +376,7 @@ export const sendDepositSlipToAccountant = async (
     const itemsList =
       orderData.items
         ?.map((item, index) => {
-          return `${index + 1}. ${item.name} - ${item.unitType || "N/A"} - ${item.quantity} - ${formatCurrency(item.price * item.quantity)}`;
+          return `${index + 1}. ${item.name} - ${item.unitType || "N/A"} - Qty: ${item.quantity} - ${formatCurrency(item.price * item.quantity)}`;
         })
         .join("\n") || "No items listed";
 
@@ -370,11 +402,11 @@ export const sendDepositSlipToAccountant = async (
             ${item.unitType || "N/A"}
           </td>
 
-          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: center; color: #333333;">
+          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: center; color: #333333; white-space: nowrap;">
             ${item.quantity}
           </td>
 
-          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333;">
+          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333; white-space: nowrap;">
             ${formatCurrency(item.price * item.quantity)}
           </td>
         </tr>
@@ -429,8 +461,8 @@ A payment slip has been uploaded for the following order:
 
 Order Number: ${orderData.orderNumber || orderData.orderId || orderData._id}
 Client Name: ${orderData.customerName || orderData.name || "N/A"}
-Order Date: ${new Date(orderData.createdAt || Date.now()).toLocaleString()}
-New Status: TO SHIP
+Order Date: ${formatDateTime(orderData.createdAt || Date.now())}
+Status: ${orderData.status || "PAYMENT REVIEW"}
 
 ORDER DETAILS
 -------------
@@ -450,9 +482,10 @@ ${acceptUrl}
 To REJECT this payment slip:
 ${rejectUrl}
 
------------------------------------------
-This is an automated message from the Premiumed Enterprises system.
-${new Date().getFullYear()}
+This is an automated message. Please do not reply to this email.
+
+Premiumed Enterprises
+© ${new Date().getFullYear()} Premiumed Enterprises
       `.trim(),
       htmlContent: `
         <!DOCTYPE html>
@@ -499,13 +532,13 @@ ${new Date().getFullYear()}
 
                   <p style="margin: 8px 0; font-size: 14px;">
                     <strong>Order Date:</strong>
-                    ${new Date(orderData.createdAt || Date.now()).toLocaleString()}
+                    ${formatDateTime(orderData.createdAt || Date.now())}
                   </p>
 
                   <p style="margin: 8px 0; font-size: 14px;">
-                    <strong>New Status:</strong>
-                    <span style="color: #2e7d32; font-weight: bold;">
-                      TO SHIP
+                    <strong>Status:</strong>
+                    <span style="color: ${statusColor(orderData.status || "PAYMENT REVIEW")}; font-weight: bold;">
+                      ${orderData.status || "PAYMENT REVIEW"}
                     </span>
                   </p>
                 </div>
@@ -524,7 +557,7 @@ ${new Date().getFullYear()}
                         <th style="padding: 12px; font-size: 13px; text-align: left;">
                           Supply Name
                         </th>
-                        <th style="padding: 12px; font-size: 13px; text-align: left;">
+                        <th style="padding: 12px; font-size: 13px; text-align: left; white-space: nowrap;">
                           Unit Type
                         </th>
                         <th style="padding: 12px; font-size: 13px; text-align: center;">
@@ -541,13 +574,13 @@ ${new Date().getFullYear()}
                   </table>
                 </div>
 
-                <div style="margin-top: 20px; padding: 20px; background-color: #f8f8f8; border: 1px solid #dddddd;">
-                  <p style="margin: 8px 0; font-size: 14px; text-align: left;">
+                <div style="margin-top: 20px; padding: 12px 20px; background-color: #f8f8f8; border: 1px solid #dddddd;">
+                  <p style="margin: 8px 0; font-size: 14px; text-align: right;">
                     <strong>Subtotal:</strong>
                     ${formatCurrency(totalAmount)}
                   </p>
 
-                  <p style="margin: 8px 0; font-size: 18px; text-align: left; color: #222222;">
+                  <p style="margin: 8px 0; font-size: 18px; text-align: right; color: #222222;">
                     <strong>Total:</strong>
                     ${formatCurrency(orderData.total || totalAmount)}
                   </p>
@@ -614,7 +647,7 @@ ${new Date().getFullYear()}
 </div>
 
                 <p style="font-size: 13px; color: #777777; line-height: 1.5;">
-                  This is an automated message from the Premiumed Enterprises system.
+                  This is an automated message. Please do not reply to this email.
                 </p>
               </div>
 
@@ -677,13 +710,13 @@ export const getDepositSlipRejectedEmail = ({
               </h2>
 
               <p style="font-size: 15px; line-height: 1.6;">
-                Hello ${username || "Customer"},
+                Dear <strong>${username || "Valued Client"}</strong>,
               </p>
 
               <p style="font-size: 15px; line-height: 1.6;">
                 Your submitted payment slip for order
                 <strong>#${orderId}</strong>
-                was verified and could not be accepted.
+                was reviewed and could not be accepted.
               </p>
 
               <!-- ORDER INFORMATION -->
@@ -694,23 +727,21 @@ export const getDepositSlipRejectedEmail = ({
 
                 <p style="margin: 8px 0; font-size: 14px;">
                   <strong>Order Number:</strong>
-                  #${orderId}
+                  ${orderId}
                 </p>
 
                 <p style="margin: 8px 0; font-size: 14px;">
                   <strong>Payment Status:</strong>
                   <span style="color: #b8251e; font-weight: bold;">
-                    PENDING
+                    REJECTED
                   </span>
                 </p>
               </div>
 
-              <div style="margin: 25px 0; padding: 20px; background-color: #fff8e1; border: 1px solid #e6d28a;">
-                <p style="margin: 0; font-size: 14px; line-height: 1.6;">
+              <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.5;">
                   <strong>Important:</strong>
-                  Your payment status has been reset to
-                  <strong>PENDING</strong>.
-                  Please re-upload a valid payment slip to complete your transaction.
+                  Please upload a new, clear payment slip to complete your transaction.
                 </p>
               </div>
 
@@ -733,12 +764,12 @@ export const getDepositSlipRejectedEmail = ({
                 </a>
               </div>
 
-              <p style="font-size: 13px; color: #777777; line-height: 1.5;">
+              <p style="font-size: 15px; line-height: 1.6;">
                 If you have any questions, please contact our support team.
               </p>
 
               <p style="font-size: 13px; color: #777777; line-height: 1.5;">
-                This is an automated message from the Premiumed Enterprises system.
+                This is an automated message. Please do not reply to this email.
               </p>
             </div>
 
@@ -769,7 +800,7 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
         const price = Number(item.price) || 0;
         const quantity = Number(item.quantity) || 0;
         const itemSubtotal = price * quantity;
-        return `${index + 1}. ${item.name} - ${getUnitType(item)} - ${quantity} Pcs. - ${formatCurrency(price)} - Subtotal: ${formatCurrency(itemSubtotal)}`;
+        return `${index + 1}. ${item.name} - ${getUnitType(item)} - Qty: ${quantity} - ${formatCurrency(price)} - Subtotal: ${formatCurrency(itemSubtotal)}`;
       })
       .join("\n");
 
@@ -787,8 +818,10 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
       ceo: "ROSE ANN P. ORTIZ - Prop",
+      documentTitle: "Order Receipt",
+      recipientLabel: "Deliver To:",
       deliveredTo: orderData.clientName || orderData.name || "N/A",
-      vatReg: "VAT REG. TIN: 000-000-000",
+      vatReg: "VAT REG. TIN: 275-357-338-00000",
       landlineNum: "(044) 812-2280",
       totalPrice: orderData.total || total,
       deliveryAddress: orderData.shippingAddress || orderData.address || "N/A",
@@ -802,8 +835,8 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
           `${quantity}`,
           item.name,
           getUnitType(item),
-          formatCurrency(price),
-          formatCurrency(itemSubtotal),
+          price,
+          itemSubtotal,
         ];
       }),
     });
@@ -826,15 +859,15 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
             ${getUnitType(item)}
           </td>
 
-          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: center; color: #333333;">
-            ${quantity} Pcs.
+          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: center; color: #333333; white-space: nowrap;">
+            ${quantity}
           </td>
 
-          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333;">
+          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333; white-space: nowrap;">
             ${formatCurrency(price)}
           </td>
 
-          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333;">
+          <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: right; color: #333333; white-space: nowrap;">
             ${formatCurrency(price * quantity)}
           </td>
         </tr>
@@ -854,8 +887,8 @@ PREMIUMED ENTERPRISES
 ORDER RECEIPT
 
 Order Number: ${orderData.orderNumber || orderData._id}
-Order Date: ${new Date(orderData.createdAt || Date.now()).toLocaleString()}
-Status: TO SHIP
+Order Date: ${formatDateTime(orderData.createdAt || Date.now())}
+Status: ${orderData.status || "TO SHIP"}
 
 CLIENT INFORMATION
 ------------------
@@ -870,11 +903,12 @@ ${itemsList}
 Subtotal: ${formatCurrency(subtotal)}
 Total: ${formatCurrency(total)}
 
-------------------
-Thank you for your order! Kindly submit the Payment Slip once you received this email.
+Thank you for your order! Kindly submit the payment slip once you receive this email.
+
+This is an automated message. Please do not reply to this email.
 
 Premiumed Enterprises
-${new Date().getFullYear()}
+© ${new Date().getFullYear()} Premiumed Enterprises
       `.trim(),
       htmlContent: `
         <!DOCTYPE html>
@@ -916,13 +950,13 @@ ${new Date().getFullYear()}
 
                   <p style="margin: 8px 0; font-size: 14px;">
                     <strong>Order Date:</strong>
-                    ${new Date(orderData.createdAt || Date.now()).toLocaleString()}
+                    ${formatDateTime(orderData.createdAt || Date.now())}
                   </p>
 
                   <p style="margin: 8px 0; font-size: 14px;">
                     <strong>Status:</strong>
-                    <span style="color: #2e7d32; font-weight: bold;">
-                      TO SHIP
+                    <span style="color: ${statusColor(orderData.status || "TO SHIP")}; font-weight: bold;">
+                      ${orderData.status || "TO SHIP"}
                     </span>
                   </p>
                 </div>
@@ -962,7 +996,7 @@ ${new Date().getFullYear()}
                         <th style="padding: 12px; font-size: 13px; text-align: left;">
                           Supply Name
                         </th>
-                        <th style="padding: 12px; font-size: 13px; text-align: left;">
+                        <th style="padding: 12px; font-size: 13px; text-align: left; white-space: nowrap;">
                           Unit Type
                         </th>
                         <th style="padding: 12px; font-size: 13px; text-align: center;">
@@ -982,12 +1016,12 @@ ${new Date().getFullYear()}
                   </table>
                 </div>
 
-                <div style="margin-top: 20px; padding: 20px; background-color: #f8f8f8; border: 1px solid #dddddd;">
-                  <p style="margin: 8px 0; font-size: 14px; text-align: left;">
+                <div style="margin-top: 20px; padding: 12px 20px; background-color: #f8f8f8; border: 1px solid #dddddd;">
+                  <p style="margin: 8px 0; font-size: 14px; text-align: right;">
                     <strong>Subtotal:</strong>
                     ${formatCurrency(subtotal)}
                   </p>
-                  <p style="margin: 8px 0; font-size: 18px; text-align: left; color: #222222;">
+                  <p style="margin: 8px 0; font-size: 18px; text-align: right; color: #222222;">
                     <strong>Total:</strong>
                     ${formatCurrency(total)}
                   </p>
@@ -996,12 +1030,12 @@ ${new Date().getFullYear()}
                 <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
                   <p style="margin: 0; font-size: 14px; line-height: 1.5;">
                     <strong>Important:</strong>
-                    Kindly submit the Payment Slip once you receive this email.
+                    Kindly submit the payment slip once you receive this email.
                     Please ensure that the uploaded payment slip is clear and readable.
                   </p>
                 </div>
                 <p style="font-size: 13px; color: #777777; line-height: 1.5;">
-                  This is an automated message from the Premiumed Enterprises system.
+                  This is an automated message. Please do not reply to this email.
                 </p>
               </div>
 
@@ -1059,13 +1093,13 @@ Your login credentials:
 Username: ${username}
 Password: ${password}
 
-IMPORTANT: For security reasons, please change your password after your first login.
+Important: For security reasons, please change your password after your first login.
 
 If you have any questions, please contact our support team.
-This is an automated message, please do not reply to this email.
+This is an automated message. Please do not reply to this email.
 
 Premiumed Enterprises
-${new Date().getFullYear()}
+© ${new Date().getFullYear()} Premiumed Enterprises
       `.trim(),
       htmlContent: `
         <div style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
@@ -1106,7 +1140,7 @@ ${new Date().getFullYear()}
 
               <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
                 <p style="margin: 0; font-size: 14px; line-height: 1.5;">
-                  <strong>IMPORTANT:</strong>
+                  <strong>Important:</strong>
                   For security reasons, please change your password after your first login.
                 </p>
               </div>
@@ -1115,7 +1149,7 @@ ${new Date().getFullYear()}
               </p>
 
               <p style="font-size: 13px; color: #777777;">
-                This is an automated message, please do not reply to this email.
+                This is an automated message. Please do not reply to this email.
               </p>
             </div>
 
@@ -1170,69 +1204,92 @@ EMPLOYEE ACCOUNT CREATED
 
 Dear ${fullName},
 
-Your employee account has been successfully created.
+Welcome to the team! Your employee account has been successfully created.
 
-ACCOUNT DETAILS:
-----------------
+YOUR LOGIN CREDENTIALS
+----------------------
 Role: ${role}
 Employee ID: ${employeeId || "N/A"}
 Username: ${username}
-Password: ${password}
+Temporary Password: ${password}
 
-IMPORTANT: For security reasons, please log in and change your password as soon as possible.
+Important: For security reasons, please log in and change your password as soon as possible.
 
+If you have any questions, please contact our support team.
 This is an automated message. Please do not reply to this email.
 
 Premiumed Enterprises
-${new Date().getFullYear()}
+© ${new Date().getFullYear()} Premiumed Enterprises
       `.trim(),
       htmlContent: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: 0 auto; color: #333;">
-          <div style="background-color: #1a252f; padding: 20px; text-align: center; color: #ffffff;">
-            <h2 style="margin: 0; font-size: 20px;">PREMIUMED ENTERPRISES</h2>
-            <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.8;">Employee Account Created</p>
-          </div>
-          
-          <div style="padding: 30px; background-color: #f9f9f9; border: 1px solid #e0e0e0;">
-            <p style="margin-top: 0;">Dear <strong>${fullName}</strong>,</p>
-            <p>Welcome to the team! Your official employee account has been successfully created.</p>
-            
-            <div style="background-color: #ffffff; border: 1px solid #dcdcdc; border-radius: 6px; padding: 20px; margin: 20px 0;">
-              <h3 style="margin-top: 0; color: #1a252f; border-bottom: 1px solid #eee; padding-bottom: 10px;">Account Credentials</h3>
-              
-              <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                <tr>
-                  <td style="padding: 6px 0; color: #666; width: 140px;"><strong>Role:</strong></td>
-                  <td style="padding: 6px 0;">${role}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 6px 0; color: #666;"><strong>Employee ID:</strong></td>
-                  <td style="padding: 6px 0;">${employeeId || "N/A"}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 6px 0; color: #666;"><strong>Username:</strong></td>
-                  <td style="padding: 6px 0;"><code style="background-color: #f4f4f4; padding: 3px 6px; border-radius: 4px; font-weight: bold; color: #2c3e50;">${username}</code></td>
-                </tr>
-                <tr>
-                  <td style="padding: 6px 0; color: #666;"><strong>Temporary Password:</strong></td>
-                  <td style="padding: 6px 0;"><code style="background-color: #f4f4f4; padding: 3px 6px; border-radius: 4px; font-weight: bold; color: #d9534f;">${password}</code></td>
-                </tr>
-              </table>
+        <div style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
+          <div style="max-width: 600px; margin: 30px auto; background-color: #ffffff; border: 1px solid #dddddd;">
+            <div style="background-color: #000000; padding: 25px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; letter-spacing: 1px;">
+                PREMIUMED ENTERPRISES
+              </h1>
+              <div style="width: 60px; height: 3px; background-color: #d4af37; margin: 12px auto 0;"></div>
             </div>
-            
-            <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px 15px; margin: 20px 0; border-radius: 0 4px 4px 0;">
-              <p style="margin: 0; font-size: 13px; color: #856404;">
-                <strong>Important:</strong> For security reasons, please log in and change your password immediately after your first sign-in.
+
+            <div style="padding: 35px;">
+              <h2 style="margin-top: 0; margin-bottom: 25px; color: #222222; font-size: 22px;">
+                Employee Account Created
+              </h2>
+
+              <p style="font-size: 15px; line-height: 1.6;">
+                Dear <strong>${fullName}</strong>,
+              </p>
+
+              <p style="font-size: 15px; line-height: 1.6;">
+                Welcome to the team! Your employee account has been successfully created.
+              </p>
+
+              <div style="margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #222222;">
+                  Your login credentials:
+                </h3>
+
+                <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
+                  <strong>Role:</strong> ${role}
+                </p>
+
+                <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
+                  <strong>Employee ID:</strong> ${employeeId || "N/A"}
+                </p>
+
+                <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
+                  <strong>Username:</strong> ${username}
+                </p>
+
+                <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
+                  <strong>Temporary Password:</strong> ${password}
+                </p>
+              </div>
+
+              <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.5;">
+                  <strong>Important:</strong>
+                  For security reasons, please log in and change your password as soon as possible.
+                </p>
+              </div>
+
+              <p style="font-size: 15px; line-height: 1.6;">
+                If you have any questions, please contact our support team.
+              </p>
+
+              <p style="font-size: 13px; color: #777777;">
+                This is an automated message. Please do not reply to this email.
               </p>
             </div>
-            
-            <p style="font-size: 12px; color: #888; text-align: center; margin-bottom: 0;">
-              This is an automated message, please do not reply to this email.
-            </p>
-          </div>
-          
-          <div style="background-color: #f1f1f1; padding: 12px; text-align: center; font-size: 12px; color: #666;">
-            &copy; ${new Date().getFullYear()} Premiumed Enterprises. All rights reserved.
+
+            <div style="padding: 20px; background-color: #f5f5f5; text-align: center; border-top: 1px solid #dddddd;">
+              <p style="margin: 0; font-size: 13px; color: #555555;">
+                <strong>Premiumed Enterprises</strong>
+              </p>
+              <p style="margin: 5px 0 0; font-size: 12px; color: #888888;">
+                &copy; ${new Date().getFullYear()} Premiumed Enterprises
+              </p>
+            </div>
           </div>
         </div>
       `,

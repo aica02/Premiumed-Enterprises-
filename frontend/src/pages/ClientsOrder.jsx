@@ -22,6 +22,7 @@ import {
   generateOrderReceipt,
   generateFilteredReport,
 } from "../utils/pdf/reportEngine";
+import { formatReportDate } from "../utils/pdf/pdfLayout";
 import logReportPrinted from "../utils/logReportPrinted";
 import usePolling from "../hooks/usePolling";
 
@@ -730,9 +731,11 @@ const ClientsOrder = () => {
         order.orderId,
         order.name,
         order.status,
-        order.requestedDeliveryDate ||
-          order.notes?.split(":")[1]?.trim() ||
-          "N/A",
+        formatReportDate(
+          order.requestedDeliveryDate ||
+            order.notes?.split(":")[1]?.trim() ||
+            "",
+        ),
         `${totalItems} pcs`,
         itemsList,
         `${totalPrice.toLocaleString("en-PH", {
@@ -755,15 +758,15 @@ const ClientsOrder = () => {
       filterConditions.push(`Status: ${reportFilters.deliveryStatus}`);
     if (reportFilters.startDate && reportFilters.endDate)
       filterConditions.push(
-        `Date Range: ${new Date(reportFilters.startDate).toLocaleDateString()} - ${new Date(reportFilters.endDate).toLocaleDateString()}`,
+        `Date Range: ${formatReportDate(reportFilters.startDate)} - ${formatReportDate(reportFilters.endDate)}`,
       );
     else if (reportFilters.startDate)
       filterConditions.push(
-        `From Date: ${new Date(reportFilters.startDate).toLocaleDateString()}`,
+        `From Date: ${formatReportDate(reportFilters.startDate)}`,
       );
     else if (reportFilters.endDate)
       filterConditions.push(
-        `Until Date: ${new Date(reportFilters.endDate).toLocaleDateString()}`,
+        `Until Date: ${formatReportDate(reportFilters.endDate)}`,
       );
 
     if (filterConditions.length > 0) {
@@ -771,8 +774,8 @@ const ClientsOrder = () => {
     }
 
     generateFilteredReport({
-      title: `Orders Report`,
-      sectionTitle: filterDescription,
+      title: "Orders Report",
+      filters: filterConditions.length > 0 ? filterConditions.join(", ") : "None (all orders)",
       companyName: "PREMIUMED ENTERPRISES",
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",

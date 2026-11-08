@@ -22,6 +22,7 @@ import AddressFields from "../components/AddressFields";
 import logo from "../assets/Premiumed logo.png";
 import EmptyState from "../components/EmptyState";
 import { generateSupplyFilteredReport } from "../utils/pdf/SupplierInfoReportEngine";
+import { formatReportDate } from "../utils/pdf/pdfLayout";
 import logReportPrinted from "../utils/logReportPrinted";
 import usePolling from "../hooks/usePolling";
 import {
@@ -298,8 +299,8 @@ const SuppliersInformation = () => {
       }
 
       generateSupplyFilteredReport({
-        title: "Supply Report",
-        sectionTitle: filterDescription,
+        title,
+        filters: filterConditions.length > 0 ? filterConditions.join(", ") : "None",
         companyName: "PREMIUMED ENTERPRISES",
         companyAddress:
           "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",
@@ -423,9 +424,7 @@ const SuppliersInformation = () => {
         batch.status || "Pending",
         batch.storageLocation || "N/A",
         batch.quantity || "N/A",
-        batch.expirationDate
-          ? new Date(batch.expirationDate).toLocaleDateString()
-          : "N/A",
+        batch.expirationDate ? formatReportDate(batch.expirationDate) : "N/A",
       ]);
 
       // Create filter description
@@ -439,19 +438,19 @@ const SuppliersInformation = () => {
         filterConditions.push(`Status: ${printFilters.status}`);
       if (printFilters.dateFrom)
         filterConditions.push(
-          `From: ${new Date(printFilters.dateFrom).toLocaleDateString()}`,
+          `From: ${formatReportDate(printFilters.dateFrom)}`,
         );
       if (printFilters.dateTo)
         filterConditions.push(
-          `To: ${new Date(printFilters.dateTo).toLocaleDateString()}`,
+          `To: ${formatReportDate(printFilters.dateTo)}`,
         );
       if (filterConditions.length > 0) {
         filterDescription += ` (${filterConditions.join(", ")})`;
       }
 
       generateSupplyFilteredReport({
-        title: "Supply Report",
-        sectionTitle: filterDescription,
+        title,
+        filters: filterConditions.length > 0 ? filterConditions.join(", ") : "None",
         companyName: "PREMIUMED ENTERPRISES",
         companyAddress:
           "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",

@@ -61,9 +61,15 @@ const allowedOrigins = [
   process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
 ].filter(Boolean);
 
+// Vite moves to the next free port (5174, 5175...) when 5173 is already in use,
+// so any local dev port in that range is accepted too.
+const isLocalDevOrigin = (origin) =>
+  /^https?:\/\/(localhost|127\.0\.0\.1):517[3-9]$/.test(origin);
+
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
   if (allowedOrigins.includes(origin)) return true;
+  if (isLocalDevOrigin(origin)) return true;
   return /^https:\/\/.*\.vercel\.app$/i.test(origin);
 };
 

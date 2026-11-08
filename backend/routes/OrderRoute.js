@@ -518,8 +518,17 @@ await order.save();
       try {
         const fileBuffer = fs.readFileSync(req.file.path);
 
+        const slipClient = order.username
+          ? await User.findOne({ username: order.username })
+              .select("procurementMobile phoneNumber")
+              .lean()
+          : null;
         const emailResult = await sendDepositSlipToAccountant(
-          order,
+          {
+            ...order.toObject(),
+            procurementMobile:
+              slipClient?.procurementMobile || slipClient?.phoneNumber || "",
+          },
           fileBuffer,
           req.file.originalname,
           accountantEmail,
@@ -1254,6 +1263,7 @@ router.post("/:orderId/complete", async (req, res) => {
       const orderData = {
         orderNumber: order.orderId,
         _id: order._id,
+        status: order.status,
         name: order.name,
         shippingAddress: order.shippingAddress,
         procurementMobile: user.procurementMobile || user.phoneNumber || "N/A",
@@ -1351,6 +1361,7 @@ router.post("/:orderId/email", async (req, res) => {
     const orderData = {
       orderNumber: order.orderId,
       _id: order._id,
+      status: order.status,
       name: order.name,
       shippingAddress: order.shippingAddress,
       procurementMobile: user.procurementMobile || user.phoneNumber || "N/A",

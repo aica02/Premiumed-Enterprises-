@@ -11,6 +11,7 @@ import axios from "axios";
 import { Toaster, toast } from "react-hot-toast";
 import logo from "../assets/Premiumed logo.png";
 import { generateInventoryReport } from "../utils/pdf/reportEngine";
+import { formatReportDate } from "../utils/pdf/pdfLayout";
 import logReportPrinted from "../utils/logReportPrinted";
 import { CATEGORIES } from "../components/Categories";
 import EmptyState from "../components/EmptyState";
@@ -336,7 +337,7 @@ const Inventory = () => {
 
     const tableData = uniqueRows.map(({ item, batch }) => {
       const expiration = batch.expirationDate
-        ? new Date(batch.expirationDate).toLocaleDateString()
+        ? formatReportDate(batch.expirationDate)
         : "N/A";
 
       const unitType = batch.unitType || item.unitType || "N/A";

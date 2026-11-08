@@ -5,6 +5,7 @@ import "../styles/ActivityLogs.css";
 import { FaPlusCircle, FaPrint, FaSearch, FaTimes } from "react-icons/fa";
 import { MdAutorenew } from "react-icons/md";
 import { generateActivityReport } from "../utils/pdf/ActivityLogReport";
+import { formatReportDate } from "../utils/pdf/pdfLayout";
 import logReportPrinted from "../utils/logReportPrinted";
 import { Toaster, toast } from "react-hot-toast";
 import EmptyState from "../components/EmptyState";
@@ -107,7 +108,7 @@ const ActivityLogs = () => {
       log.action,
       log.module,
       log.description || "-",
-      new Date(log.createdAt).toLocaleDateString("en-PH"),
+      formatReportDate(log.createdAt),
       new Date(log.createdAt).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -127,13 +128,13 @@ const ActivityLogs = () => {
 
     if (printStartDate) {
       filterConditions.push(
-        `From: ${new Date(printStartDate).toLocaleDateString("en-PH")}`,
+        `From: ${formatReportDate(printStartDate)}`,
       );
     }
 
     if (printEndDate) {
       filterConditions.push(
-        `To: ${new Date(printEndDate).toLocaleDateString("en-PH")}`,
+        `To: ${formatReportDate(printEndDate)}`,
       );
     }
 
@@ -150,6 +151,7 @@ const ActivityLogs = () => {
     // ================= GENERATE PDF =================
     generateActivityReport({
       title: "Activity Log Report",
+      filters: filterConditions.join(", "),
       companyName: "PREMIUMED ENTERPRISES",
       companyAddress:
         "52 Purok 1 Taal 3000 City of Malolos (Capital), Bulacan Philippines",

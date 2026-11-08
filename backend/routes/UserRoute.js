@@ -605,30 +605,30 @@ router.post("/forgot-password", async (req, res) => {
       to: [{ email: user.email }],
       subject: "Password Reset - Premiumed Enterprises",
       htmlContent: `
-          <div style=" margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif;color: #333333;">
-            <div style=" max-width: 600px; margin: 30px auto; background-color: #ffffff; border: 1px solid #dddddd;">
-              <div style=" background-color: #000000; padding: 25px; text-align: center;">
-                <h1 style=" margin: 0; color: #ffffff; font-size: 24px; letter-spacing: 1px;">
+          <div style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
+            <div style="max-width: 600px; margin: 30px auto; background-color: #ffffff; border: 1px solid #dddddd;">
+              <div style="background-color: #000000; padding: 25px; text-align: center;">
+                <h1 style="margin: 0; color: #ffffff; font-size: 24px; letter-spacing: 1px;">
                   PREMIUMED ENTERPRISES
                 </h1>
-                <div style=" width: 60px; height: 3px; background-color: #d4af37; margin: 12px auto 0;"></div>
+                <div style="width: 60px; height: 3px; background-color: #d4af37; margin: 12px auto 0;"></div>
               </div>
 
               <div style="padding: 35px;">
-                <h2 style=" margin-top: 0; margin-bottom: 25px; color: #222222; font-size: 22px;">
-                  Password Reset Successful.
+                <h2 style="margin-top: 0; margin-bottom: 25px; color: #222222; font-size: 22px;">
+                  Password Reset Successful
                 </h2>
 
                 <p style="font-size: 15px; line-height: 1.6;">
-                  Hello <strong>${user.fullName || user.username}<strong>,
+                  Dear <strong>${user.fullName || user.username}</strong>,
                 </p>
 
                 <p style="font-size: 15px; line-height: 1.6;">
-                  We received a request to reset your password for your Premiumed Enterprises account.
+                  The password for your Premiumed Enterprises account has been reset as requested.
                 </p>
 
-                <div style=" margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
-                  <h3 style=" margin-top: 0; margin-bottom: 15px; font-size: 16px;color: #222222; ">
+                <div style="margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
+                  <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #222222;">
                     Your new temporary password:
                   </h3>
                   <p style="margin: 8px 0; font-size: 15px;">
@@ -636,27 +636,27 @@ router.post("/forgot-password", async (req, res) => {
                   </p>
                 </div>
 
-                <div style=" margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a; ">
-                  <p style=" margin: 0; font-size: 14px; line-height: 1.5; ">
+                <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
+                  <p style="margin: 0; font-size: 14px; line-height: 1.5;">
                     <strong>Important:</strong> For security reasons, please log in and change your password immediately.
                   </p>
                 </div>
 
-                <p style=" font-size: 15px; line-height: 1.6;">
-                  If you have any questions, please contact our system administrator immediately.
+                <p style="font-size: 15px; line-height: 1.6;">
+                  If you did not request this password reset, please contact the system administrator immediately.
                 </p>
 
-                <p style=" font-size: 13px; color: #777777;">
+                <p style="font-size: 13px; color: #777777;">
                   This is an automated message. Please do not reply to this email.
                 </p>
               </div>
 
-              <div style=" padding: 20px; background-color: #f5f5f5; text-align: center; border-top: 1px solid #dddddd; ">
+              <div style="padding: 20px; background-color: #f5f5f5; text-align: center; border-top: 1px solid #dddddd;">
                 <p style="margin: 0; font-size: 13px; color: #555555;">
                   <strong>Premiumed Enterprises</strong>
                 </p>
 
-                <p style=" margin: 5px 0 0; font-size: 12px; color: #888888; ">
+                <p style="margin: 5px 0 0; font-size: 12px; color: #888888;">
                   &copy; ${new Date().getFullYear()} Premiumed Enterprises
                 </p>
               </div>
