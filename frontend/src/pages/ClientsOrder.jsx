@@ -1282,9 +1282,10 @@ const ClientsOrder = () => {
                     <label className="field-label">
                       Delivery Receipt (DR) Photo
                     </label>
-                    <div className="field-box">
-                      {selectedOrder.deliveryReceipt ? (
+                    {selectedOrder.deliveryReceipt ? (
+                      <div className="dr-photo-card">
                         <a
+                          className="dr-photo-thumb"
                           href={selectedOrder.deliveryReceipt}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -1293,18 +1294,32 @@ const ClientsOrder = () => {
                           <img
                             src={selectedOrder.deliveryReceipt}
                             alt={`Delivery receipt for order ${selectedOrder.orderId}`}
-                            style={{
-                              maxWidth: "100%",
-                              maxHeight: 240,
-                              borderRadius: 6,
-                              display: "block",
-                            }}
                           />
                         </a>
-                      ) : (
-                        "No DR photo yet"
-                      )}
-                    </div>
+                        <div className="dr-photo-meta">
+                          <span className="dr-photo-title">
+                            Signed delivery receipt
+                          </span>
+                          <span className="dr-photo-sub">
+                            Taken by{" "}
+                            {selectedOrder.deliveredBy || "the driver"}
+                            {selectedOrder.deliveredDate
+                              ? ` on ${formatShortDate(selectedOrder.deliveredDate)}`
+                              : ""}
+                          </span>
+                          <a
+                            className="dr-photo-link"
+                            href={selectedOrder.deliveryReceipt}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            View full size
+                          </a>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="field-box">No DR photo yet</div>
+                    )}
                   </div>
                 </div>
 

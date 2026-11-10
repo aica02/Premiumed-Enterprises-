@@ -203,6 +203,27 @@ router.get("/reset-counters", async (req, res) => {
   }
 });
 
+// The name shown as "Delivered By": the driver's full name from their
+// account, falling back to the username when no account is found.
+const getDriverDisplayName = async (actor) => {
+  const username =
+    actor?.username && actor.username !== "Unknown" ? actor.username : "";
+  const lookup = actor?.userId
+    ? { _id: actor.userId }
+    : username
+      ? { username }
+      : null;
+  if (!lookup) return "";
+
+  try {
+    const driver = await User.findOne(lookup).select("fullName").lean();
+    return driver?.fullName?.trim() || username;
+  } catch (err) {
+    console.error("Failed to look up driver name:", err);
+    return username;
+  }
+};
+
 const getClientNotificationNameFilter = async (username) => {
   const rawUsername = String(username || "").trim();
   if (!rawUsername) return null;
@@ -320,7 +341,7 @@ const getNextOrderId = async (userIdentifier) => {
 //checkout
 router.post("/", async (req, res) => {
   const {
-    name,
+    name: submittedName,
     items,
     subtotal,
     total,
@@ -330,11 +351,28 @@ router.post("/", async (req, res) => {
   } = req.body;
 
   try {
-    const username = req.headers["x-username"] || req.body.username || name;
+    const username =
+      req.headers["x-username"] || req.body.username || submittedName;
 
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, message: "No items to order." });
     }
+
+    // Only client accounts may place orders, and the order carries the
+    // client's name from their account rather than the name the browser
+    // sent. Admin and client sessions share browser storage, so a stale
+    // admin login could otherwise place an order under the admin's name.
+    const client = await User.findOne({ username })
+      .select("fullName role")
+      .lean();
+    if (!client || client.role !== "User") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Only client accounts can place orders. Please log in with your client account.",
+      });
+    }
+    const name = client.fullName?.trim() || submittedName;
 
     // Check every item before anything is saved, so a rejected order leaves
     // no order, counter increment or notification behind.
@@ -943,8 +981,7 @@ router.patch("/:orderId/status", async (req, res) => {
       order.status = "DELIVERED";
       order.deliveredDate = deliveredAt;
       order.deliveryReceipt = String(deliveryReceipt);
-      order.deliveredBy =
-        actor.username && actor.username !== "Unknown" ? actor.username : "";
+      order.deliveredBy = await getDriverDisplayName(actor);
       order.paymentDueDate = computePaymentDueDate(deliveredAt);
       await order.save();
 

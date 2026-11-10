@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, StyleSheet, RefreshControl, Image, Linking } from 'react-native';
 import { deliveryStyles } from '../styles/DeliveryStyles';
 import { detailStyles } from '../styles/DeliveryDetailStyles';
 import { Search, MapPin, Truck, X, Menu, UserCircle, User, ArrowLeft, PackageX } from 'lucide-react-native';
@@ -291,6 +291,32 @@ const [refreshing, setRefreshing] = useState(false);
               </View>
 
               <View style={detailStyles.card}>
+                <Text style={detailStyles.cardTitle}>Delivery Receipt (DR)</Text>
+                <View style={detailStyles.goldDivider} />
+                {selectedOrder?.deliveryReceipt ? (
+                  <>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => Linking.openURL(selectedOrder.deliveryReceipt)}
+                    >
+                      <Image
+                        source={{ uri: selectedOrder.deliveryReceipt }}
+                        style={localStyles.drImage}
+                        resizeMode="contain"
+                        accessibilityLabel={`Delivery receipt for order ${selectedOrder.orderId}`}
+                      />
+                    </TouchableOpacity>
+                    <Text style={localStyles.drCaption}>
+                      {selectedOrder.deliveredBy ? `Delivered by ${selectedOrder.deliveredBy} · ` : ''}
+                      Tap the photo to view full size
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={localStyles.noBackorderText}>No DR photo on this order.</Text>
+                )}
+              </View>
+
+              <View style={detailStyles.card}>
                 <Text style={detailStyles.cardTitle}>Delivered Items</Text>
                 <View style={detailStyles.goldDivider} />
                 {selectedOrder?.items?.map((item, index) => (
@@ -368,6 +394,19 @@ const [refreshing, setRefreshing] = useState(false);
 }
 
 const localStyles = StyleSheet.create({
+  drImage: {
+    width: '100%',
+    height: 260,
+    borderRadius: 8,
+    backgroundColor: '#111',
+    marginTop: 4,
+  },
+  drCaption: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 8,
+    textAlign: 'center',
+  },
   backorderHeader: {
     flexDirection: 'row',
     alignItems: 'center',
