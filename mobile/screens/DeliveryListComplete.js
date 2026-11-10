@@ -6,6 +6,7 @@ import { Search, MapPin, Truck, X, Menu, UserCircle, User, ArrowLeft, PackageX }
 import Header from './Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { offlineFetch as fetch } from '../shared/offlineApi';
+import { unitLabel } from '../utils/units';
 
 export default function DeliveryListComplete({ navigation }) {
   const [menuVisible, setMenuVisible] = useState(false);
@@ -326,7 +327,7 @@ const [refreshing, setRefreshing] = useState(false);
                     </View>
                     <View style={{ flex: 1, alignItems: 'center' }}>
                       <Text style={detailStyles.qtyText}>{item.quantity}</Text>
-                      <Text style={detailStyles.qtySubText}>Pcs</Text>
+                      <Text style={detailStyles.qtySubText}>{unitLabel(item.quantity, item.unitType)}</Text>
                     </View>
                   </View>
                 ))}
@@ -364,7 +365,7 @@ const [refreshing, setRefreshing] = useState(false);
                           <Text style={[detailStyles.qtyText, { color: '#92400E' }]}>
                             {item.quantity}
                           </Text>
-                          <Text style={detailStyles.qtySubText}>Pcs</Text>
+                          <Text style={detailStyles.qtySubText}>{unitLabel(item.quantity, item.unitType)}</Text>
                         </View>
                       </View>
                     ))

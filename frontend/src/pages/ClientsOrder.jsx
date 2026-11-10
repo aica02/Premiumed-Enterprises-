@@ -458,7 +458,7 @@ const ClientsOrder = () => {
 
       if (deliveredQty > availableStock) {
         toast.error(
-          `Not enough stock for ${item.name}. Available: ${availableStock} pcs`,
+          `Not enough stock for ${item.name}. Available: ${availableStock} ${unitLabel(availableStock, item.unitType)}`,
         );
         return null;
       }
@@ -586,7 +586,9 @@ const ClientsOrder = () => {
 
   const getPartialButtonDisabledState = () => {
     if (isLocked) return true;
-    if (selectedOrder?.status === "CANCELLED") return true;
+    // A PARTIAL order was already split; splitting it again would replace
+    // its backorder (-P) order.
+    if (["CANCELLED", "PARTIAL"].includes(selectedOrder?.status)) return true;
     return false;
   };
 
@@ -722,7 +724,7 @@ const ClientsOrder = () => {
         0,
       );
       const itemsList = order.items
-        .map((item) => `${item.name} (${item.quantity} pcs)`)
+        .map((item) => `${item.name} (${item.quantity} ${unitLabel(item.quantity, item.unitType)})`)
         .join(", ");
 
       const totalPrice = Number(order.total || 0);
@@ -1354,7 +1356,7 @@ const ClientsOrder = () => {
                           return (
                             <tr key={index}>
                               <td>{item.name}</td>
-                              <td>{item.quantity} pcs</td>
+                              <td>{item.quantity} {unitLabel(item.quantity, item.unitType)}</td>
                               <td>
                                 <input
                                   type="number"
@@ -1380,11 +1382,11 @@ const ClientsOrder = () => {
                               </td>
                               <td>
                                 {balance > 0
-                                  ? `${balance} pcs`
+                                  ? `${balance} ${unitLabel(balance, item.unitType)}`
                                   : "Full Delivery"}
                               </td>
                               <td> ₱{Number(item.price || 0).toFixed(2)} </td>
-                              <td>{availableStock} pcs</td>
+                              <td>{availableStock} {unitLabel(availableStock, item.unitType)}</td>
                             </tr>
                           );
                         })}
@@ -1494,6 +1496,15 @@ const ClientsOrder = () => {
       </div>
     </>
   );
+};
+
+// "1 Gallon", "5 Gallons", "3 Pieces" — orders store the product's unit.
+const unitLabel = (quantity, unitType) => {
+  const unit = String(unitType || "").trim() || "Piece";
+  if (Number(quantity) === 1) return unit.replace(/s$/i, "") || unit;
+  const lower = unit.toLowerCase();
+  if (lower.endsWith("s")) return unit;
+  return /(x|z|ch|sh)$/.test(lower) ? `${unit}es` : `${unit}s`;
 };
 
 // Pay-after-delivery: payment is due 30 days after delivery.

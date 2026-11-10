@@ -28,6 +28,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { warehouseMapLayout } from "../shared/warehouseMapLayout";
 import { offlineFetch as fetch } from "../shared/offlineApi";
 import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
+import { unitLabel } from "../utils/units";
 
 export default function DeliveryList({ navigation }) {
   const [orders, setOrders] = useState([]);
@@ -917,12 +918,12 @@ export default function DeliveryList({ navigation }) {
                               {item.boxes} box{item.boxes !== 1 ? "es" : ""}
                             </Text>
                             <Text style={{ fontSize: 11, color: "#6B7280" }}>
-                              ({item.quantity} pcs)
+                              ({item.quantity} {unitLabel(item.quantity, item.unitType).toLowerCase()})
                             </Text>
                           </>
                         ) : (
                           <Text style={pickingStyles.itemQty}>
-                            {item.quantity} Pcs.
+                            {item.quantity} {unitLabel(item.quantity, item.unitType)}
                           </Text>
                         )}
                       </View>

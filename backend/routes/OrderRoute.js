@@ -1618,12 +1618,36 @@ router.patch("/:orderId/partial", async (req, res) => {
       return res.status(404).json({ message: "Order not found." });
     }
 
+    // Only orders that have not been split or shipped can be split. Splitting
+    // a PARTIAL order again would delete and recreate its backorder (-P),
+    // even if that backorder was already approved, paid or delivered.
+    if (!["PENDING", "PAYMENT REVIEW"].includes(originalOrder.status)) {
+      return res.status(400).json({
+        message: `Order ${originalOrder.orderId} is ${originalOrder.status} and can no longer be split.`,
+      });
+    }
+    if (await Order.exists({ orderId: `${orderId}-P` })) {
+      return res.status(409).json({
+        message: `Order ${originalOrder.orderId} already has a backorder (${orderId}-P).`,
+      });
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: "No items to split." });
+    }
+
     const deliveredItems = [];
     const backorderItems = [];
 
     items.forEach((item) => {
-      const deliveredQty = item.deliveredQty || 0;
-      const remainingQty = item.originalQty - deliveredQty;
+      const originalQty = Math.max(0, Number(item.originalQty) || 0);
+      // Clamp so a bad input can never ship more than was ordered or create
+      // a negative backorder.
+      const deliveredQty = Math.min(
+        originalQty,
+        Math.max(0, Number(item.deliveredQty) || 0),
+      );
+      const remainingQty = originalQty - deliveredQty;
 
       const orderMode = item.orderMode === "box" ? "box" : "piece";
       const quantityPerBox = Number(item.quantityPerBox) || 0;
@@ -1632,19 +1656,22 @@ router.patch("/:orderId/partial", async (req, res) => {
         return Math.round((qty / quantityPerBox) * 100) / 100;
       };
 
-      deliveredItems.push({
-        productId: item.productId,
-        itemCode: item.itemCode,
-        name: item.name,
-        category: item.category,
-        unitType: item.unitType,
-        quantity: deliveredQty,
-        price: item.price,
-        image: item.image,
-        orderMode,
-        boxes: calcBoxes(deliveredQty),
-        quantityPerBox,
-      });
+      // Items with nothing shipped now go only to the backorder.
+      if (deliveredQty > 0) {
+        deliveredItems.push({
+          productId: item.productId,
+          itemCode: item.itemCode,
+          name: item.name,
+          category: item.category,
+          unitType: item.unitType,
+          quantity: deliveredQty,
+          price: item.price,
+          image: item.image,
+          orderMode,
+          boxes: calcBoxes(deliveredQty),
+          quantityPerBox,
+        });
+      }
 
       if (remainingQty > 0) {
         backorderItems.push({
@@ -1662,6 +1689,12 @@ router.patch("/:orderId/partial", async (req, res) => {
         });
       }
     });
+
+    if (deliveredItems.length === 0) {
+      return res.status(400).json({
+        message: "Set at least one item quantity to deliver now.",
+      });
+    }
 
     // Each order is billed for its own items (decision 5). Any amount on the
     // original order above its item subtotal (such as a fee) stays with it.
@@ -2132,8 +2165,20 @@ router.patch("/:orderId/cancel", async (req, res) => {
       });
     }
 
+    // A client may only cancel their own order.
+    if (
+      String(role || "User") === "User" &&
+      String(username || "").trim() !== String(order.username || "").trim()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only cancel your own orders.",
+      });
+    }
+
     // Update order status to CANCELLED only
     order.status = "CANCELLED";
+    order.cancelledDate = new Date();
     await order.save();
 
     res.status(200).json({

@@ -794,9 +794,10 @@ export default function OrderTrans() {
                   : item.quantity;
                 const pluralizeLabel = (label) => {
                   const text = String(label);
-                  const lastCharacter = text.trimEnd().slice(-1).toLowerCase();
-                  if (!lastCharacter || lastCharacter === "s") return text;
-                  return `${text}${lastCharacter === "e" ? "s" : "es"}`;
+                  const lower = text.trimEnd().toLowerCase();
+                  if (!lower || lower.endsWith("s")) return text;
+                  // Box → Boxes; Gallon → Gallons; Piece → Pieces
+                  return /(x|z|ch|sh)$/.test(lower) ? `${text}es` : `${text}s`;
                 };
                 const pluralOrderLabel =
                   Number(orderCount) > 1
@@ -924,22 +925,17 @@ export default function OrderTrans() {
               <button
                 className="receipt-close-btn"
                 onClick={handleCancelOrder}
-                disabled={
-                  selectedOrder.status === "CANCELLED" ||
-                  selectedOrder.status === "DELIVERED" ||
-                  selectedOrder.status === "TO SHIP" ||
-                  selectedOrder.status === "APPROVED"
-                }
+                // Clients can only cancel PENDING orders here (RETURNED has its
+                // own buttons above); the backend enforces the same rule.
+                disabled={(selectedOrder.status || "PENDING") !== "PENDING"}
               >
                 {selectedOrder.status === "CANCELLED"
                   ? "ORDER CANCELLED"
                   : selectedOrder.status === "DELIVERED"
                     ? "ORDER DELIVERED"
-                    : selectedOrder.status === "TO SHIP"
-                      ? "CANNOT CANCEL - TO SHIP"
-                      : selectedOrder.status === "APPROVED"
-                        ? "CANNOT CANCEL - APPROVED"
-                        : "CANCEL ORDER"}
+                    : (selectedOrder.status || "PENDING") === "PENDING"
+                      ? "CANCEL ORDER"
+                      : `CANNOT CANCEL - ${selectedOrder.status}`}
               </button>
             )}
           </div>

@@ -127,6 +127,8 @@ paymentAcceptedBy: { type: String }, // ← NEW
       type: Date,
       default: null,
     },
+    // Set by the cancel routes; was silently dropped before it was declared.
+    cancelledDate: { type: Date, default: null },
 
     // Pay-after-delivery: the driver's photo of the signed delivery receipt
     // (a Cloudinary URL) and who delivered the order.

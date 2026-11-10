@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, StyleSheet, RefreshControl, Image } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, StyleSheet, RefreshControl, Image } from 'react-native';
 import { deliveryStyles } from '../styles/DeliveryStyles';
 import { detailStyles } from '../styles/DeliveryDetailStyles';
 import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin, PackageX, TriangleAlert, CheckCircle, Camera, RotateCcw } from 'lucide-react-native';
@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { offlineFetch as fetch } from '../shared/offlineApi';
 import { readJsonResponse } from '../shared/readJsonResponse';
+import { unitLabel } from '../utils/units';
 import { styles as inventoryStyles } from '../styles/InventoryStyles';
 
 const isOnline = (state) =>
@@ -68,6 +69,9 @@ export default function DeliveryList({ navigation }) {
   const [deliveryConfirmationVisible, setDeliveryConfirmationVisible] = useState(false);
   const [updatingOrder, setUpdatingOrder] = useState(false);
   const [deliveryFeedback, setDeliveryFeedback] = useState(null);
+  // In-app notice modal (replaces the plain system alerts).
+  const [notice, setNotice] = useState(null);
+  const showNotice = (type, title, message) => setNotice({ type, title, message });
 
   // DR photo for the order being delivered: the local preview, the uploaded
   // Cloudinary link, and the upload state.
@@ -211,10 +215,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
     const network = await NetInfo.fetch();
     if (!isOnline(network)) {
       setPhotoUploadFailed(true);
-      Alert.alert(
-        'No Internet Connection',
-        'The DR photo could not be uploaded. Connect to the internet, then tap Retry Upload.',
-      );
+      showNotice('error', 'No Internet Connection', 'The DR photo could not be uploaded. Connect to the internet, then tap Retry Upload.');
       return;
     }
 
@@ -223,15 +224,12 @@ const fetchConfirmedOrders = async (showLoading = true) => {
       setPhotoUploadFailed(false);
       const url = await uploadReceiptPhoto(uri, selectedOrder.orderId);
       setDrPhotoUrl(url);
-      Alert.alert('DR Photo Uploaded', 'The delivery receipt photo was uploaded. You can now mark the order as delivered.');
+      showNotice('success', 'DR Photo Uploaded', 'The delivery receipt photo was uploaded. You can now mark the order as delivered.');
     } catch (error) {
       console.error('DR photo upload failed:', error);
       setDrPhotoUrl(null);
       setPhotoUploadFailed(true);
-      Alert.alert(
-        'DR Photo Upload Failed',
-        `${error?.message || 'The photo could not be uploaded.'} Tap Retry Upload or retake the photo.`,
-      );
+      showNotice('error', 'DR Photo Upload Failed', `${error?.message || 'The photo could not be uploaded.'} Tap Retry Upload or retake the photo.`);
     } finally {
       setUploadingPhoto(false);
     }
@@ -241,7 +239,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission Required', 'Please allow camera access to take the DR photo.');
+        showNotice('warning', 'Permission Required', 'Please allow camera access to take the DR photo.');
         return;
       }
       const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
@@ -253,18 +251,18 @@ const fetchConfirmedOrders = async (showLoading = true) => {
       await uploadDrPhoto(asset.uri);
     } catch (error) {
       console.error('DR photo capture failed:', error);
-      Alert.alert('Unable to Take Photo', error?.message || 'Failed to take photo.');
+      showNotice('error', 'Unable to Take Photo', error?.message || 'Failed to take photo.');
     }
   };
 
   const handleMarkDeliveredPress = async () => {
     if (!drPhotoUrl) {
-      Alert.alert('DR Photo Required', 'Take a photo of the signed delivery receipt before marking this order as delivered.');
+      showNotice('warning', 'DR Photo Required', 'Take a photo of the signed delivery receipt before marking this order as delivered.');
       return;
     }
     const network = await NetInfo.fetch();
     if (!isOnline(network)) {
-      Alert.alert('No Internet Connection', 'Connect to the internet to mark this order as delivered.');
+      showNotice('error', 'No Internet Connection', 'Connect to the internet to mark this order as delivered.');
       return;
     }
     setDeliveryConfirmationVisible(true);
@@ -273,7 +271,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
   const handleUpdateStatus = async (orderId) => {
     if (!orderId) return;
     if (!drPhotoUrl) {
-      Alert.alert('DR Photo Required', 'Take a photo of the signed delivery receipt first.');
+      showNotice('warning', 'DR Photo Required', 'Take a photo of the signed delivery receipt first.');
       return;
     }
 
@@ -309,11 +307,11 @@ const fetchConfirmedOrders = async (showLoading = true) => {
         await fetchConfirmedOrders();
       } else {
         const errorData = await response.json();
-        Alert.alert('Error', errorData.message || 'Failed to update order');
+        showNotice('error', 'Delivery Not Saved', errorData.message || 'Failed to update order');
       }
     } catch (error) {
       console.error('Update error:', error);
-      Alert.alert('Error', 'Server update failed');
+      showNotice('error', 'Delivery Not Saved', 'Server update failed. Please try again.');
     } finally {
       setUpdatingOrder(false);
     }
@@ -492,7 +490,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
                       </View>
                       <View style={{ flex: 1, alignItems: 'center' }}>
                         <Text style={detailStyles.qtyText}>{item.quantity}</Text>
-                        <Text style={detailStyles.qtySubText}>Pcs</Text>
+                        <Text style={detailStyles.qtySubText}>{unitLabel(item.quantity, item.unitType)}</Text>
                       </View>
                     </View>
                   ))}
@@ -531,7 +529,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
                             <Text style={[detailStyles.qtyText, { color: '#92400E' }]}>
                               {item.quantity}
                             </Text>
-                            <Text style={detailStyles.qtySubText}>Pcs</Text>
+                            <Text style={detailStyles.qtySubText}>{unitLabel(item.quantity, item.unitType)}</Text>
                           </View>
                         </View>
                       ))
@@ -683,7 +681,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
                         {item.name}
                       </Text>
                       <Text style={{ fontSize: 13, fontWeight: '600', color: '#059669', marginLeft: 12 }}>
-                        {item.quantity} Pcs
+                        {item.quantity} {unitLabel(item.quantity, item.unitType)}
                       </Text>
                     </View>
                   ))
@@ -699,12 +697,12 @@ const fetchConfirmedOrders = async (showLoading = true) => {
                   <Text style={inventoryStyles.detailValue}>
                     {Object.entries(
                       (selectedOrder?.items || []).reduce((acc, i) => {
-                        const unit = i.unitType || 'Pcs';
+                        const unit = i.unitType || 'Piece';
                         acc[unit] = (acc[unit] || 0) + (Number(i.quantity) || 0);
                         return acc;
                       }, {})
                     )
-                      .map(([unit, total]) => `${total} ${unit}`)
+                      .map(([unit, total]) => `${total} ${unitLabel(total, unit)}`)
                       .join(' + ')}
                      </Text>
                 </View>
@@ -793,10 +791,70 @@ const fetchConfirmedOrders = async (showLoading = true) => {
             </View>
           </Modal>
         )}
+
+        {notice && (
+          <Modal
+            visible
+            transparent
+            animationType="fade"
+            statusBarTranslucent
+            onRequestClose={() => setNotice(null)}
+          >
+            <View style={inventoryStyles.modalOverlay}>
+              <View
+                style={[
+                  inventoryStyles.successModalContainer,
+                  { borderTopColor: NOTICE_THEME[notice.type].accent },
+                ]}
+              >
+                <View
+                  style={[
+                    inventoryStyles.successIconContainer,
+                    { backgroundColor: NOTICE_THEME[notice.type].tint },
+                  ]}
+                >
+                  {notice.type === 'success' ? (
+                    <CheckCircle size={38} color={NOTICE_THEME.success.accent} />
+                  ) : notice.type === 'error' ? (
+                    <XCircle size={38} color={NOTICE_THEME.error.accent} />
+                  ) : (
+                    <TriangleAlert size={38} color={NOTICE_THEME.warning.accent} />
+                  )}
+                </View>
+                <Text
+                  style={[
+                    inventoryStyles.successEyebrow,
+                    { color: NOTICE_THEME[notice.type].eyebrowColor },
+                  ]}
+                >
+                  {NOTICE_THEME[notice.type].eyebrow}
+                </Text>
+                <Text style={inventoryStyles.successTitle}>{notice.title}</Text>
+                <Text style={inventoryStyles.successMessage}>{notice.message}</Text>
+                <TouchableOpacity
+                  style={[
+                    inventoryStyles.successButton,
+                    { backgroundColor: NOTICE_THEME[notice.type].button },
+                  ]}
+                  onPress={() => setNotice(null)}
+                  accessibilityRole="button"
+                >
+                  <Text style={inventoryStyles.successButtonText}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        )}
       </View>
     </>
   );
 }
+
+const NOTICE_THEME = {
+  success: { accent: '#059669', tint: '#D1FAE5', eyebrow: 'SUCCESS', eyebrowColor: '#047857', button: '#059669' },
+  error: { accent: '#DC2626', tint: '#FEE2E2', eyebrow: 'ACTION NEEDED', eyebrowColor: '#B91C1C', button: '#DC2626' },
+  warning: { accent: '#D4AF37', tint: '#FEF3C7', eyebrow: 'HEADS UP', eyebrowColor: '#92400E', button: '#B8962E' },
+};
 
 /* ─── Local styles for the partial / backorder UI ─── */
 const localStyles = StyleSheet.create({
