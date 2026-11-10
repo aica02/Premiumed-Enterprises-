@@ -29,7 +29,7 @@ function normalizePhone(raw) {
   return /^\+[0-9]{10,15}$/.test(phone) ? phone : null;
 }
 
-async function getAdminRecipients() {
+export async function getAdminRecipients() {
   console.log("\n[InventoryAlert] --- STEP 1: Fetching admin recipients ---");
 
   const admins = await User.find({

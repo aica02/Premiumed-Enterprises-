@@ -161,6 +161,7 @@ export const generateFilteredReport = (options) => {
 export const generateInventoryReport = (options) => {
   const {
     title = "Inventory Report",
+    sectionTitle = "",
     totalValue = 0,
     columns = [],
     data = [],
@@ -171,7 +172,7 @@ export const generateInventoryReport = (options) => {
 
   const isDisposed = type === "disposed";
   const ctx = createReportDoc({ company: pickCompany(options), logo, watermark });
-  let y = drawTitleRow(ctx, title);
+  let y = drawTitleRow(ctx, sectionTitle || title);
   y = drawMetaLine(ctx, `Total Records: ${data.length}`, y + 20);
 
   y = drawDataTable(ctx, {

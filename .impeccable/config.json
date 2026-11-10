@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-11-10T06:34:24.670Z",
+        "reason": "Claude triage: HTML email templates in backend/utils/emailService.js must use email-safe system fonts (web fonts don't load in most mail clients); Arial matches every existing template"
+      }
+    ]
+  }
+}

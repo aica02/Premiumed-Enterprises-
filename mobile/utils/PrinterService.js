@@ -1,6 +1,6 @@
 import { BleManager } from "react-native-ble-plx";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform, PermissionsAndroid } from "react-native";
+import { Platform, PermissionsAndroid, AppState } from "react-native";
 import { Buffer } from "buffer";
 global.Buffer = global.Buffer || Buffer;
 
@@ -10,6 +10,136 @@ const SAVED_PRINTER_KEY = "@xprinter_device_id";
 // Cache the writable characteristic per device so we don't rediscover on every print
 const writableCharCache = new Map(); // deviceId -> characteristic
 let labelSetupSent = new Set();       // deviceIds we've already sent SIZE/GAP/DIRECTION/CLS to
+
+// ---------------------------------------------------------------------------
+// Connection tracking
+//
+// The screens only know what they were last told. Without the code below, a
+// printer that went out of range stayed "Connected" on screen, and the cached
+// characteristic / label setup from the dead link were reused after coming back.
+// Now the service watches the Bluetooth link, tells every subscribed screen when
+// it drops or returns, clears the stale caches and tries to reconnect on its own.
+// ---------------------------------------------------------------------------
+const statusListeners = new Set();
+const disconnectSubs = new Map(); // deviceId -> BLE disconnect subscription
+let activeDeviceId = null;        // the printer we last connected to this session
+let reconnecting = false;
+let reconnectTimer = null;
+let reconnectRun = 0; // bumped on every cancel so an old attempt cannot carry on
+
+// Wait before each background reconnect attempt: about a minute in total.
+const RECONNECT_DELAYS_MS = [2000, 4000, 8000, 15000, 30000];
+
+const emitStatus = (state, device = null) => {
+  statusListeners.forEach((listener) => {
+    try {
+      listener({ state, device });
+    } catch (error) {
+      console.warn("Printer status listener failed:", error);
+    }
+  });
+};
+
+// Screens call this once on mount. state is "connected", "reconnecting" or
+// "disconnected". Returns a function that removes the listener.
+export const subscribePrinterStatus = (listener) => {
+  statusListeners.add(listener);
+  return () => statusListeners.delete(listener);
+};
+
+// The next connection must never reuse anything from the old link: the printer
+// may have been switched off, so it needs its label setup sent again too.
+const forgetConnection = (deviceId) => {
+  writableCharCache.delete(deviceId);
+  labelSetupSent.delete(deviceId);
+};
+
+const unwatchConnection = (deviceId) => {
+  const subscription = disconnectSubs.get(deviceId);
+  if (subscription) {
+    try {
+      subscription.remove();
+    } catch (_) {}
+    disconnectSubs.delete(deviceId);
+  }
+};
+
+const cancelReconnect = () => {
+  reconnectRun += 1;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnecting = false;
+};
+
+// The link is gone: update every screen, then try to bring it back.
+const handleConnectionLost = (deviceId) => {
+  unwatchConnection(deviceId);
+  forgetConnection(deviceId);
+  if (reconnecting) return; // a reconnect is already in progress
+  emitStatus("reconnecting");
+  startReconnect(deviceId);
+};
+
+const watchConnection = (deviceId) => {
+  unwatchConnection(deviceId);
+  activeDeviceId = deviceId;
+  const subscription = manager.onDeviceDisconnected(deviceId, () => {
+    if (activeDeviceId === deviceId) handleConnectionLost(deviceId);
+  });
+  disconnectSubs.set(deviceId, subscription);
+};
+
+const startReconnect = (deviceId) => {
+  if (reconnecting) return;
+  reconnecting = true;
+  const run = (reconnectRun += 1);
+  const cancelled = () => run !== reconnectRun;
+
+  const attempt = async (index) => {
+    if (cancelled()) return;
+    // The user chose another printer or disconnected on purpose: stop.
+    if (activeDeviceId !== deviceId) {
+      cancelReconnect();
+      return;
+    }
+    emitStatus("reconnecting");
+    try {
+      // Do not stop a scan the user may have open in the "select printer" window.
+      await ensureConnected(deviceId, { stopScan: false });
+      if (cancelled()) return;
+      reconnecting = false;
+      reconnectTimer = null;
+    } catch (error) {
+      if (cancelled()) return;
+      console.warn("Printer reconnect failed:", error?.message);
+      forgetConnection(deviceId);
+      if (index + 1 < RECONNECT_DELAYS_MS.length) {
+        reconnectTimer = setTimeout(
+          () => attempt(index + 1),
+          RECONNECT_DELAYS_MS[index + 1],
+        );
+      } else {
+        reconnecting = false;
+        reconnectTimer = null;
+        emitStatus("disconnected");
+      }
+    }
+  };
+
+  reconnectTimer = setTimeout(() => attempt(0), RECONNECT_DELAYS_MS[0]);
+};
+
+// A dropped link can go unnoticed while the app is in the background. When the
+// app comes back, check the printer is still really connected.
+AppState.addEventListener("change", async (state) => {
+  if (state !== "active" || !activeDeviceId || reconnecting) return;
+  try {
+    const stillConnected = await manager.isDeviceConnected(activeDeviceId);
+    if (!stillConnected) handleConnectionLost(activeDeviceId);
+  } catch (error) {
+    console.warn("Printer connection check failed:", error?.message);
+  }
+});
 
 export const requestBtPermissions = async () => {
   if (Platform.OS === "android") {
@@ -100,29 +230,70 @@ const getWritableCharacteristic = async (device) => {
   return char;
 };
 
+// Opens a brand-new connection to the printer, ready to print.
+const openConnection = async (deviceId, { stopScan = true } = {}) => {
+  if (stopScan) manager.stopDeviceScan();
+  forgetConnection(deviceId);
+
+  const device = await manager.connectToDevice(deviceId, { timeout: 10000 });
+  await device.discoverAllServicesAndCharacteristics();
+  await negotiateMtu(deviceId);
+
+  // Pre-warm the characteristic cache
+  await getWritableCharacteristic(device);
+
+  await AsyncStorage.setItem(SAVED_PRINTER_KEY, deviceId);
+  watchConnection(deviceId);
+  emitStatus("connected", device);
+  return device;
+};
+
+// Returns a printer that is really connected right now, reusing the live link
+// when there is one and opening a new one when there is not.
+const ensureConnected = async (deviceId, options) => {
+  let connected = false;
+  try {
+    connected = await manager.isDeviceConnected(deviceId);
+  } catch (_) {
+    connected = false;
+  }
+
+  if (connected) {
+    const [device] = await manager.devices([deviceId]);
+    if (device) {
+      // Discover only if we haven't cached a characteristic yet
+      if (!writableCharCache.has(deviceId)) {
+        await device.discoverAllServicesAndCharacteristics();
+        await getWritableCharacteristic(device);
+      }
+      if (!disconnectSubs.has(deviceId)) watchConnection(deviceId);
+      emitStatus("connected", device);
+      return device;
+    }
+  }
+
+  return openConnection(deviceId, options);
+};
+
 export const connectToPrinter = async (deviceId) => {
   try {
-    manager.stopDeviceScan();
-    const device = await manager.connectToDevice(deviceId, { timeout: 10000 });
-    await device.discoverAllServicesAndCharacteristics();
-    await negotiateMtu(deviceId);
-
-    // Pre-warm the characteristic cache
-    await getWritableCharacteristic(device);
-
-    await AsyncStorage.setItem(SAVED_PRINTER_KEY, deviceId);
-    return device;
+    cancelReconnect(); // the user is connecting by hand
+    return await openConnection(deviceId);
   } catch (error) {
     console.error("Connection failed:", error);
-    writableCharCache.delete(deviceId);
+    forgetConnection(deviceId);
     throw error;
   }
 };
 
 export const connectToScannedPrinter = async (device) => {
   try {
+    cancelReconnect(); // the user is connecting by hand
     manager.stopDeviceScan();
 
+    // Start from a clean connection. Stop watching first so closing the old
+    // link on purpose is not mistaken for the printer dropping.
+    unwatchConnection(device.id);
     try {
       const isConnected = await manager.isDeviceConnected(device.id);
       if (isConnected) {
@@ -130,19 +301,10 @@ export const connectToScannedPrinter = async (device) => {
       }
     } catch (_) {}
 
-    const connectedDevice = await manager.connectToDevice(device.id, {
-      timeout: 10000,
-    });
-    await connectedDevice.discoverAllServicesAndCharacteristics();
-    await negotiateMtu(device.id);
-
-    await getWritableCharacteristic(connectedDevice);
-
-    await AsyncStorage.setItem(SAVED_PRINTER_KEY, device.id);
-    return connectedDevice;
+    return await openConnection(device.id);
   } catch (error) {
     console.error("connectToScannedPrinter failed:", error);
-    writableCharCache.delete(device.id);
+    forgetConnection(device.id);
     throw error;
   }
 };
@@ -153,23 +315,7 @@ export const autoConnectPrinter = async (onStatusChange) => {
     if (!savedDeviceId) return null;
 
     onStatusChange("Connecting to saved printer...");
-    const isConnected = await manager.isDeviceConnected(savedDeviceId);
-
-    let device;
-    if (isConnected) {
-      const devices = await manager.devices([savedDeviceId]);
-      device = devices[0];
-      // Discover only if we haven't cached a characteristic yet
-      if (!writableCharCache.has(savedDeviceId)) {
-        await device.discoverAllServicesAndCharacteristics();
-        await getWritableCharacteristic(device);
-      }
-    } else {
-      device = await manager.connectToDevice(savedDeviceId, { timeout: 10000 });
-      await device.discoverAllServicesAndCharacteristics();
-      await negotiateMtu(savedDeviceId);
-      await getWritableCharacteristic(device);
-    }
+    const device = await ensureConnected(savedDeviceId);
 
     onStatusChange("Printer Connected");
     return device;
@@ -182,12 +328,16 @@ export const autoConnectPrinter = async (onStatusChange) => {
 
 export const disconnectPrinter = async (deviceId) => {
   try {
+    cancelReconnect();
     if (deviceId) {
+      // Disconnecting on purpose: do not watch for it or reconnect.
+      unwatchConnection(deviceId);
+      if (activeDeviceId === deviceId) activeDeviceId = null;
       await manager.cancelDeviceConnection(deviceId);
-      writableCharCache.delete(deviceId);
-      labelSetupSent.delete(deviceId);
+      forgetConnection(deviceId);
     }
     await AsyncStorage.removeItem(SAVED_PRINTER_KEY);
+    emitStatus("disconnected");
   } catch (error) {
     console.warn("disconnectPrinter error:", error);
   }
@@ -228,6 +378,9 @@ const ensureLabelSetup = async (device, char) => {
   await writeChunks(char, Buffer.from(`CLS\n`).toString("base64"));
 };
 
+const PRINTER_UNAVAILABLE_MESSAGE =
+  "The printer is not connected. Make sure it is turned on and nearby, then try again.";
+
 export const printBarcodeTSPL = async (
   device,
   batchCode,
@@ -235,7 +388,9 @@ export const printBarcodeTSPL = async (
   expirationDate,
   printQty = 1,
 ) => {
-  if (!device) throw new Error("No printer connected");
+  const deviceId =
+    device?.id || activeDeviceId || (await AsyncStorage.getItem(SAVED_PRINTER_KEY));
+  if (!deviceId) throw new Error("No printer connected");
 
   const formatDateOnly = (value) => {
     if (!value) return "";
@@ -249,22 +404,42 @@ export const printBarcodeTSPL = async (
 
   const formattedExp = formatDateOnly(expirationDate);
 
-  // Cache hit — no BLE discovery round-trips
-  const char = await getWritableCharacteristic(device);
+  // Check the link is still alive. If the printer dropped while the screen
+  // still said "Connected", this reconnects instead of failing halfway.
+  let liveDevice;
+  try {
+    liveDevice = await ensureConnected(deviceId);
+  } catch (error) {
+    console.warn("Printer unavailable:", error?.message);
+    throw new Error(PRINTER_UNAVAILABLE_MESSAGE);
+  }
 
-  // Send SIZE/GAP/DIRECTION/CLS once per session
-  await ensureLabelSetup(device, char);
+  try {
+    // Cache hit — no BLE discovery round-trips
+    const char = await getWritableCharacteristic(liveDevice);
 
-  // Only the label content + PRINT goes over the wire now
-  const labelCommand =
-    `TEXT 40,40,"3",0,1,1,"${itemName.slice(0, 20)}"\n` +
-    `BARCODE 100,100,"128",120,0,0,1,2,"${batchCode}"\n` +
-    `TEXT 70,230,"3",0,1,1,"${batchCode}"\n` +
-    `TEXT 40,340,"3",0,1,1,"Exp: ${formattedExp}"\n` +
-    `PRINT ${printQty},1\n`;
+    // Send SIZE/GAP/DIRECTION/CLS once per connection
+    await ensureLabelSetup(liveDevice, char);
 
-  const base64Data = Buffer.from(labelCommand).toString("base64");
-  await writeChunks(char, base64Data);
+    // Only the label content + PRINT goes over the wire now
+    const labelCommand =
+      `TEXT 40,40,"3",0,1,1,"${itemName.slice(0, 20)}"\n` +
+      `BARCODE 100,100,"128",120,0,0,1,2,"${batchCode}"\n` +
+      `TEXT 70,230,"3",0,1,1,"${batchCode}"\n` +
+      `TEXT 40,340,"3",0,1,1,"Exp: ${formattedExp}"\n` +
+      `PRINT ${printQty},1\n`;
+
+    const base64Data = Buffer.from(labelCommand).toString("base64");
+    await writeChunks(char, base64Data);
+  } catch (error) {
+    // The link may have dropped mid-write. Do not retry here: part of the label
+    // may already have printed, and a retry could print it twice.
+    console.warn("Printing failed:", error?.message);
+    forgetConnection(deviceId);
+    throw new Error(
+      "The label could not be sent. The printer may have disconnected; check it and try again.",
+    );
+  }
 
   return true;
 };

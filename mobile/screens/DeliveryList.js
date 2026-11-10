@@ -1,12 +1,60 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Modal, Alert, StyleSheet, RefreshControl, Image } from 'react-native';
 import { deliveryStyles } from '../styles/DeliveryStyles';
 import { detailStyles } from '../styles/DeliveryDetailStyles';
-import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin, PackageX, TriangleAlert, CheckCircle } from 'lucide-react-native';
+import { XCircle, Menu, Truck, Search, X, ArrowLeft, User, MapPin, PackageX, TriangleAlert, CheckCircle, Camera, RotateCcw } from 'lucide-react-native';
 import Header from './Header';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { offlineFetch as fetch } from '../shared/offlineApi';
+import { readJsonResponse } from '../shared/readJsonResponse';
 import { styles as inventoryStyles } from '../styles/InventoryStyles';
+
+const isOnline = (state) =>
+  Boolean(state?.isConnected && state?.isInternetReachable !== false);
+
+// Sends the DR (delivery receipt) photo to the backend, which stores it on
+// Cloudinary so admins can open it later (the server's /uploads folder is
+// wiped on redeploy). The app needs no Cloudinary keys of its own.
+const uploadReceiptPhoto = async (imageUri, orderId) => {
+  const compressed = await ImageManipulator.manipulateAsync(
+    imageUri,
+    [{ resize: { width: 1200 } }],
+    { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG },
+  );
+
+  const safeOrderId = String(orderId || 'order').replace(/[^a-zA-Z0-9-]/g, '-');
+  const formData = new FormData();
+  formData.append('receipt', {
+    uri: compressed.uri,
+    type: 'image/jpeg',
+    name: `dr-${safeOrderId}-${Date.now()}.jpg`,
+  });
+
+  const token = await AsyncStorage.getItem('userToken');
+  // globalThis.fetch: the photo must upload now, never be queued offline.
+  const response = await globalThis.fetch(
+    `${process.env.EXPO_PUBLIC_LOCAL_URL}/api/orders/${encodeURIComponent(orderId)}/delivery-receipt`,
+    {
+      method: 'POST',
+      body: formData,
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    },
+  );
+  const result = await readJsonResponse(response, 'DR photo upload');
+  if (!response.ok) {
+    throw new Error(result?.message || `Upload failed (HTTP ${response.status}).`);
+  }
+  if (!result?.url) {
+    throw new Error('The server did not return a photo link.');
+  }
+  return result.url;
+};
 
 export default function DeliveryList({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
@@ -20,6 +68,13 @@ export default function DeliveryList({ navigation }) {
   const [deliveryConfirmationVisible, setDeliveryConfirmationVisible] = useState(false);
   const [updatingOrder, setUpdatingOrder] = useState(false);
   const [deliveryFeedback, setDeliveryFeedback] = useState(null);
+
+  // DR photo for the order being delivered: the local preview, the uploaded
+  // Cloudinary link, and the upload state.
+  const [drPhotoUri, setDrPhotoUri] = useState(null);
+  const [drPhotoUrl, setDrPhotoUrl] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoUploadFailed, setPhotoUploadFailed] = useState(false);
 
   const [staffName, setStaffName] = useState('');
   const [staffPosition, setStaffPosition] = useState('');
@@ -102,8 +157,9 @@ const fetchConfirmedOrders = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     const response = await fetch(API_URL);
     const data = await response.json();
+    // Pay-after-delivery: every TO SHIP order is delivered, paid or not.
     const toShipOrders = data
-      .filter(o => o.status === 'TO SHIP' && o.paymentStatus === 'COMPLETED')
+      .filter(o => o.status === 'TO SHIP')
       .sort((a, b) => {
         // Prefer createdAt, fall back to orderDate, then _id
         const aTime = new Date(a.createdAt || a.orderDate || 0).getTime();
@@ -136,8 +192,90 @@ const fetchConfirmedOrders = async (showLoading = true) => {
     }
   };
 
+  const resetDrPhoto = () => {
+    setDrPhotoUri(null);
+    setDrPhotoUrl(null);
+    setUploadingPhoto(false);
+    setPhotoUploadFailed(false);
+  };
+
+  const openOrder = (order) => {
+    resetDrPhoto();
+    setSelectedOrder(order);
+    setModalVisible(true);
+  };
+
+  const uploadDrPhoto = async (uri) => {
+    if (!uri || !selectedOrder) return;
+
+    const network = await NetInfo.fetch();
+    if (!isOnline(network)) {
+      setPhotoUploadFailed(true);
+      Alert.alert(
+        'No Internet Connection',
+        'The DR photo could not be uploaded. Connect to the internet, then tap Retry Upload.',
+      );
+      return;
+    }
+
+    try {
+      setUploadingPhoto(true);
+      setPhotoUploadFailed(false);
+      const url = await uploadReceiptPhoto(uri, selectedOrder.orderId);
+      setDrPhotoUrl(url);
+      Alert.alert('DR Photo Uploaded', 'The delivery receipt photo was uploaded. You can now mark the order as delivered.');
+    } catch (error) {
+      console.error('DR photo upload failed:', error);
+      setDrPhotoUrl(null);
+      setPhotoUploadFailed(true);
+      Alert.alert(
+        'DR Photo Upload Failed',
+        `${error?.message || 'The photo could not be uploaded.'} Tap Retry Upload or retake the photo.`,
+      );
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const takeDrPhoto = async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Required', 'Please allow camera access to take the DR photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+      const asset = result.assets?.[0];
+      if (result.canceled || !asset?.uri) return;
+
+      setDrPhotoUri(asset.uri);
+      setDrPhotoUrl(null);
+      await uploadDrPhoto(asset.uri);
+    } catch (error) {
+      console.error('DR photo capture failed:', error);
+      Alert.alert('Unable to Take Photo', error?.message || 'Failed to take photo.');
+    }
+  };
+
+  const handleMarkDeliveredPress = async () => {
+    if (!drPhotoUrl) {
+      Alert.alert('DR Photo Required', 'Take a photo of the signed delivery receipt before marking this order as delivered.');
+      return;
+    }
+    const network = await NetInfo.fetch();
+    if (!isOnline(network)) {
+      Alert.alert('No Internet Connection', 'Connect to the internet to mark this order as delivered.');
+      return;
+    }
+    setDeliveryConfirmationVisible(true);
+  };
+
   const handleUpdateStatus = async (orderId) => {
     if (!orderId) return;
+    if (!drPhotoUrl) {
+      Alert.alert('DR Photo Required', 'Take a photo of the signed delivery receipt first.');
+      return;
+    }
 
     try {
       setUpdatingOrder(true);
@@ -155,7 +293,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
           ...(storedUsername ? { 'x-username': storedUsername } : {}),
           ...(storedRole ? { 'x-role': storedRole } : {}),
         },
-        body: JSON.stringify({ status: 'DELIVERED', userId: storedUserId, username: storedUsername, role: storedRole }),
+        body: JSON.stringify({ status: 'DELIVERED', deliveryReceipt: drPhotoUrl, userId: storedUserId, username: storedUsername, role: storedRole }),
       });
 
       if (response.ok) {
@@ -166,6 +304,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
         });
         setDeliveryConfirmationVisible(false);
         setModalVisible(false);
+        resetDrPhoto();
         setSearchQuery('');
         await fetchConfirmedOrders();
       } else {
@@ -307,7 +446,7 @@ const fetchConfirmedOrders = async (showLoading = true) => {
                 </View>
                 <TouchableOpacity
                   style={deliveryStyles.viewDetailsBtn}
-                  onPress={() => { setSelectedOrder(item); setModalVisible(true); }}
+                  onPress={() => openOrder(item)}
                 >
                   <Text style={deliveryStyles.btnText}>VIEW DETAILS</Text>
                 </TouchableOpacity>
@@ -404,10 +543,66 @@ const fetchConfirmedOrders = async (showLoading = true) => {
                   </View>
                 )}
 
-                {/* MARK DELIVERED */}
+                {/* DR PHOTO (required before delivery) */}
+                <View style={detailStyles.card}>
+                  <Text style={detailStyles.cardTitle}>Delivery Receipt (DR) Photo</Text>
+                  <View style={detailStyles.goldDivider} />
+
+                  {drPhotoUri ? (
+                    <Image source={{ uri: drPhotoUri }} style={localStyles.drPreview} resizeMode="cover" />
+                  ) : (
+                    <Text style={localStyles.drHint}>
+                      Take a photo of the signed delivery receipt. It is required before marking this order as delivered.
+                    </Text>
+                  )}
+
+                  {uploadingPhoto ? (
+                    <View style={localStyles.drStatusRow}>
+                      <ActivityIndicator color="#D4AF37" />
+                      <Text style={[localStyles.drStatusText, { marginLeft: 8 }]}>Uploading photo...</Text>
+                    </View>
+                  ) : drPhotoUrl ? (
+                    <View style={localStyles.drStatusRow}>
+                      <CheckCircle size={16} color="#059669" />
+                      <Text style={[localStyles.drStatusText, { color: '#059669', marginLeft: 6 }]}>Photo uploaded</Text>
+                    </View>
+                  ) : photoUploadFailed ? (
+                    <View style={localStyles.drStatusRow}>
+                      <TriangleAlert size={16} color="#B91C1C" />
+                      <Text style={[localStyles.drStatusText, { color: '#B91C1C', marginLeft: 6 }]}>Upload failed</Text>
+                    </View>
+                  ) : null}
+
+                  <View style={localStyles.drActions}>
+                    <TouchableOpacity
+                      style={[localStyles.drButton, uploadingPhoto && localStyles.drButtonDisabled]}
+                      onPress={takeDrPhoto}
+                      disabled={uploadingPhoto}
+                    >
+                      {drPhotoUri ? <RotateCcw size={16} color="#000" /> : <Camera size={16} color="#000" />}
+                      <Text style={localStyles.drButtonText}>{drPhotoUri ? 'RETAKE PHOTO' : 'TAKE DR PHOTO'}</Text>
+                    </TouchableOpacity>
+
+                    {photoUploadFailed && drPhotoUri && !uploadingPhoto && (
+                      <TouchableOpacity
+                        style={[localStyles.drButton, { marginLeft: 10 }]}
+                        onPress={() => uploadDrPhoto(drPhotoUri)}
+                      >
+                        <Text style={localStyles.drButtonText}>RETRY UPLOAD</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                {/* MARK DELIVERED (disabled until the DR photo is uploaded) */}
                 <TouchableOpacity
-                  style={[detailStyles.updateBtn, { marginHorizontal: 20, marginTop: 10 }]}
-                  onPress={() => setDeliveryConfirmationVisible(true)}
+                  style={[
+                    detailStyles.updateBtn,
+                    { marginHorizontal: 20, marginTop: 10 },
+                    !drPhotoUrl && localStyles.updateBtnDisabled,
+                  ]}
+                  onPress={handleMarkDeliveredPress}
+                  disabled={!drPhotoUrl || uploadingPhoto}
                 >
                   <Text style={detailStyles.updateBtnText}>MARK AS DELIVERED</Text>
                 </TouchableOpacity>
@@ -665,5 +860,53 @@ const localStyles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 10,
     fontStyle: 'italic',
+  },
+  drPreview: {
+    width: '100%',
+    height: 220,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    marginVertical: 6,
+  },
+  drHint: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginVertical: 6,
+  },
+  drStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  drStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  drActions: {
+    flexDirection: 'row',
+    marginTop: 10,
+  },
+  drButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D4AF37',
+    backgroundColor: '#FFF8E1',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  drButtonDisabled: {
+    opacity: 0.5,
+  },
+  drButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#000',
+    marginLeft: 6,
+  },
+  updateBtnDisabled: {
+    backgroundColor: '#9CA3AF',
   },
 });

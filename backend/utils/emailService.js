@@ -30,6 +30,25 @@ const formatDateTime = (value = new Date()) =>
     minute: "2-digit",
   });
 
+// Date only, in Philippine time (for payment due dates).
+const formatDate = (value) =>
+  new Date(value).toLocaleDateString("en-PH", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
+// Escapes text that came from a form or the database before it goes into
+// email HTML.
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 const statusColor = (status) =>
   ["TO SHIP", "DELIVERED", "COMPLETED", "APPROVED"].includes(status)
     ? "#2e7d32"
@@ -76,6 +95,13 @@ export const sendOrderStatusUpdate = async (
     let statusMessage =
       statusMessages[newStatus] ||
       `Your order status has been updated to: ${newStatus}`;
+    if (
+      newStatus === "DELIVERED" &&
+      orderData.paymentDueDate &&
+      orderData.paymentStatus !== "COMPLETED"
+    ) {
+      statusMessage += ` Please submit your payment slip on or before ${formatDate(orderData.paymentDueDate)}.`;
+    }
     let dateChangeInfo = "";
 
     const history = Array.isArray(orderData.dateChangeHistory)
@@ -356,6 +382,29 @@ Premiumed Enterprises
   }
 };
 
+// Creates a fresh one-time token for an order's Accept / Reject links and
+// returns both links. Any older links for the order stop working.
+export const createDepositReviewLinks = async (orderObjectId) => {
+  const rejectToken = crypto.randomBytes(32).toString("hex");
+
+  // Persist token + expiry so the route can verify it later
+  await Order.updateOne(
+    { _id: orderObjectId },
+    {
+      $set: {
+        rejectToken,
+        rejectTokenExpiry: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3), // 3 days
+      },
+    },
+  );
+
+  const backendBase = process.env.BACKEND_URL || "http://localhost:5000";
+  return {
+    acceptUrl: `${backendBase}/api/clients/accept-deposit?token=${rejectToken}`,
+    rejectUrl: `${backendBase}/api/clients/reject-deposit?token=${rejectToken}`,
+  };
+};
+
 export const sendDepositSlipToAccountant = async (
   orderData,
   depositSlipBuffer,
@@ -424,27 +473,14 @@ export const sendDepositSlipToAccountant = async (
     // ─────────────────────────────────────────────────────────────
     // Generate a secure, time-limited token for the reject action
     // ─────────────────────────────────────────────────────────────
-    const rejectToken = crypto.randomBytes(32).toString("hex");
-
-    // Persist token + expiry so the route can verify it later
+    let acceptUrl;
+    let rejectUrl;
     try {
-      await Order.updateOne(
-        { _id: orderData._id },
-        {
-          $set: {
-            rejectToken,
-            rejectTokenExpiry: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3), // 3 days
-          },
-        },
-      );
+      ({ acceptUrl, rejectUrl } = await createDepositReviewLinks(orderData._id));
     } catch (persistErr) {
       console.error("Failed to persist reject token:", persistErr.message);
       return { success: false, error: "Failed to generate reject link" };
     }
-
-    const backendBase = process.env.BACKEND_URL || "http://localhost:5000";
-    const acceptUrl = `${backendBase}/api/clients/accept-deposit?token=${rejectToken}`;
-    const rejectUrl = `${backendBase}/api/clients/reject-deposit?token=${rejectToken}`;
 
     const mailOptions = {
       sender: {
@@ -462,7 +498,8 @@ A payment slip has been uploaded for the following order:
 Order Number: ${orderData.orderNumber || orderData.orderId || orderData._id}
 Client Name: ${orderData.customerName || orderData.name || "N/A"}
 Order Date: ${formatDateTime(orderData.createdAt || Date.now())}
-Status: ${orderData.status || "PAYMENT REVIEW"}
+Delivery Status: ${orderData.status || "PAYMENT REVIEW"}
+Payment Status: AWAITING REVIEW
 
 ORDER DETAILS
 -------------
@@ -536,10 +573,15 @@ Premiumed Enterprises
                   </p>
 
                   <p style="margin: 8px 0; font-size: 14px;">
-                    <strong>Status:</strong>
+                    <strong>Delivery Status:</strong>
                     <span style="color: ${statusColor(orderData.status || "PAYMENT REVIEW")}; font-weight: bold;">
                       ${orderData.status || "PAYMENT REVIEW"}
                     </span>
+                  </p>
+
+                  <p style="margin: 8px 0; font-size: 14px;">
+                    <strong>Payment Status:</strong>
+                    <span style="color: #8a6d14; font-weight: bold;">AWAITING REVIEW</span>
                   </p>
                 </div>
 
@@ -1298,6 +1340,311 @@ Premiumed Enterprises
     return await sendEmailWithRetry(mailOptions);
   } catch (error) {
     console.error("Error sending employee account email:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// Pay-after-delivery emails
+// ─────────────────────────────────────────────────────────────
+
+// The same black-and-gold frame the other emails use.
+const brandedEmailHtml = (title, bodyHtml, { titleColor = "#222222" } = {}) => `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${title} - Premiumed Enterprises</title>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; color: #333333;">
+    <div style="max-width: 600px; margin: 30px auto; background-color: #ffffff; border: 1px solid #dddddd;">
+      <div style="background-color: #000000; padding: 25px; text-align: center;">
+        <h1 style="margin: 0; color: #ffffff; font-size: 24px; letter-spacing: 1px;">
+          PREMIUMED ENTERPRISES
+        </h1>
+        <div style="width: 60px; height: 3px; background-color: #d4af37; margin: 12px auto 0;"></div>
+      </div>
+      <div style="padding: 35px;">
+        <h2 style="margin-top: 0; margin-bottom: 25px; color: ${titleColor}; font-size: 22px;">
+          ${title}
+        </h2>
+        ${bodyHtml}
+        <p style="font-size: 13px; color: #777777; line-height: 1.5;">
+          This is an automated message. Please do not reply to this email.
+        </p>
+      </div>
+      <div style="padding: 20px; background-color: #f5f5f5; text-align: center; border-top: 1px solid #dddddd;">
+        <p style="margin: 0; font-size: 13px; color: #555555;">
+          <strong>Premiumed Enterprises</strong>
+        </p>
+        <p style="margin: 5px 0 0; font-size: 12px; color: #888888;">
+          &copy; ${new Date().getFullYear()} Premiumed Enterprises
+        </p>
+      </div>
+    </div>
+  </body>
+</html>`.trim();
+
+const infoBlock = (heading, rows) => `
+  <div style="margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
+    <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #222222;">${heading}</h3>
+    ${rows
+      .map(
+        ([label, value]) =>
+          `<p style="margin: 8px 0; font-size: 14px; line-height: 1.5;"><strong>${label}:</strong> ${value}</p>`,
+      )
+      .join("")}
+  </div>`;
+
+const noticeBlock = (html) => `
+  <div style="margin: 25px 0; padding: 15px; background-color: #fff8e1; border: 1px solid #e6d28a;">
+    <p style="margin: 0; font-size: 14px; line-height: 1.5;">${html}</p>
+  </div>`;
+
+const systemSender = () => ({
+  name: "Premiumed Enterprises",
+  email: process.env.SYSTEM_EMAIL,
+});
+
+// Sent to the client 7, 14 and 21 days after delivery, before the payment
+// is due, unless a slip was already sent or accepted.
+export const sendPaymentDueReminderEmail = async (order, clientEmail) => {
+  try {
+    if (!clientEmail || !clientEmail.includes("@")) {
+      return { success: false, error: "Invalid client email" };
+    }
+
+    const orderRef = escapeHtml(order.orderId || order._id);
+    const daysLeft = Math.max(
+      0,
+      Math.ceil((new Date(order.paymentDueDate) - Date.now()) / 86400000),
+    );
+    const rejected = order.paymentStatus === "REJECTED";
+    const frontendBase = process.env.FRONTEND_URL || "http://localhost:3000";
+
+    const body = `
+      <p style="font-size: 15px; line-height: 1.6;">
+        Dear <strong>${escapeHtml(order.name || "Valued Client")}</strong>,
+      </p>
+      <p style="font-size: 15px; line-height: 1.6;">
+        This is a friendly reminder that payment for order <strong>#${orderRef}</strong>
+        is due on <strong>${formatDate(order.paymentDueDate)}</strong>.
+        ${rejected ? "Your last payment slip was rejected, so a new slip is needed." : ""}
+      </p>
+      ${infoBlock("Payment Information", [
+        ["Order Number", orderRef],
+        ["Delivered On", order.deliveredDate ? formatDate(order.deliveredDate) : "N/A"],
+        ["Payment Due", formatDate(order.paymentDueDate)],
+        ["Days Left", String(daysLeft)],
+        ["Amount Due", formatCurrency(order.total)],
+      ])}
+      ${noticeBlock(
+        "Please upload your payment slip on the Orders &amp; Transactions page before the due date. If you have already sent it, you can ignore this reminder.",
+      )}
+      <div style="margin: 30px 0; text-align: center;">
+        <a href="${frontendBase}/order-transaction" style="display: inline-block; padding: 14px 28px; background-color: #000000; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 4px;">
+          Upload Payment Slip
+        </a>
+      </div>`;
+
+    return await sendEmailWithRetry({
+      sender: systemSender(),
+      to: [{ email: clientEmail }],
+      subject: `Payment Reminder - Order #${order.orderId || order._id}`,
+      textContent: `PREMIUMED ENTERPRISES
+PAYMENT REMINDER
+
+Payment for order #${order.orderId || order._id} is due on ${formatDate(order.paymentDueDate)}.
+Days Left: ${daysLeft}
+Amount Due: ${formatCurrency(order.total)}
+
+Please upload your payment slip on the Orders & Transactions page:
+${frontendBase}/order-transaction`,
+      htmlContent: brandedEmailHtml("Payment Reminder", body),
+    });
+  } catch (error) {
+    console.error("Error sending payment due reminder email:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Sent to the client at day 30 after delivery and every 7 days after that
+// until a payment slip is accepted.
+export const sendPaymentOverdueEmail = async (order, clientEmail) => {
+  try {
+    if (!clientEmail || !clientEmail.includes("@")) {
+      return { success: false, error: "Invalid client email" };
+    }
+
+    const orderRef = escapeHtml(order.orderId || order._id);
+    const daysOverdue = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(order.paymentDueDate)) / 86400000),
+    );
+    const rejected = order.paymentStatus === "REJECTED";
+    const frontendBase = process.env.FRONTEND_URL || "http://localhost:3000";
+
+    const body = `
+      <p style="font-size: 15px; line-height: 1.6;">
+        Dear <strong>${escapeHtml(order.name || "Valued Client")}</strong>,
+      </p>
+      <p style="font-size: 15px; line-height: 1.6;">
+        Payment for order <strong>#${orderRef}</strong> is past due.
+        ${rejected ? "Your last payment slip was rejected, so a new slip is needed." : "We have not received a payment slip for this order yet."}
+      </p>
+      ${infoBlock("Payment Information", [
+        ["Order Number", orderRef],
+        ["Delivered On", order.deliveredDate ? formatDate(order.deliveredDate) : "N/A"],
+        ["Payment Due", formatDate(order.paymentDueDate)],
+        ["Days Overdue", String(daysOverdue)],
+        ["Amount Due", formatCurrency(order.total)],
+      ])}
+      ${noticeBlock(
+        "<strong>Action needed:</strong> Please upload your payment slip on the Orders &amp; Transactions page. This reminder repeats every 7 days until the payment is received.",
+      )}
+      <div style="margin: 30px 0; text-align: center;">
+        <a href="${frontendBase}/order-transaction" style="display: inline-block; padding: 14px 28px; background-color: #000000; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 4px;">
+          Upload Payment Slip
+        </a>
+      </div>`;
+
+    return await sendEmailWithRetry({
+      sender: systemSender(),
+      to: [{ email: clientEmail }],
+      subject: `Payment Overdue - Order #${order.orderId || order._id}`,
+      textContent: `PREMIUMED ENTERPRISES
+PAYMENT OVERDUE
+
+Payment for order #${order.orderId || order._id} is past due.
+Payment Due: ${formatDate(order.paymentDueDate)}
+Days Overdue: ${daysOverdue}
+Amount Due: ${formatCurrency(order.total)}
+
+Please upload your payment slip on the Orders & Transactions page:
+${frontendBase}/order-transaction
+
+This reminder repeats every 7 days until the payment is received.`,
+      htmlContent: brandedEmailHtml("Payment Overdue", body, {
+        titleColor: "#b8251e",
+      }),
+    });
+  } catch (error) {
+    console.error("Error sending payment overdue email:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Sent once to the accountant when a slip has waited 3 days for review.
+// The links are fresh because the original ones expire after 3 days.
+export const sendSlipReviewReminder = async (
+  order,
+  accountantEmail,
+  { acceptUrl, rejectUrl, slipUrl },
+) => {
+  try {
+    if (!accountantEmail || !accountantEmail.includes("@")) {
+      return { success: false, error: "Invalid accountant email" };
+    }
+
+    const orderRef = escapeHtml(order.orderId || order._id);
+    const body = `
+      <p style="font-size: 15px; line-height: 1.6;">
+        The payment slip for order <strong>#${orderRef}</strong> has been waiting for review since
+        ${order.slipSubmittedAt ? formatDateTime(order.slipSubmittedAt) : "more than 3 days ago"}.
+      </p>
+      ${infoBlock("Order Information", [
+        ["Order Number", orderRef],
+        ["Client Name", escapeHtml(order.name || "N/A")],
+        ["Order Status", escapeHtml(order.status || "N/A")],
+        ["Total", formatCurrency(order.total)],
+        ...(slipUrl
+          ? [["Payment Slip", `<a href="${slipUrl}" style="color: #000000;">View slip</a>`]]
+          : []),
+      ])}
+      ${noticeBlock(
+        "<strong>Reminder:</strong> Please accept or reject this slip. The links below replace the ones in the earlier email and expire in 3 days.",
+      )}
+      <div style="margin: 30px 0; text-align: center;">
+        <a href="${acceptUrl}" style="display: inline-block; padding: 14px 28px; background-color: #2e7d32; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 4px; margin-right: 12px;">
+          Accept Payment Slip
+        </a>
+        <a href="${rejectUrl}" style="display: inline-block; padding: 14px 28px; background-color: #b3261e; color: #ffffff; text-decoration: none; font-size: 14px; font-weight: bold; border-radius: 4px;">
+          Reject Payment Slip
+        </a>
+      </div>`;
+
+    return await sendEmailWithRetry({
+      sender: systemSender(),
+      to: [{ email: accountantEmail }],
+      subject: `Reminder: Payment Slip Awaiting Review - Order #${order.orderId || order._id}`,
+      textContent: `PREMIUMED ENTERPRISES
+PAYMENT SLIP AWAITING REVIEW
+
+The payment slip for order #${order.orderId || order._id} has been waiting for review for 3 days.
+Client: ${order.name || "N/A"}
+Total: ${formatCurrency(order.total)}
+${slipUrl ? `Payment slip: ${slipUrl}\n` : ""}
+To ACCEPT this payment slip:
+${acceptUrl}
+
+To REJECT this payment slip:
+${rejectUrl}
+
+These links replace the ones in the earlier email and expire in 3 days.`,
+      htmlContent: brandedEmailHtml("Payment Slip Awaiting Review", body),
+    });
+  } catch (error) {
+    console.error("Error sending slip review reminder:", error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Sent to every active admin with an email address when a client applies
+// for an account.
+export const sendClientApplicationEmail = async (application, adminEmails) => {
+  try {
+    const recipients = (adminEmails || []).filter(
+      (email) => email && email.includes("@"),
+    );
+    if (recipients.length === 0) {
+      return { success: false, error: "No admin email addresses" };
+    }
+
+    const centerName =
+      application.dialysisCenterName || application.username || "A new client";
+    const body = `
+      <p style="font-size: 15px; line-height: 1.6;">
+        A new client account application was submitted and is waiting for review.
+      </p>
+      ${infoBlock("Application", [
+        ["Center Name", escapeHtml(centerName)],
+        ["Facility Type", escapeHtml(application.facilityType || "N/A")],
+        ["Email", escapeHtml(application.email || "N/A")],
+        ["Mobile", escapeHtml(application.mobile || "N/A")],
+        ["Address", escapeHtml(application.address || "N/A")],
+        ["Submitted", formatDateTime(application.createdAt || Date.now())],
+      ])}
+      ${noticeBlock("Review the application on the Clients page of the admin site.")}`;
+
+    return await sendEmailWithRetry({
+      sender: systemSender(),
+      to: recipients.map((email) => ({ email })),
+      subject: `New Client Application - ${centerName}`,
+      textContent: `PREMIUMED ENTERPRISES
+NEW CLIENT APPLICATION
+
+Center Name: ${centerName}
+Facility Type: ${application.facilityType || "N/A"}
+Email: ${application.email || "N/A"}
+Mobile: ${application.mobile || "N/A"}
+Address: ${application.address || "N/A"}
+
+Review the application on the Clients page of the admin site.`,
+      htmlContent: brandedEmailHtml("New Client Application", body),
+    });
+  } catch (error) {
+    console.error("Error sending client application email:", error);
     return { success: false, error: error.message };
   }
 };

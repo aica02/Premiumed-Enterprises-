@@ -15,6 +15,9 @@ export default function OrderSummary() {
   const [deliveryDate, setDeliveryDate] = useState("");
   const [notes, setNotes] = useState("");
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  // Delivered orders past their payment due date. A notice only: the client
+  // can still order.
+  const [overdueOrders, setOverdueOrders] = useState([]);
 
   const [clientInfo, setClientInfo] = useState({
     fullName: "Loading...",
@@ -63,6 +66,22 @@ export default function OrderSummary() {
       }
     };
     fetchClientData();
+
+    const fetchOverdueOrders = async () => {
+      const username = localStorage.getItem("username");
+      if (!username) return;
+      try {
+        const cleanUser = username.replace(/['"]+/g, "").trim();
+        const response = await axios.get(
+          `${BACKEND_URL}/api/orders/overdue/${encodeURIComponent(cleanUser)}`
+        );
+        setOverdueOrders(Array.isArray(response.data) ? response.data : []);
+      } catch (err) {
+        // The warning is optional; checkout works without it.
+        console.error("Error fetching overdue orders:", err);
+      }
+    };
+    fetchOverdueOrders();
   }, [navigate]);
 
   const handleProceed = () => {
@@ -191,6 +210,39 @@ export default function OrderSummary() {
               <span>Back to Cart</span>
             </button>
           </div>
+
+          {overdueOrders.length > 0 && (
+            <div
+              className="os-card"
+              role="alert"
+              style={{
+                borderLeft: "4px solid #b8251e",
+                background: "#fff5f5",
+              }}
+            >
+              <h3 className="os-section-title" style={{ color: "#b8251e" }}>
+                UNPAID OVERDUE ORDERS
+              </h3>
+              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+                You have {overdueOrders.length} delivered order
+                {overdueOrders.length > 1 ? "s" : ""} past the 30-day payment
+                due date. You can still place this order, but please upload
+                your payment slip on the Orders &amp; Transactions page.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
+                {overdueOrders.map((order) => (
+                  <li key={order.orderId}>
+                    #{order.orderId} — due{" "}
+                    {new Date(order.paymentDueDate).toLocaleDateString(
+                      "en-PH",
+                      { year: "numeric", month: "short", day: "numeric" }
+                    )}{" "}
+                    — ₱{Number(order.total || 0).toFixed(2)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="os-card os-client-card">
             <h3 className="os-section-title">CLIENT INFORMATION</h3>

@@ -127,6 +127,19 @@ paymentAcceptedBy: { type: String }, // ← NEW
       type: Date,
       default: null,
     },
+
+    // Pay-after-delivery: the driver's photo of the signed delivery receipt
+    // (a Cloudinary URL) and who delivered the order.
+    deliveryReceipt: { type: String, default: "" },
+    deliveredBy: { type: String, default: "" },
+    // Payment is due 30 days after delivery.
+    paymentDueDate: { type: Date, default: null },
+    // Alert bookkeeping for the hourly payment job.
+    lastDueReminderAt: { type: Date, default: null }, // client reminder at day 7, 14, 21 (before due)
+    overdueSmsSentAt: { type: Date, default: null }, // admin SMS, sent once at day 30
+    lastOverdueEmailAt: { type: Date, default: null }, // client email, repeats every 7 days
+    slipSubmittedAt: { type: Date, default: null }, // when the slip under review was uploaded
+    slipReminderSentAt: { type: Date, default: null }, // accountant reminder, sent once
   },
   { timestamps: true },
 );

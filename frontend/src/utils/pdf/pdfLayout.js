@@ -283,7 +283,7 @@ export const drawTotalBox = (ctx, label, amount, startY) => {
 
 // Prepared / Checked / Approved / Received By lines across the page.
 export const drawSignatureLines = (ctx, afterY) => {
-  const { doc, pageWidth, pageHeight, right, drawPageChrome } = ctx;
+  const { doc, pageHeight, right, drawPageChrome } = ctx;
   let y = afterY + 60;
   if (y + 30 > pageHeight - 40) {
     doc.addPage();

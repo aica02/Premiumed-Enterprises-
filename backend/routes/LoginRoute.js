@@ -13,6 +13,7 @@ import {
   sendAccountApprovalEmail,
 } from "../utils/emailService.js";
 import { uploadToCloudinary, deleteFromCloudinary } from "../config/cloudinary.js";
+import { notifyClientApplication } from "../utils/paymentService.js";
 
 dotenv.config();
 
@@ -182,6 +183,12 @@ router.post(
         otherDocument,
       });
       await newRequest.save();
+
+      // Email + in-app notice to the admins; never blocks the application.
+      notifyClientApplication(newRequest.toObject()).catch((alertError) =>
+        console.error("[ClientApplication] Alert failed:", alertError),
+      );
+
       res.status(201).json({ message: "Application submitted for review!" });
     } catch (err) {
       await Promise.all(

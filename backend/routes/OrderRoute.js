@@ -29,6 +29,49 @@ import {
   checkBatchById,
   checkProductStock,
 } from "../utils/inventoryAlertService.js";
+import {
+  computePaymentDueDate,
+  findOverdueOrdersForClient,
+  notifyOrderPlacedWhileOverdue,
+} from "../utils/paymentService.js";
+import { uploadToCloudinary } from "../config/cloudinary.js";
+
+// DR (delivery receipt) photos from the driver app. Kept in memory and sent
+// to Cloudinary, because the server's /uploads folder is wiped on redeploy.
+const receiptUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, callback) => {
+    if (["image/jpeg", "image/jpg", "image/png"].includes(file.mimetype)) {
+      callback(null, true);
+    } else {
+      callback(new Error("The DR photo must be a JPG or PNG image."));
+    }
+  },
+});
+
+// Ordering while overdue is allowed; this only adds the client and admin
+// notifications, and never fails the checkout.
+const flagOrderPlacedWhileOverdue = (details) => {
+  notifyOrderPlacedWhileOverdue(details).catch((err) =>
+    console.error("[PaymentAlert] Order-with-overdue notice failed:", err),
+  );
+};
+
+// A DR photo must be a link returned by the delivery-receipt upload (a
+// Cloudinary image), not arbitrary text.
+const isValidReceiptUrl = (value) => {
+  try {
+    const url = new URL(String(value || ""));
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "res.cloudinary.com" ||
+        url.hostname.endsWith(".cloudinary.com"))
+    );
+  } catch {
+    return false;
+  }
+};
 
 const router = express.Router();
 
@@ -363,6 +406,12 @@ router.post("/", async (req, res) => {
       message: `Your Order #${newOrder.orderId} has been placed successfully.`,
     });
 
+    flagOrderPlacedWhileOverdue({
+      username,
+      name,
+      orderId: newOrder.orderId,
+    });
+
     res.status(201).json({
       success: true,
       message: "Order created successfully",
@@ -500,13 +549,28 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
+    if (order.paymentStatus === "COMPLETED") {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (cleanupError) {
+        console.error("Error cleaning up file:", cleanupError);
+      }
+      return res
+        .status(400)
+        .json({ message: "Payment for this order has already been accepted." });
+    }
+
+// Pay-after-delivery: a slip only changes the payment status. The order
+// keeps its delivery status (TO SHIP or DELIVERED), so the driver still
+// sees it and a delivered order stays delivered.
 const slipPath = `/uploads/${req.file.filename}`;
 order.paymentSlip = slipPath;
-order.paymentStatus = "AWAITING REVIEW";   // was "COMPLETED"
-order.status = "PAYMENT REVIEW";           // was "TO SHIP"
+order.paymentStatus = "AWAITING REVIEW";
 order.paymentRejectedAt = undefined;
 order.paymentAcceptedAt = undefined;
 order.paymentAcceptedBy = undefined;
+order.slipSubmittedAt = new Date();
+order.slipReminderSentAt = null;
 await order.save();
     const settings = await Settings.findOne();
     const accountantEmail = settings?.accountantEmail;
@@ -599,6 +663,52 @@ await order.save();
     });
   }
 });
+
+// Uploads the driver's DR photo and returns its link. It does not mark the
+// order delivered; the app sends the link with the DELIVERED status next.
+router.post(
+  "/:orderId/delivery-receipt",
+  (req, res, next) => {
+    receiptUpload.single("receipt")(req, res, (error) => {
+      if (error) {
+        return res.status(400).json({ message: error.message });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No DR photo was received." });
+      }
+
+      const order = await Order.findOne({ orderId: req.params.orderId })
+        .select("orderId status")
+        .lean();
+      if (!order) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      if (order.status !== "TO SHIP") {
+        return res.status(400).json({
+          message: `Only TO SHIP orders take a DR photo. Order ${order.orderId} is ${order.status}.`,
+        });
+      }
+
+      const result = await uploadToCloudinary(req.file.buffer, {
+        folder: "delivery-receipts",
+        resource_type: "image",
+        public_id: `dr-${String(order.orderId).replace(/[^a-zA-Z0-9-]/g, "-")}-${Date.now()}`,
+      });
+
+      res.json({ success: true, url: result.secure_url });
+    } catch (error) {
+      console.error("DR photo upload error:", error);
+      res.status(500).json({
+        message: "The DR photo could not be uploaded. Please try again.",
+      });
+    }
+  },
+);
 
 const getClientEmail = async (username) => {
   try {
@@ -792,25 +902,59 @@ router.patch("/:orderId/status", async (req, res) => {
       });
     }
 
-    // Handle DELIVERED
+    // Handle DELIVERED — the driver must attach the DR (delivery receipt)
+    // photo, and payment becomes due 30 days after delivery.
     if (status === "DELIVERED") {
+      const { deliveryReceipt } = req.body;
+
+      // A retried request (for example a delivery that synced after the
+      // driver reconnected) succeeds without changing anything.
+      if (order.status === "DELIVERED") {
+        return res.json({
+          success: true,
+          message: "Order was already marked as delivered",
+          order,
+        });
+      }
+
+      if (order.status !== "TO SHIP") {
+        return res.status(400).json({
+          message: `Only TO SHIP orders can be marked as delivered. Order ${order.orderId} is ${order.status}.`,
+        });
+      }
+
+      if (!isValidReceiptUrl(deliveryReceipt)) {
+        return res.status(400).json({
+          message:
+            "A delivery receipt (DR) photo is required to mark this order as delivered.",
+        });
+      }
+
       await createActivityLog({
         userId: actor.userId,
         username: actor.username,
         role: actor.role,
         action: "Deliver order",
         module: "Delivery",
-        description: `Order ${order.orderId} was marked as delivered.`,
+        description: `Order ${order.orderId} was marked as delivered with a DR photo.`,
       });
 
+      const deliveredAt = new Date();
       order.status = "DELIVERED";
-      order.deliveredDate = new Date();
+      order.deliveredDate = deliveredAt;
+      order.deliveryReceipt = String(deliveryReceipt);
+      order.deliveredBy =
+        actor.username && actor.username !== "Unknown" ? actor.username : "";
+      order.paymentDueDate = computePaymentDueDate(deliveredAt);
       await order.save();
 
       await Notification.create({
         name: order.name,
         orderId: order.orderId,
-        message: `Order #${order.orderId} status is now DELIVERED.`,
+        message:
+          order.paymentStatus === "COMPLETED"
+            ? `Order #${order.orderId} status is now DELIVERED.`
+            : `Order #${order.orderId} status is now DELIVERED. Payment is due by ${order.paymentDueDate.toLocaleDateString("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "short", day: "numeric" })}.`,
       });
 
       // SEND EMAIL FOR DELIVERED
@@ -836,13 +980,13 @@ router.patch("/:orderId/status", async (req, res) => {
 if (status === "TO SHIP") {
   if (!["PAYMENT REVIEW", "APPROVED", "PARTIAL"].includes(order.status)) {
     return res.status(400).json({
-      message: `Cannot move order to TO SHIP from status ${order.status}. ` +
-               `Accept the payment slip first.`,
+      message: `Cannot move order to TO SHIP from status ${order.status}.`,
     });
   }
 
+  // Pay-after-delivery: shipping no longer depends on payment, so this
+  // leaves the payment status as it is.
   order.status = "TO SHIP";
-  order.paymentStatus = "COMPLETED";
   order.shippedDate = new Date();
   await order.save();
 
@@ -1069,6 +1213,21 @@ if (status === "TO SHIP") {
     res.status(500).json({
       message: err.message || "Failed to update status",
     });
+  }
+});
+
+// A client's delivered orders that are past their payment due date, for the
+// checkout warning. Ordering is still allowed.
+router.get("/overdue/:username", async (req, res) => {
+  try {
+    const username = decodeURIComponent(req.params.username || "")
+      .replace(/['"]+/g, "")
+      .trim();
+    const orders = await findOverdueOrdersForClient(username);
+    res.json(orders);
+  } catch (err) {
+    console.error("Error fetching overdue orders:", err);
+    res.status(500).json({ message: err.message });
   }
 });
 
@@ -1467,8 +1626,24 @@ router.patch("/:orderId/partial", async (req, res) => {
       }
     });
 
+    // Each order is billed for its own items (decision 5). Any amount on the
+    // original order above its item subtotal (such as a fee) stays with it.
+    const itemsSubtotal = (list) =>
+      list.reduce(
+        (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0),
+        0,
+      );
+    const extraCharges = Math.max(
+      0,
+      (Number(originalOrder.total) || 0) - (Number(originalOrder.subtotal) || 0),
+    );
+    const deliveredSubtotal = itemsSubtotal(deliveredItems);
+    const backorderSubtotal = itemsSubtotal(backorderItems);
+
     originalOrder.status = "PARTIAL";
     originalOrder.items = deliveredItems;
+    originalOrder.subtotal = deliveredSubtotal;
+    originalOrder.total = deliveredSubtotal + extraCharges;
     await originalOrder.save();
 
     await Notification.create({
@@ -1504,6 +1679,8 @@ router.patch("/:orderId/partial", async (req, res) => {
         orderId: partialOrderId,
         status: "PENDING",
         items: backorderItems,
+        subtotal: backorderSubtotal,
+        total: backorderSubtotal,
         createdAt: new Date(),
         notes: `Partial order created from ${originalOrder.orderId}. Remaining items: ${backorderItems.map((i) => `${i.name} (${i.quantity})`).join(", ")}`,
         originalOrderId: originalOrder.orderId,
@@ -1514,6 +1691,16 @@ router.patch("/:orderId/partial", async (req, res) => {
         paymentAcceptedBy: undefined,
         rejectToken: undefined,
         rejectTokenExpiry: undefined,
+        // The backorder starts its own delivery and payment cycle.
+        deliveredDate: null,
+        deliveryReceipt: "",
+        deliveredBy: "",
+        paymentDueDate: null,
+        lastDueReminderAt: null,
+        overdueSmsSentAt: null,
+        lastOverdueEmailAt: null,
+        slipSubmittedAt: null,
+        slipReminderSentAt: null,
       });
 
       await partialOrder.save();
@@ -1838,6 +2025,12 @@ router.post("/checkout-with-split", async (req, res) => {
       name,
       orderId: mainOrder.orderId,
       message: `Your Order #${mainOrder.orderId} has been placed.`,
+    });
+
+    flagOrderPlacedWhileOverdue({
+      username,
+      name,
+      orderId: mainOrder.orderId,
     });
 
     return res.status(201).json({

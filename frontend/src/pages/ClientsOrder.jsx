@@ -750,7 +750,6 @@ const ClientsOrder = () => {
       0,
     );
 
-    let filterDescription = "Filtered Orders Report";
     const filterConditions = [];
     if (reportFilters.clientName)
       filterConditions.push(`Client: ${reportFilters.clientName}`);
@@ -769,12 +768,9 @@ const ClientsOrder = () => {
         `Until Date: ${formatReportDate(reportFilters.endDate)}`,
       );
 
-    if (filterConditions.length > 0) {
-      filterDescription += ` (${filterConditions.join(", ")})`;
-    }
 
     generateFilteredReport({
-      title: "Orders Report",
+      title: "Order Report",
       filters: filterConditions.length > 0 ? filterConditions.join(", ") : "None (all orders)",
       companyName: "PREMIUMED ENTERPRISES",
       companyAddress:
@@ -888,6 +884,15 @@ const ClientsOrder = () => {
                           >
                             {order.status}
                           </span>
+                          {isPaymentOverdue(order) && (
+                            <span
+                              className="status-capsule status-cancelled"
+                              style={{ marginLeft: 6 }}
+                              title={`Payment was due ${formatShortDate(order.paymentDueDate)}`}
+                            >
+                              OVERDUE
+                            </span>
+                          )}
                         </td>
                         <td style={{ textAlign: "center" }}>
                           {isUrgent ? (
@@ -1241,6 +1246,68 @@ const ClientsOrder = () => {
                   </div>
                 </div>
 
+                <div className="modal-section-grid">
+                  <div className="detail-group full title">
+                    <h4>Payment &amp; Delivery</h4>
+                  </div>
+                  <DetailItem
+                    label="Payment Status"
+                    value={
+                      isPaymentOverdue(selectedOrder)
+                        ? `${selectedOrder.paymentStatus || "PENDING"} (OVERDUE)`
+                        : selectedOrder.paymentStatus || "PENDING"
+                    }
+                  />
+                  <DetailItem
+                    label="Payment Due"
+                    value={
+                      selectedOrder.paymentDueDate
+                        ? formatShortDate(selectedOrder.paymentDueDate)
+                        : "Set when delivered"
+                    }
+                  />
+                  <DetailItem
+                    label="Delivered On"
+                    value={
+                      selectedOrder.deliveredDate
+                        ? formatShortDate(selectedOrder.deliveredDate)
+                        : "Not yet delivered"
+                    }
+                  />
+                  <DetailItem
+                    label="Delivered By"
+                    value={selectedOrder.deliveredBy || "N/A"}
+                  />
+                  <div className="field-group full-width">
+                    <label className="field-label">
+                      Delivery Receipt (DR) Photo
+                    </label>
+                    <div className="field-box">
+                      {selectedOrder.deliveryReceipt ? (
+                        <a
+                          href={selectedOrder.deliveryReceipt}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open the full-size DR photo"
+                        >
+                          <img
+                            src={selectedOrder.deliveryReceipt}
+                            alt={`Delivery receipt for order ${selectedOrder.orderId}`}
+                            style={{
+                              maxWidth: "100%",
+                              maxHeight: 240,
+                              borderRadius: 6,
+                              display: "block",
+                            }}
+                          />
+                        </a>
+                      ) : (
+                        "No DR photo yet"
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="detail-group full title">
                   <h4>Items Ordered</h4>
                 </div>
@@ -1413,6 +1480,20 @@ const ClientsOrder = () => {
     </>
   );
 };
+
+// Pay-after-delivery: payment is due 30 days after delivery.
+const isPaymentOverdue = (order) =>
+  order?.status === "DELIVERED" &&
+  Boolean(order.paymentDueDate) &&
+  new Date(order.paymentDueDate) <= new Date() &&
+  !["COMPLETED", "AWAITING REVIEW"].includes(order.paymentStatus);
+
+const formatShortDate = (value) =>
+  new Date(value).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 
 const DetailItem = ({ label, value, fullWidth }) => (
   <div className={`field-group ${fullWidth ? "full-width" : ""}`}>

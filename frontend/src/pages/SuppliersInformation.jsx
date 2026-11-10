@@ -287,16 +287,12 @@ const SuppliersInformation = () => {
         s.email || "N/A",
       ]);
 
-      // Create filter description
-      let filterDescription = "Filtered Suppliers List";
+      // Filters printed under the report title
       const filterConditions = [];
       if (printFilters.status && printFilters.status !== "All")
         filterConditions.push(`Status: ${printFilters.status}`);
       if (printFilters.supplierName)
         filterConditions.push(`Name contains: ${printFilters.supplierName}`);
-      if (filterConditions.length > 0) {
-        filterDescription += ` (${filterConditions.join(", ")})`;
-      }
 
       generateSupplyFilteredReport({
         title,
@@ -428,7 +424,6 @@ const SuppliersInformation = () => {
       ]);
 
       // Create filter description
-      let filterDescription = "Filtered Purchase Batches List";
       const filterConditions = [];
       if (printFilters.supplierName)
         filterConditions.push(`Supplier: ${printFilters.supplierName}`);
@@ -444,9 +439,6 @@ const SuppliersInformation = () => {
         filterConditions.push(
           `To: ${formatReportDate(printFilters.dateTo)}`,
         );
-      if (filterConditions.length > 0) {
-        filterDescription += ` (${filterConditions.join(", ")})`;
-      }
 
       generateSupplyFilteredReport({
         title,

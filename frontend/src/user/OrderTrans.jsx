@@ -41,12 +41,34 @@ export default function OrderTrans() {
     return order?.paymentSlip && order?.paymentStatus === "COMPLETED";
   };
 
+  const isDepositSlipUnderReview = (order) =>
+    order?.paymentStatus === "AWAITING REVIEW";
+
   const hasDepositSlipRejected = (order) => {
     if (!order) return false;
     return (
-      order.paymentStatus === "REJECTED" || order.paymentRejectedAt != null
+      order.paymentStatus === "REJECTED" ||
+      (order.paymentRejectedAt != null &&
+        order.paymentStatus !== "COMPLETED" &&
+        order.paymentStatus !== "AWAITING REVIEW")
     );
   };
+
+  // Pay-after-delivery: payment is due 30 days after delivery.
+  const isPaymentOverdue = (order) =>
+    order?.status === "DELIVERED" &&
+    Boolean(order.paymentDueDate) &&
+    new Date(order.paymentDueDate) <= new Date() &&
+    !["COMPLETED", "AWAITING REVIEW"].includes(order.paymentStatus);
+
+  const formatDueDate = (value) =>
+    value
+      ? new Date(value).toLocaleDateString("en-PH", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : "N/A";
 
   const fetchOrders = async (isInitialLoad = false) => {
     if (isInitialLoad) setLoading(true);
@@ -564,6 +586,15 @@ export default function OrderTrans() {
                         >
                           {order.status || "PENDING"}
                         </span>
+                        {isPaymentOverdue(order) && (
+                          <span
+                            className="status-capsule status-cancelled"
+                            style={{ marginLeft: 6 }}
+                            title={`Payment was due ${formatDueDate(order.paymentDueDate)}`}
+                          >
+                            OVERDUE
+                          </span>
+                        )}
                       </td>
 
                       <td className="col-partial">
@@ -649,7 +680,38 @@ export default function OrderTrans() {
               </>
             )}
 
+            {selectedOrder.paymentDueDate && (
+              <div className="receipt-row">
+                <span>Payment Due:</span>
+                <span
+                  style={
+                    isPaymentOverdue(selectedOrder)
+                      ? { color: "#b8251e", fontWeight: 700 }
+                      : undefined
+                  }
+                >
+                  {formatDueDate(selectedOrder.paymentDueDate)}
+                  {isPaymentOverdue(selectedOrder) && " (OVERDUE)"}
+                </span>
+              </div>
+            )}
+
             <div className="receipt-divider" />
+
+            {/* Payment overdue banner */}
+            {isPaymentOverdue(selectedOrder) && (
+              <div className="deposit-rejected-banner">
+                <FaExclamationCircle />
+                <div>
+                  <strong>Payment Overdue</strong>
+                  <p>
+                    Payment for this order was due on{" "}
+                    {formatDueDate(selectedOrder.paymentDueDate)}. Please upload
+                    your payment slip.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Payment slip rejected banner */}
             {hasDepositSlipRejected(selectedOrder) && (
@@ -673,7 +735,9 @@ export default function OrderTrans() {
                   let remarks = "";
 
                   if (hasDepositSlipSent(selectedOrder)) {
-                    remarks += "Payment Slip: Sent to Accountant\n";
+                    remarks += "Payment Slip: Accepted\n";
+                  } else if (isDepositSlipUnderReview(selectedOrder)) {
+                    remarks += "Payment Slip: Sent to Accountant (under review)\n";
                   } else if (hasDepositSlipRejected(selectedOrder)) {
                     remarks += "Payment Slip: REJECTED — please re-upload\n";
                   } else {
@@ -794,50 +858,52 @@ export default function OrderTrans() {
             {/* Payment slip submit / re-upload button */}
             {(() => {
               const sent = hasDepositSlipSent(selectedOrder);
+              const underReview = isDepositSlipUnderReview(selectedOrder);
               const rejected = hasDepositSlipRejected(selectedOrder);
-              const isToShip = selectedOrder.status === "TO SHIP";
+              // Pay-after-delivery: a slip can be sent before or after delivery.
+              const canUpload = ["TO SHIP", "DELIVERED"].includes(
+                selectedOrder.status,
+              );
 
-              const buttonClass = sent
+              const buttonClass = sent || underReview
                 ? "deposit-sent"
                 : rejected
                   ? "deposit-rejected"
-                  : isToShip
+                  : canUpload
                     ? "enabled"
                     : "disabled";
 
               const buttonLabel = sent
-                ? "PAYMENT SLIP SENT ✓"
-                : rejected
-                  ? "RE-UPLOAD PAYMENT SLIP"
+                ? "PAYMENT ACCEPTED ✓"
+                : underReview
+                  ? "PAYMENT SLIP UNDER REVIEW"
                   : isProcessing
                     ? "UPLOADING..."
-                    : "SUBMIT PAYMENT SLIP";
+                    : rejected
+                      ? "RE-UPLOAD PAYMENT SLIP"
+                      : "SUBMIT PAYMENT SLIP";
 
               const isDisabled =
-                sent || (!isToShip && !rejected) || isProcessing;
+                sent || underReview || (!canUpload && !rejected) || isProcessing;
 
               return (
                 <button
                   className={`submit-slip-btn ${buttonClass}`}
                   disabled={isDisabled}
                   onClick={() => {
-                    if (sent) {
-                      toast.info("Payment slip has already been sent");
+                    if (sent || underReview) {
+                      toast("Payment slip has already been sent");
                       return;
                     }
 
-                    if (rejected) {
+                    if (rejected || canUpload) {
                       fileInputRef.current?.click();
                       return;
                     }
 
-                    if (isToShip) {
-                      fileInputRef.current?.click();
-                    } else {
-                      toast.info(
-                        "Please wait for the order to be in 'TO SHIP' status",
-                      );
-                    }
+                    toast(
+                      "You can send a payment slip once the order is TO SHIP or DELIVERED",
+                    );
                   }}
                 >
                   {buttonLabel}

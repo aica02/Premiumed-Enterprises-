@@ -1,14 +1,17 @@
 import express from "express";
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import ClientRequest from "../models/ClientRequest.js";
 import createActivityLog from "../utils/createActivityLogs.js";
 import Order from "../models/Order.js";
+import Notification from "../models/NotificationClient.js";
 import { ObjectId } from "mongodb";
 import {
   sendEmailWithRetry,
   getDepositSlipRejectedEmail,
 } from "../utils/emailService.js";
+import { notifyClientApplication } from "../utils/paymentService.js";
 
 const router = express.Router();
 
@@ -32,6 +35,11 @@ router.post("/register-request", async (req, res) => {
       module: "Client Management",
       description: `Client request for "${req.body.dialysisCenterName || req.body.username || "a new client"}" was submitted.`,
     });
+
+    // Email + in-app notice to the admins; never blocks the application.
+    notifyClientApplication(newRequest.toObject()).catch((err) =>
+      console.error("[ClientApplication] Alert failed:", err),
+    );
 
     res.status(201).json({ message: "Application submitted for review!" });
   } catch (err) {
@@ -509,11 +517,20 @@ router.get("/reject-deposit", async (req, res) => {
     );
   }
 
-  // 2. Perform DB update
+  // 2. Perform DB update. Only the payment changes; the order keeps its
+  // delivery status. An order left in PAYMENT REVIEW by the old flow goes
+  // back to TO SHIP so it is not stuck.
   try {
     await Order.updateOne(
       { _id: order._id },
-      { $set: { paymentStatus: "REJECTED", paymentSlip: "" } },
+      {
+        $set: {
+          paymentStatus: "REJECTED",
+          paymentSlip: "",
+          paymentRejectedAt: new Date(),
+          ...(order.status === "PAYMENT REVIEW" ? { status: "TO SHIP" } : {}),
+        },
+      },
     );
 
     // 3. Look up the client's email via the order's username
@@ -634,28 +651,30 @@ router.get("/accept-deposit", async (req, res) => {
     );
   }
 
-  // Guard: only accept orders still under review
-  if (order.status !== "PAYMENT REVIEW") {
+  // Guard: only accept slips still under review
+  if (order.paymentStatus !== "AWAITING REVIEW") {
     return res.status(400).send(
       renderDepositStatusPage({
         statusCode: 400,
         tone: "error",
-        title: "Order is not awaiting payment review.",
-        message: `Order ${order.orderId || order._id} is currently in status "${order.status}" and cannot be accepted from this link.`,
+        title: "Payment is not awaiting review.",
+        message: `The payment for order ${order.orderId || order._id} is currently "${order.paymentStatus}" and cannot be accepted from this link.`,
         url: fullUrl,
       }),
     );
   }
 
   try {
+    // Only the payment changes: a delivered order stays DELIVERED. An order
+    // left in PAYMENT REVIEW by the old flow goes back to TO SHIP.
     await Order.updateOne(
       { _id: order._id },
       {
         $set: {
           paymentStatus: "COMPLETED",
-          status: "TO SHIP",
           paymentAcceptedAt: new Date(),
           paymentAcceptedBy: req.query.by || "accountant",
+          ...(order.status === "PAYMENT REVIEW" ? { status: "TO SHIP" } : {}),
         },
       },
     );
@@ -665,7 +684,7 @@ router.get("/accept-deposit", async (req, res) => {
       await Notification.create({
         name: order.name,
         orderId: order.orderId || order._id?.toString(),
-        message: `Payment for Order #${order.orderId || order._id} has been verified and accepted. It is now TO SHIP.`,
+        message: `Payment for Order #${order.orderId || order._id} has been verified and accepted.`,
       });
     } catch (notifyErr) {
       console.error("Accept: notification failed:", notifyErr.message);
@@ -690,7 +709,7 @@ router.get("/accept-deposit", async (req, res) => {
         tone: "success",
         title: "Payment slip accepted successfully.",
         message:
-          "The order has been moved to TO SHIP and will now appear on the driver's side.",
+          "The payment has been marked as completed and the client has been notified.",
         url: fullUrl,
       }),
     );

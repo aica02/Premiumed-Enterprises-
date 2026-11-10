@@ -24,6 +24,7 @@ import profileEditRoutes from "./routes/auth.js";
 import activityLogRoutes from "./routes/ActivityLogRoute.js";
 import warehouseMapRoutes from "./routes/WarehouseMapRoute.js";
 import exportActivityLogs from "./utils/exportActivityLogs.js";
+import { startPaymentAlertJob } from "./utils/paymentService.js";
 
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
@@ -277,6 +278,9 @@ const scheduleDailyActivityExport = () => {
 };
 
 scheduleDailyActivityExport();
+
+// Pay-after-delivery alerts: overdue payments and unreviewed slips (hourly).
+startPaymentAlertJob();
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, "0.0.0.0", () => {

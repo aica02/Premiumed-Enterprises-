@@ -48,6 +48,7 @@ import {
   printBarcodeTSPL,
   scanForPrinters,
   stopPrinterScan,
+  subscribePrinterStatus,
 } from "../utils/PrinterService";
 //comment this
 
@@ -117,6 +118,21 @@ export default function InventoryKit({
 
   //comment this
   useEffect(() => {
+    // Keep the printer bar truthful: the service reports when the Bluetooth
+    // link drops, comes back, or is being re-established.
+    const unsubscribe = subscribePrinterStatus(({ state, device }) => {
+      if (state === "connected") {
+        setPrinterDevice(device);
+        setPrinterStatus(`Connected to ${device?.name || "Xprinter"}`);
+      } else if (state === "reconnecting") {
+        setPrinterDevice(null);
+        setPrinterStatus("Reconnecting to printer...");
+      } else {
+        setPrinterDevice(null);
+        setPrinterStatus("Printer Disconnected");
+      }
+    });
+
     autoConnectPrinter(setPrinterStatus)
       .then((device) => {
         if (device) setPrinterDevice(device);
@@ -125,6 +141,8 @@ export default function InventoryKit({
         console.error("Printer auto-connect failed:", error);
         setPrinterStatus("Printer Disconnected");
       });
+
+    return unsubscribe;
   }, []);
 
   const handleScanPrinters = async () => {
@@ -186,7 +204,20 @@ export default function InventoryKit({
       );
       return;
     }
-    if (!printerDevice) {
+    // If the screen shows no printer (for example it dropped while you were
+    // away), try the saved printer once before asking to connect by hand.
+    let activePrinter = printerDevice;
+    if (!activePrinter) {
+      setIsPrinting(true);
+      activePrinter = await autoConnectPrinter(setPrinterStatus);
+      setIsPrinting(false);
+      if (activePrinter) {
+        setPrinterDevice(activePrinter);
+      } else {
+        setPrinterStatus("Printer Disconnected");
+      }
+    }
+    if (!activePrinter) {
       Alert.alert("No Printer", "Please connect your Xprinter first.", [
         { text: "Connect Printer", onPress: handleScanPrinters },
         { text: "Cancel", style: "cancel" },
@@ -197,7 +228,7 @@ export default function InventoryKit({
     try {
       setIsPrinting(true);
       await printBarcodeTSPL(
-        printerDevice,
+        activePrinter,
         restockSuccessData.batchCode,
         restockSuccessData.itemName,
         restockSuccessData.expirationDate,
