@@ -1,7 +1,6 @@
 import { Router } from "express";
-import bcrypt from "bcrypt";
-import { compare, hash } from "bcryptjs";
-import jwt from "jsonwebtoken";
+import { compare } from "bcryptjs";
+import { signLoginToken } from "../utils/auth.js";
 import User from "../models/User.js";
 import createActivityLog from "../utils/createActivityLogs.js";
 
@@ -55,10 +54,12 @@ router.post("/", async (req, res) => {
       });
     }
 
+    // Only a bcrypt hash match counts; a stored plain-text password is never
+    // accepted.
     const isPasswordValid =
-      (await compare(password, user.password)) ||
-      (typeof user.password === "string" && user.password === password) ||
-      (await bcrypt.compare(password, user.password));
+      typeof user.password === "string" &&
+      /^\$2[aby]\$/.test(user.password) &&
+      (await compare(String(password), user.password));
 
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -67,15 +68,26 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const token = jwt.sign(
-      {
+    // A deactivated account gets no token (the app also checks this).
+    if (user.status !== "Active") {
+      await createActivityLog({
         userId: user._id,
         username: user.username,
         role: user.role,
-      },
-      process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "24h" },
-    );
+        action: "Failed login",
+        module: "Mobile Authentication",
+        description: `Failed login attempt for deactivated user "${user.username}".`,
+      });
+      return res.status(403).json({
+        success: false,
+        code: "ACCOUNT_INACTIVE",
+        status: user.status,
+        message:
+          "Your account is deactivated. Please contact an admin for information.",
+      });
+    }
+
+    const token = signLoginToken(user);
 
     await createActivityLog({
       userId: user._id,
@@ -172,84 +184,10 @@ router.post("/change-password", async (req, res) => {
   }
 });
 
-// Forgot password route
-router.post("/forgot-password", async (req, res) => {
-  try {
-    const { username, email } = req.body;
-
-    const user = await User.findOne({
-      username: username,
-      email: email,
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const resetToken = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "1h" },
-    );
-
-    res.json({
-      success: true,
-      message: "Password reset link sent to your email",
-      resetToken: resetToken,
-    });
-  } catch (error) {
-    console.error("Forgot password error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-    });
-  }
-});
-
-// Reset password route
-router.post("/reset-password", async (req, res) => {
-  try {
-    const { token, newPassword, confirmPassword } = req.body;
-
-    if (newPassword !== confirmPassword) {
-      return res.status(400).json({
-        success: false,
-        message: "Passwords do not match",
-      });
-    }
-
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "your-secret-key",
-    );
-
-    const user = await User.findById(decoded.userId);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
-    }
-
-    const hashedPassword = await hash(newPassword, 10);
-    user.password = hashedPassword;
-    await user.save();
-
-    res.json({
-      success: true,
-      message: "Password reset successfully",
-    });
-  } catch (error) {
-    console.error("Reset password error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Invalid or expired token",
-    });
-  }
-});
+// The old /forgot-password and /reset-password routes were removed: they
+// returned the reset token in the response, so anyone who knew a username and
+// email could take over the account. Password help goes through
+// /api/usersAccessControlPage/forgot-password, which emails a new password.
 
 // Get user profile
 router.get("/profile/:userId", async (req, res) => {

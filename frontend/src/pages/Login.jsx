@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 import "../styles/Login.css";
 import "../styles/formValidation.css";
@@ -31,6 +31,17 @@ const API_URL =
 
 const Login = () => {
   const navigate = useNavigate();
+
+  // Sent here by utils/apiAuth.js when the server rejected an expired login.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("expired") === "1") {
+      toast.error("Your session has expired. Please log in again.", {
+        id: "session-expired",
+      });
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
 
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState("");

@@ -22,18 +22,14 @@ export const canClientSee = (product, username) => {
 export const RESERVED_SUPPLY_MESSAGE =
   "This supply is reserved for another client and cannot be ordered from your account.";
 
-// Who is asking. A verified login token (req.user, set in server.js) wins over
-// any username the browser sends in headers, query or body.
-export const resolveClientUsername = (req, ...fallbacks) =>
-  normalizeUsername(
-    req.user?.username ||
-      fallbacks.find((value) => String(value || "").trim()) ||
-      "",
-  );
+// Who is asking: the verified login token only (req.user, set in server.js).
+// Usernames the browser sends in headers, query or body are not trusted.
+export const resolveClientUsername = (req) =>
+  normalizeUsername(req.user?.username || "");
 
-// Admin/Staff/Driver screens see every supply. A verified token's role wins
-// over the X-Role header.
+// Admin/Staff/Driver screens see every supply. Only a verified token's role
+// counts; the X-Role header is ignored.
 export const isStaffRequest = (req) => {
-  const role = String(req.user?.role || req.headers["x-role"] || "").trim().toLowerCase();
+  const role = String(req.user?.role || "").trim().toLowerCase();
   return Boolean(role) && role !== "user";
 };

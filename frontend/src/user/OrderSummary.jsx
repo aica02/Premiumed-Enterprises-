@@ -25,7 +25,28 @@ export default function OrderSummary() {
     procurementMobile: "Loading...",
   });
 
+  // The account this page opened with. Admin and client logins share
+  // localStorage, so a login in another tab can switch accounts mid-checkout.
+  // The order is only ever placed for this account, with its own token.
+  const [session] = useState(() => ({
+    username: localStorage.getItem("username") || "",
+    token: localStorage.getItem("token") || "",
+  }));
+
+  const isSessionStillActive = () =>
+    (localStorage.getItem("username") || "") === session.username &&
+    (localStorage.getItem("token") || "") === session.token;
+
   useEffect(() => {
+    // Checkout items belong to whoever put them in the cart. If that is not
+    // the account signed in now, they must not be ordered under it.
+    if ((sessionStorage.getItem("checkoutOwner") || "") !== session.username) {
+      sessionStorage.removeItem("checkoutItems");
+      sessionStorage.removeItem("checkoutOwner");
+      navigate("/Cart");
+      return;
+    }
+
     const savedCheckout = sessionStorage.getItem("checkoutItems");
     if (savedCheckout) {
       try {
@@ -43,7 +64,7 @@ export default function OrderSummary() {
     }
 
     const fetchClientData = async () => {
-      const username = localStorage.getItem("username");
+      const username = session.username;
       if (!username) return;
       try {
         const response = await axios.get(
@@ -68,7 +89,7 @@ export default function OrderSummary() {
     fetchClientData();
 
     const fetchOverdueOrders = async () => {
-      const username = localStorage.getItem("username");
+      const username = session.username;
       if (!username) return;
       try {
         const cleanUser = username.replace(/['"]+/g, "").trim();
@@ -82,7 +103,7 @@ export default function OrderSummary() {
       }
     };
     fetchOverdueOrders();
-  }, [navigate]);
+  }, [navigate, session]);
 
   const handleProceed = () => {
     if (items.length === 0) {
@@ -109,12 +130,21 @@ export default function OrderSummary() {
     setIsCheckingOut(true);
 
     try {
-      const username = localStorage.getItem("username");
-      const userId = localStorage.getItem("userId");
-      const role = localStorage.getItem("role");
+      const { username, token } = session;
 
-      if (!username) {
+      if (!username || !token) {
         toast.error("User not authenticated. Please login again.");
+        return;
+      }
+
+      // Another tab logged in to a different account (admin or another
+      // client) after this page opened. Stop instead of ordering this cart
+      // under that account.
+      if (!isSessionStillActive()) {
+        toast.error(
+          `This browser is now signed in to a different account. Log in again as "${username}" to place this order.`,
+          { duration: 6000 },
+        );
         return;
       }
 
@@ -134,8 +164,6 @@ export default function OrderSummary() {
 
       const orderPayload = {
         username: username,
-        userId: userId || null,
-        role: role || "User",
         name: clientInfo.fullName,
         items: transformedItems,
         subtotal: items.reduce(
@@ -158,9 +186,8 @@ export default function OrderSummary() {
         orderPayload,
         {
           headers: {
+            Authorization: `Bearer ${token}`,
             "X-Username": username,
-            "X-User-Id": userId || "",
-            "X-Role": role || "User",
           },
         }
       );
@@ -177,6 +204,7 @@ export default function OrderSummary() {
         }
 
         sessionStorage.removeItem("checkoutItems");
+        sessionStorage.removeItem("checkoutOwner");
 
         const currentCart = JSON.parse(
           localStorage.getItem("cartItems") || "[]"

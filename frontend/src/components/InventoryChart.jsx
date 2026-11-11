@@ -12,6 +12,7 @@ import {
 import { FaArrowUpRightFromSquare, FaDownload } from "react-icons/fa6";
 import { FaTimes } from "react-icons/fa";
 import ExcelJS from "exceljs";
+import { toast } from "react-hot-toast";
 import "../styles/Dashboard.css";
 import EmptyState from "./EmptyState";
 import logReportPrinted from "../utils/logReportPrinted";

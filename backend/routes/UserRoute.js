@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import crypto from "crypto";
 const router = express.Router();
 import User from "../models/User.js";
 import Counter from "../models/Counter.js";
@@ -29,17 +30,30 @@ const getActor = (req) => ({
   role: req.actor?.role || "Unknown",
 });
 
+// Temporary passwords use a cryptographic random source (Math.random is
+// predictable) and always contain a lowercase and uppercase letter, a digit
+// and a symbol.
 const generateRandomPassword = () => {
-  const length = 8;
-  const charset =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    const randomIndex = Math.floor(Math.random() * charset.length);
-    password += charset[randomIndex];
+  const lower = "abcdefghijkmnopqrstuvwxyz";
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "23456789";
+  const symbols = "!@#$%*";
+  const all = lower + upper + digits + symbols;
+  const pick = (set) => set[crypto.randomInt(set.length)];
+  const chars = [pick(lower), pick(upper), pick(digits), pick(symbols)];
+  while (chars.length < 12) chars.push(pick(all));
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
   }
-  return password;
+  return chars.join("");
 };
+
+const USER_STATUSES = ["Active", "Inactive"];
+const USER_ROLES = ["Admin", "Staff", "User", "Driver"];
+// One emailed reset per account in this window, so nobody can keep
+// resetting another person's password just by knowing their email.
+const PASSWORD_RESET_COOLDOWN_MS = 15 * 60 * 1000;
 
 const getNextEmployeeId = async (role) => {
   try {
@@ -338,10 +352,14 @@ router.put("/:id", upload.single("profileImage"), async (req, res) => {
     const updates = {};
     const { fullName, email, phoneNumber, address, role } = req.body;
 
-    if (fullName) updates.fullName = fullName;
-    if (email) updates.email = email;
-    if (phoneNumber) updates.phoneNumber = phoneNumber;
-    if (address) updates.address = address;
+    if (role && !USER_ROLES.includes(role)) {
+      return res.status(400).json({ error: "Invalid role." });
+    }
+
+    if (fullName) updates.fullName = String(fullName);
+    if (email) updates.email = String(email);
+    if (phoneNumber) updates.phoneNumber = String(phoneNumber);
+    if (address) updates.address = String(address);
     if (role) updates.role = role;
 
     if (req.file) {
@@ -420,6 +438,10 @@ router.patch("/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
+
+    if (!USER_STATUSES.includes(status)) {
+      return res.status(400).json({ error: "Status must be Active or Inactive." });
+    }
 
     const user = await User.findByIdAndUpdate(id, { status }, { new: true });
 
@@ -566,7 +588,7 @@ router.post("/change-password", async (req, res) => {
 });
 // POST - forgot password
 router.post("/forgot-password", async (req, res) => {
-  const { email } = req.body;
+  const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
 
   if (!email) {
     return res.status(400).json({ error: "Email address is required." });
@@ -585,13 +607,37 @@ router.post("/forgot-password", async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
+    // Atomic: at most one reset per cooldown window, and only if the
+    // password has not changed since it was read.
+    const now = new Date();
+    const cooldownStart = new Date(now.getTime() - PASSWORD_RESET_COOLDOWN_MS);
     const updatedUser = await User.findOneAndUpdate(
-      { _id: user._id, password: user.password },
-      { $set: { password: hashedPassword } },
+      {
+        _id: user._id,
+        password: user.password,
+        $or: [
+          { passwordResetRequestedAt: null },
+          { passwordResetRequestedAt: { $lte: cooldownStart } },
+        ],
+      },
+      { $set: { password: hashedPassword, passwordResetRequestedAt: now } },
       { new: true, runValidators: false },
     );
 
     if (!updatedUser) {
+      const fresh = await User.findById(user._id)
+        .select("passwordResetRequestedAt")
+        .lean();
+      if (
+        fresh?.passwordResetRequestedAt &&
+        new Date(fresh.passwordResetRequestedAt) > cooldownStart
+      ) {
+        return res.status(429).json({
+          success: false,
+          error:
+            "A new password was already sent to this email in the last 15 minutes. Please check your inbox, including spam.",
+        });
+      }
       return res.status(500).json({
         success: false,
         error: "Failed to update password.",
@@ -670,7 +716,12 @@ router.post("/forgot-password", async (req, res) => {
     if (!emailResult.success) {
       const rollbackResult = await User.findOneAndUpdate(
         { _id: user._id, password: hashedPassword },
-        { $set: { password: user.password } },
+        {
+          $set: {
+            password: user.password,
+            passwordResetRequestedAt: user.passwordResetRequestedAt || null,
+          },
+        },
         { new: true, runValidators: false },
       );
 
@@ -716,26 +767,23 @@ router.post("/forgot-password", async (req, res) => {
 });
 // POST - Verify email
 router.post("/verify-email", async (req, res) => {
-  const { email } = req.body;
+  const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
 
   if (!email) {
     return res.status(400).json({ error: "Email address is required." });
   }
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select("_id").lean();
     if (!user) {
       return res
         .status(404)
         .json({ error: "No account found with this email address." });
     }
 
-    res.json({
-      exists: true,
-      email: user.email,
-      username: user.username,
-      fullName: user.fullName,
-    });
+    // Public route: answer only whether the email exists. It used to return
+    // the username too, which helped take over accounts.
+    res.json({ exists: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to verify email address." });
   }

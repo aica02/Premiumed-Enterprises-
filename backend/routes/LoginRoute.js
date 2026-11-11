@@ -6,7 +6,7 @@ import multer from "multer";
 import bcrypt from "bcryptjs";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
-import jwt from "jsonwebtoken";
+import { signLoginToken } from "../utils/auth.js";
 import createActivityLog from "../utils/createActivityLogs.js";
 import {
   sendEmailWithRetry,
@@ -117,15 +117,7 @@ router.post("/login", async (req, res) => {
       description: `${user.role} "${user.username}" logged in successfully.`,
     });
 
-    const token = jwt.sign(
-      {
-        userId: user._id,
-        username: user.username,
-        role: user.role,
-      },
-      process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "24h" },
-    );
+    const token = signLoginToken(user);
     res.json({ token, role: user.role, username: user.username });
   } catch (err) {
     console.error("Login Error:", err);
@@ -177,8 +169,11 @@ router.post(
         };
       }
 
+      // Public form: the applicant cannot set the review status or ids.
+      const { status, _id, createdAt, updatedAt, ...applicationFields } =
+        req.body || {};
       const newRequest = new ClientRequest({
-        ...req.body,
+        ...applicationFields,
         dtiDocument,
         otherDocument,
       });
@@ -442,7 +437,9 @@ router.post(
 // GET PROFILE
 router.get("/profile/:username", async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username });
+    const user = await User.findOne({ username: req.params.username }).select(
+      "-password",
+    );
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }

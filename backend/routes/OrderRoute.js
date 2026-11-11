@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Cart from "../models/Cart.js";
@@ -84,12 +85,33 @@ const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadDir);
   },
+  // Files in /uploads are served publicly, so the stored name never keeps
+  // the uploader's file name or extension (an .html "slip" would run as a
+  // page on the API's domain).
   filename: function (req, file, cb) {
-    cb(null, `${Date.now()}-${file.originalname}`);
+    const ext = SLIP_TYPES[file.mimetype] || "";
+    cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`);
   },
 });
 
-const upload = multer({ storage });
+// Payment slips: photos or PDF scans only, up to 10 MB.
+const SLIP_TYPES = {
+  "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
+  "image/png": ".png",
+  "application/pdf": ".pdf",
+};
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, callback) => {
+    if (SLIP_TYPES[file.mimetype]) {
+      callback(null, true);
+    } else {
+      callback(new Error("The payment slip must be a JPG, PNG or PDF file."));
+    }
+  },
+});
 
 const getActor = (req) => ({
   userId: req.actor?.userId || null,
@@ -117,17 +139,79 @@ const findReservedOrderItem = async (req, username, items) => {
 };
 
 const findProductForOrderItem = async (itemCode) => {
-  if (!itemCode) return null;
+  if (!itemCode || typeof itemCode === "object") return null;
+  const code = String(itemCode);
 
-  const productByCode = await Product.findOne({ itemCode });
+  const productByCode = await Product.findOne({ itemCode: code });
   if (productByCode) return productByCode;
 
-  if (mongoose.isValidObjectId(itemCode)) {
-    return Product.findById(itemCode);
+  if (mongoose.isValidObjectId(code)) {
+    return Product.findById(code);
   }
 
   return null;
 };
+
+const MAX_ORDER_QUANTITY = 1000000;
+const roundMoney = (value) => Math.round(value * 100) / 100;
+
+// Builds the order lines from the supply records, not from the browser.
+// Price, name, category, unit and image come from the product; only the
+// quantity and piece/box choice come from the client. Quantities are in
+// pieces, as the cart sends them. Returns { items } or { error }.
+const priceOrderItems = async (rawItems) => {
+  const items = [];
+  for (const raw of rawItems) {
+    const product =
+      (await findProductForOrderItem(raw?.itemCode)) ||
+      (await findProductForOrderItem(raw?.productId));
+    const label = String(raw?.name || raw?.itemCode || "An item");
+
+    if (!product) {
+      return { error: `${label} is no longer available. Please remove it from your cart.` };
+    }
+
+    const price = Number(product.price);
+    if (!Number.isFinite(price) || price <= 0) {
+      return {
+        error: `${product.name} is not available for ordering right now. Please remove it from your cart.`,
+      };
+    }
+
+    const quantity = Number(raw?.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0 || quantity > MAX_ORDER_QUANTITY) {
+      return { error: `${product.name}: the quantity must be a whole number above 0.` };
+    }
+
+    const quantityPerBox = Number(product.quantityPerBox) || 0;
+    const orderMode = raw?.orderMode === "box" && quantityPerBox > 0 ? "box" : "piece";
+    const boxes =
+      orderMode === "box" ? Math.round((quantity / quantityPerBox) * 100) / 100 : 0;
+
+    items.push({
+      productId: String(product._id),
+      itemCode: product.itemCode || String(product._id),
+      name: product.name,
+      category: product.category || "Medical Supply",
+      unitType:
+        normalizeUnitType(product.unitType) ||
+        normalizeUnitType(raw?.unitType) ||
+        "Piece",
+      quantity,
+      price,
+      image: product.itemImage || "",
+      orderMode,
+      boxes,
+      quantityPerBox,
+      // Only used by the split checkout: how many pieces ship now.
+      deliveredQty: raw?.deliveredQty,
+    });
+  }
+  return { items };
+};
+
+const orderLineTotal = (list) =>
+  roundMoney(list.reduce((sum, item) => sum + item.price * item.quantity, 0));
 
 const normalizeUnitType = (unitType) => {
   const value = String(unitType || "").trim();
@@ -194,14 +278,9 @@ const addUnitTypesToOrders = async (orders) => {
   }));
 };
 
-router.get("/reset-counters", async (req, res) => {
-  try {
-    await Counter.deleteMany({});
-    res.json({ message: "All counters reset successfully" });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+// GET /reset-counters was removed: it deleted every counter (order and
+// employee ID sequences) for anyone who opened the link, after which new
+// employee IDs collided with existing ones.
 
 // The name shown as "Delivered By": the driver's full name from their
 // account, falling back to the username when no account is found.
@@ -338,41 +417,82 @@ const getNextOrderId = async (userIdentifier) => {
   return newOrderId;
 };
 
+// Decides which client an order belongs to. The verified login token is the
+// only source: admin and client sessions share browser storage, so the
+// username the browser sends can belong to a different account than the
+// one that filled the cart (an order once went out under the admin
+// "Angelo Manlapig"). A browser username that disagrees with the token is
+// refused instead of guessed, and only client (role "User") accounts may
+// order. The order name always comes from the client's own account.
+const resolveCheckoutClient = async (req) => {
+  if (!req.user?.username || !mongoose.isValidObjectId(req.user.userId)) {
+    return {
+      status: 401,
+      error: "Your session has expired. Please log in again to place your order.",
+    };
+  }
+
+  const tokenUsername = normalizeUsername(req.user.username);
+  const sentUsernames = [req.headers["x-username"], req.body?.username]
+    .map(normalizeUsername)
+    .filter(Boolean);
+  if (sentUsernames.some((sent) => sent !== tokenUsername)) {
+    return {
+      status: 409,
+      error:
+        "This browser is now signed in to a different account. Please reload the page and log in again with the account you want to order from.",
+    };
+  }
+
+  const client = await User.findOne({ _id: req.user.userId })
+    .select("username fullName role status")
+    .lean();
+  if (
+    !client ||
+    normalizeUsername(client.username) !== tokenUsername ||
+    client.role !== "User" ||
+    req.user.role !== "User"
+  ) {
+    return {
+      status: 403,
+      error:
+        "Only client accounts can place orders. Please log in with your client account.",
+    };
+  }
+  if (client.status !== "Active") {
+    return {
+      status: 403,
+      error: "Your account is deactivated. Please contact an admin for information.",
+    };
+  }
+
+  return { username: client.username, name: client.fullName?.trim() || "" };
+};
+
 //checkout
 router.post("/", async (req, res) => {
   const {
     name: submittedName,
     items,
-    subtotal,
-    total,
-    shippingAddress,
     notes,
     requestedDeliveryDate,
   } = req.body;
+  const shippingAddress =
+    typeof req.body?.shippingAddress === "string" ? req.body.shippingAddress : "";
 
   try {
-    const username =
-      req.headers["x-username"] || req.body.username || submittedName;
-
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, message: "No items to order." });
     }
 
-    // Only client accounts may place orders, and the order carries the
-    // client's name from their account rather than the name the browser
-    // sent. Admin and client sessions share browser storage, so a stale
-    // admin login could otherwise place an order under the admin's name.
-    const client = await User.findOne({ username })
-      .select("fullName role")
-      .lean();
-    if (!client || client.role !== "User") {
-      return res.status(403).json({
-        success: false,
-        message:
-          "Only client accounts can place orders. Please log in with your client account.",
-      });
+    const checkoutClient = await resolveCheckoutClient(req);
+    if (checkoutClient.error) {
+      return res
+        .status(checkoutClient.status)
+        .json({ success: false, message: checkoutClient.error });
     }
-    const name = client.fullName?.trim() || submittedName;
+    const { username } = checkoutClient;
+    const name = checkoutClient.name || submittedName;
 
     // Check every item before anything is saved, so a rejected order leaves
     // no order, counter increment or notification behind.
@@ -381,45 +501,19 @@ router.post("/", async (req, res) => {
       return res.status(403).json({ success: false, message: reservedMessage });
     }
 
+    // Prices and totals are computed here from the supply records. The
+    // browser's price, subtotal and total are ignored: a client could set
+    // them to anything.
+    const priced = await priceOrderItems(items);
+    if (priced.error) {
+      return res.status(400).json({ success: false, message: priced.error });
+    }
+    const transformedItems = priced.items.map(({ deliveredQty, ...item }) => item);
+
     const newOrderId = await getNextOrderId(username);
 
-    const transformedItems = await Promise.all(
-      items.map(async (item) => {
-        const price = Number(item.price) || 0;
-        const quantity = Number(item.quantity) || 0;
-        const product = await findProductForOrderItem(item.itemCode);
-
-        const orderMode = item.orderMode === "box" ? "box" : "piece";
-        const boxes = Number(item.boxes) || 0;
-        const quantityPerBox =
-          Number(item.quantityPerBox) || Number(product?.quantityPerBox) || 0;
-
-        return {
-          productId: item.productId || item._id,
-          itemCode: product?.itemCode || item.itemCode,
-          name: item.name,
-          category: item.category || "Medical Supply",
-          unitType:
-            normalizeUnitType(item.unitType) ||
-            normalizeUnitType(product?.unitType) ||
-            "Piece",
-          quantity: quantity,
-          price: price,
-          image: item.image || item.itemImage || "",
-          orderMode,
-          boxes: orderMode === "box" ? boxes : 0,
-          quantityPerBox,
-        };
-      }),
-    );
-
-    const calculatedSubtotal =
-      subtotal ||
-      transformedItems.reduce(
-        (sum, item) => sum + Number(item.price) * Number(item.quantity),
-        0,
-      );
-    const calculatedTotal = total || calculatedSubtotal;
+    const calculatedSubtotal = orderLineTotal(transformedItems);
+    const calculatedTotal = calculatedSubtotal;
 
     const order = new Order({
       orderId: newOrderId,
@@ -572,11 +666,35 @@ router.post("/pick-item", async (req, res) => {
   }
 });
 
-router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
+const removeUploadedFile = (file) => {
+  if (!file?.path) return;
   try {
-    const { orderId } = req.body;
+    fs.unlinkSync(file.path);
+  } catch (cleanupError) {
+    console.error("Error cleaning up file:", cleanupError);
+  }
+};
+
+router.post(
+  "/upload-slip",
+  (req, res, next) => {
+    upload.single("orderSlip")(req, res, (error) => {
+      if (error) {
+        const message =
+          error.code === "LIMIT_FILE_SIZE"
+            ? "The payment slip must be 10 MB or smaller."
+            : error.message;
+        return res.status(400).json({ success: false, message });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+  try {
+    const orderId = typeof req.body?.orderId === "string" ? req.body.orderId : "";
 
     if (!orderId || !req.file) {
+      removeUploadedFile(req.file);
       return res
         .status(400)
         .json({ message: "Order ID and slip file are required" });
@@ -584,15 +702,23 @@ router.post("/upload-slip", upload.single("orderSlip"), async (req, res) => {
 
     const order = await Order.findOne({ orderId });
     if (!order) {
+      removeUploadedFile(req.file);
       return res.status(404).json({ message: "Order not found" });
     }
 
+    // A client may only send a slip for their own order.
+    if (
+      req.user?.role === "User" &&
+      String(order.username || "").trim() !== String(req.user.username).trim()
+    ) {
+      removeUploadedFile(req.file);
+      return res
+        .status(403)
+        .json({ message: "You can only send a payment slip for your own order." });
+    }
+
     if (order.paymentStatus === "COMPLETED") {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error("Error cleaning up file:", cleanupError);
-      }
+      removeUploadedFile(req.file);
       return res
         .status(400)
         .json({ message: "Payment for this order has already been accepted." });
@@ -700,7 +826,8 @@ await order.save();
       message: error.message || "Failed to upload slip",
     });
   }
-});
+  },
+);
 
 // Uploads the driver's DR photo and returns its link. It does not mark the
 // order delivered; the app sends the link with the DELIVERED status next.
@@ -791,6 +918,46 @@ router.patch("/:orderId/status", async (req, res) => {
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    // Which status each role may set. Admin may set any. A client may only
+    // answer a proposed new delivery date on their own RETURNED order.
+    const role = req.user?.role;
+    if (role === "User") {
+      const ownsOrder =
+        String(order.username || "").trim() === String(req.user.username).trim();
+      if (!ownsOrder) {
+        return res
+          .status(403)
+          .json({ message: "You can only update your own orders." });
+      }
+      if (order.status !== "RETURNED" || !["PENDING", "CANCELLED"].includes(status)) {
+        return res.status(403).json({
+          message: "You can only approve or decline a new delivery date.",
+        });
+      }
+    } else if (role !== "Admin") {
+      const allowedByRole = {
+        Staff: ["APPROVED", "TO SHIP"],
+        Driver: ["DELIVERED"],
+      };
+      if (!(allowedByRole[role] || []).includes(status)) {
+        return res.status(403).json({
+          message: `Your account cannot set orders to ${status}.`,
+        });
+      }
+    }
+
+    // Delivered and cancelled orders are final. Re-opening them skipped the
+    // stock and payment rules (DELIVERED repeats are handled below).
+    if (
+      (order.status === "CANCELLED" ||
+        (order.status === "DELIVERED" && status !== "DELIVERED")) &&
+      order.status !== status
+    ) {
+      return res.status(400).json({
+        message: `Order ${order.orderId} is ${order.status} and can no longer be changed.`,
       });
     }
 
@@ -1270,20 +1437,27 @@ router.get("/overdue/:username", async (req, res) => {
 
 router.get("/user/:username", async (req, res) => {
   try {
-    let { username } = req.params;
+    const username = String(req.params.username || "")
+      .replace(/['"]+/g, "")
+      .trim();
+    if (!username) {
+      return res.status(400).json({ error: "Client username is required." });
+    }
 
-    username = decodeURIComponent(username);
+    // Exact match on the account's username. The old search built a regex
+    // from the URL without escaping it and also matched on the order name, so
+    // a crafted name could list other clients' orders. Orders saved without
+    // a username still match on the client's own account name.
+    const client = await User.findOne({ username }).select("fullName").lean();
+    const conditions = [{ username }];
+    if (client?.fullName) {
+      conditions.push({
+        name: client.fullName,
+        $or: [{ username: { $exists: false } }, { username: null }, { username: "" }],
+      });
+    }
 
-    username = username.replace(/['"]+/g, "").trim();
-
-    const flexibleSearch = username.split("").join("\\s*");
-
-    const orders = await Order.find({
-      $or: [
-        { name: { $regex: new RegExp(`^${flexibleSearch}$`, "i") } },
-        { username: { $regex: new RegExp(`^${flexibleSearch}$`, "i") } },
-      ],
-    }).sort({ createdAt: -1 });
+    const orders = await Order.find({ $or: conditions }).sort({ createdAt: -1 });
 
     res.json(await addUnitTypesToOrders(orders));
   } catch (err) {
@@ -1351,35 +1525,105 @@ router.get("/", async (req, res) => {
 });
 
 //picking in mobile
+// Statuses the picking screen completes (mobile Picking.js lists these).
+const PICKABLE_STATUSES = ["APPROVED", "PARTIAL"];
+
 router.post("/:orderId/complete", async (req, res) => {
-  const { pickedItems, userId, username, role } = req.body;
+  const { pickedItems } = req.body;
   const { orderId } = req.params;
+  let claimedOrderId = null;
+  let deductionStarted = false;
 
   try {
-    const order = await Order.findOne({ orderId });
-    if (!order) return res.status(404).json({ message: "Order not found" });
+    // Every picked quantity must be a whole number above 0. A negative
+    // number used to ADD stock.
+    const picks = [];
+    if (pickedItems && typeof pickedItems === "object" && !Array.isArray(pickedItems)) {
+      for (const [scannedCode, rawQty] of Object.entries(pickedItems)) {
+        const qty = Number(rawQty);
+        const cleanCode = String(scannedCode).trim();
+        if (!cleanCode || !Number.isInteger(qty) || qty <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid picked quantity for ${cleanCode || "an item"}.`,
+          });
+        }
+        picks.push({ cleanCode, totalToDeduct: qty });
+      }
+    }
+    if (picks.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "No picked items were sent." });
+    }
 
-    const deductionLog = [];
+    const existing = await Order.findOne({ orderId }).select("status inventoryDeductedAt");
+    if (!existing) return res.status(404).json({ message: "Order not found" });
 
-    for (const [scannedCode, totalToDeduct] of Object.entries(pickedItems)) {
-      let remaining = totalToDeduct;
-      const cleanCode = scannedCode.trim();
+    // Claim the order before touching stock, in one atomic update, so the
+    // same order can never be deducted twice (a retried or replayed offline
+    // request, or two phones completing it at once).
+    const order = await Order.findOneAndUpdate(
+      {
+        orderId,
+        status: { $in: PICKABLE_STATUSES },
+        inventoryDeductedAt: null,
+      },
+      { $set: { inventoryDeductedAt: new Date() } },
+      { new: true },
+    );
 
+    if (!order) {
+      if (existing.inventoryDeductedAt || existing.status === "TO SHIP") {
+        // Already completed: report success without deducting again.
+        return res.status(200).json({
+          success: true,
+          alreadyCompleted: true,
+          message: "This order was already picked; inventory was not deducted again.",
+          emailSent: false,
+          deductions: [],
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: `Only APPROVED or PARTIAL orders can be completed. Order ${orderId} is ${existing.status}.`,
+      });
+    }
+    claimedOrderId = order.orderId;
+
+    // Check every item before deducting any, so a shortage on the last item
+    // no longer leaves the earlier items deducted.
+    const now = new Date();
+    const plan = [];
+    for (const { cleanCode, totalToDeduct } of picks) {
       const batches = await Batch.find({
         itemCode: cleanCode,
         quantity: { $gt: 0 },
         status: "stored",
-        expirationDate: { $gt: new Date() },
+        expirationDate: { $gt: now },
       }).sort({ expirationDate: 1 });
 
       const totalAvailable = batches.reduce((acc, b) => acc + b.quantity, 0);
 
       if (totalAvailable < totalToDeduct) {
+        await Order.updateOne(
+          { orderId: claimedOrderId },
+          { $set: { inventoryDeductedAt: null } },
+        );
+        claimedOrderId = null;
         return res.status(400).json({
           success: false,
           message: `Insufficient stock for ${cleanCode}. Available: ${totalAvailable}, Required: ${totalToDeduct}`,
         });
       }
+      plan.push({ cleanCode, totalToDeduct, batches });
+    }
+
+    const deductionLog = [];
+    deductionStarted = true;
+
+    for (const { cleanCode, totalToDeduct, batches } of plan) {
+      let remaining = totalToDeduct;
 
       let deductedFromBatches = 0;
       for (const batch of batches) {
@@ -1443,15 +1687,7 @@ router.post("/:orderId/complete", async (req, res) => {
     }
 
     if (!user && order.name) {
-      user = await User.findOne({ fullName: order.name });
-    }
-
-    if (!user && req.body.username) {
-      user = await User.findOne({ username: req.body.username });
-    }
-
-    if (!user && req.headers["x-username"]) {
-      user = await User.findOne({ username: req.headers["x-username"] });
+      user = await User.findOne({ fullName: order.name, role: "User" });
     }
 
     if (user && user.email) {
@@ -1498,18 +1734,18 @@ router.post("/:orderId/complete", async (req, res) => {
     const actor = getActor(req);
 
     await createActivityLog({
-      userId: userId || actor.userId,
-      username: username || actor.username || order.username,
-      role: role || actor.role || "User",
+      userId: actor.userId,
+      username: actor.username,
+      role: actor.role,
       action: "Complete order - Inventory deduction",
       module: "Inventory",
       description: `Inventory deducted for order ${order.orderId}. ${deductionLog.map((d) => `${d.itemName}: ${d.deducted} pcs (${d.oldTotalQuantity} → ${d.newTotalQuantity} pcs, ${d.newTotalBoxes} boxes)`).join(", ")}`,
     });
 
     await createActivityLog({
-      userId: userId || actor.userId,
-      username: username || actor.username || order.username,
-      role: role || actor.role || "User",
+      userId: actor.userId,
+      username: actor.username,
+      role: actor.role,
       action: "Complete order",
       module: "Order Fulfillment",
       description: `Order ${order.orderId} was completed and moved to shipping. ${emailSent ? "Receipt email sent." : "Receipt email failed."}`,
@@ -1530,6 +1766,17 @@ router.post("/:orderId/complete", async (req, res) => {
     });
   } catch (error) {
     console.error("Complete order error:", error);
+    // Nothing was deducted yet: release the claim so the order can be
+    // completed again. Once stock was touched the claim stays, so a retry
+    // cannot deduct twice; an admin checks such an order by hand.
+    if (claimedOrderId && !deductionStarted) {
+      await Order.updateOne(
+        { orderId: claimedOrderId },
+        { $set: { inventoryDeductedAt: null } },
+      ).catch((releaseError) =>
+        console.error("Failed to release picking claim:", releaseError),
+      );
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -1578,9 +1825,9 @@ router.post("/:orderId/email", async (req, res) => {
 
     if (emailResult.success) {
       await createActivityLog({
-        userId: req.body.userId || user._id,
-        username: order.username,
-        role: req.body.role || "User",
+        userId: req.actor?.userId || null,
+        username: req.actor?.username || "Unknown",
+        role: req.actor?.role || "Unknown",
         action: "Email sent",
         module: "Orders",
         description: `Receipt email sent to ${user.email} for order ${orderId}`,
@@ -1761,7 +2008,10 @@ router.patch("/:orderId/partial", async (req, res) => {
         paymentAcceptedBy: undefined,
         rejectToken: undefined,
         rejectTokenExpiry: undefined,
-        // The backorder starts its own delivery and payment cycle.
+        // The backorder starts its own picking, delivery and payment cycle.
+        inventoryDeductedAt: null,
+        shippedDate: null,
+        cancelledDate: null,
         deliveredDate: null,
         deliveryReceipt: "",
         deliveredBy: "",
@@ -1948,16 +2198,10 @@ router.post("/check-stock", async (req, res) => {
 // client partial
 router.post("/checkout-with-split", async (req, res) => {
   const {
-    username,
-    userId,
-    role,
-    name,
     items,
     shippingAddress,
     notes,
     requestedDeliveryDate,
-    subtotal,
-    total,
   } = req.body;
 
   try {
@@ -1965,21 +2209,40 @@ router.post("/checkout-with-split", async (req, res) => {
       return res.status(400).json({ success: false, message: "No items to order." });
     }
 
+    // Same owner rules as the normal checkout: the client comes from the
+    // verified login token, never from the names the browser sends.
+    const checkoutClient = await resolveCheckoutClient(req);
+    if (checkoutClient.error) {
+      return res
+        .status(checkoutClient.status)
+        .json({ success: false, message: checkoutClient.error });
+    }
+    const { username } = checkoutClient;
+    const name = checkoutClient.name || username;
+    const role = "User";
+    const userId = req.user.userId;
+
     const reservedMessage = await findReservedOrderItem(req, username, items);
     if (reservedMessage) {
       return res.status(403).json({ success: false, message: reservedMessage });
+    }
+
+    // Prices come from the supply records, never from the browser.
+    const priced = await priceOrderItems(items);
+    if (priced.error) {
+      return res.status(400).json({ success: false, message: priced.error });
     }
 
     const deliveredItems = [];
     const backorderItems = [];
     const newOrderID = await getNextOrderId(username);
 
-    items.forEach((item) => {
-      const orderMode = item.orderMode === "box" ? "box" : "piece";
-      const quantityPerBox = Number(item.quantityPerBox) || 0;
+    priced.items.forEach((item) => {
+      const orderMode = item.orderMode;
+      const quantityPerBox = item.quantityPerBox;
 
       // Total pieces ordered
-      const originalPcs = Number(item.quantity) || 0;
+      const originalPcs = item.quantity;
 
       // How many pieces the client is willing to accept now
       // (frontend sends deliveredQty as min(requested, available) in pcs)
@@ -2008,7 +2271,7 @@ router.post("/checkout-with-split", async (req, res) => {
         itemCode: item.itemCode,
         name: item.name,
         category: item.category,
-        unitType: item.unitType || "Piece",
+        unitType: item.unitType,
         price: item.price,
         image: item.image,
         orderMode,
@@ -2040,14 +2303,8 @@ router.post("/checkout-with-split", async (req, res) => {
       role: role || "User",
       name,
       items: deliveredItems,
-      subtotal: deliveredItems.reduce(
-        (a, i) => a + Number(i.price) * Number(i.quantity),
-        0,
-      ),
-      total: deliveredItems.reduce(
-        (a, i) => a + Number(i.price) * Number(i.quantity),
-        0,
-      ),
+      subtotal: orderLineTotal(deliveredItems),
+      total: orderLineTotal(deliveredItems),
       shippingAddress,
       notes,
       requestedDeliveryDate,
@@ -2067,18 +2324,15 @@ router.post("/checkout-with-split", async (req, res) => {
         role: role || "User",
         name,
         items: backorderItems,
-        subtotal: backorderItems.reduce(
-          (a, i) => a + Number(i.price) * Number(i.quantity),
-          0,
-        ),
-        total: backorderItems.reduce(
-          (a, i) => a + Number(i.price) * Number(i.quantity),
-          0,
-        ),
+        subtotal: orderLineTotal(backorderItems),
+        total: orderLineTotal(backorderItems),
         shippingAddress,
         notes: `${notes || ""} | Backorder from ${mainOrder.orderId}`,
         requestedDeliveryDate,
-        status: "PARTIAL",
+        // PENDING like the admin split's backorder: these items were out of
+        // stock, so they need approval (and its stock check) and picking.
+        // As PARTIAL they could be moved straight to TO SHIP.
+        status: "PENDING",
         originalOrderId: mainOrder.orderId,
       });
 
@@ -2135,10 +2389,9 @@ router.patch("/:orderId/cancel", async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    // Get user info from headers
-    const username = req.headers["x-username"];
-    const userId = req.headers["x-user-id"];
-    const role = req.headers["x-role"];
+    // Who is cancelling: the verified login token, never the X-* headers.
+    const username = req.user?.username;
+    const role = req.user?.role;
 
     // Validate order exists
     const order = await Order.findOne({ orderId: orderId });
@@ -2167,7 +2420,7 @@ router.patch("/:orderId/cancel", async (req, res) => {
 
     // A client may only cancel their own order.
     if (
-      String(role || "User") === "User" &&
+      role !== "Admin" &&
       String(username || "").trim() !== String(order.username || "").trim()
     ) {
       return res.status(403).json({

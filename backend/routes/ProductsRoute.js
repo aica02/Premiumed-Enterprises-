@@ -28,11 +28,7 @@ router.get("/", async (req, res) => {
     // Client ordering page: hide supplies reserved for other clients.
     // Admin/staff pages (e.g. Suppliers) still get every supply.
     const staffView = isStaffRequest(req);
-    const clientUsername = resolveClientUsername(
-      req,
-      req.headers["x-username"],
-      req.query.username,
-    );
+    const clientUsername = resolveClientUsername(req);
 
     const filteredProducts = productsWithBatches.filter((product) => {
       const hasPriceZero = product.price === 0 || product.price === "0";
@@ -335,20 +331,36 @@ router.patch("/dispose", async (req, res) => {
   const { itemCode, batchCode } = req.body;
 
   try {
-    const batch = await Batch.findOne({ itemCode, batchCode });
+    const batch = await Batch.findOne({
+      itemCode: String(itemCode || ""),
+      batchCode: String(batchCode || ""),
+    });
 
     if (!batch || batch.status === "disposed") {
       return res.status(404).send({ message: "Active batch not found" });
     }
 
-    const batchQty = batch.quantity;
+    // Only stock that was put away counts toward the product total. A pending
+    // batch was never added, so disposing it must not lower the total.
+    const wasInStock = ["stored", "for disposal"].includes(batch.status);
+    const batchQty = Number(batch.quantity) || 0;
     batch.status = "disposed";
     await batch.save();
 
-    await Product.findOneAndUpdate(
-      { itemCode: itemCode },
-      { $inc: { totalQuantity: -batchQty } },
-    );
+    if (wasInStock && batchQty > 0) {
+      const product = await Product.findOne({ itemCode: batch.itemCode });
+      if (product) {
+        product.totalQuantity = Math.max(
+          0,
+          (Number(product.totalQuantity) || 0) - batchQty,
+        );
+        product.totalBoxes =
+          product.quantityPerBox > 0
+            ? Math.floor(product.totalQuantity / product.quantityPerBox)
+            : 0;
+        await product.save();
+      }
+    }
 
     res.send({ message: "Batch disposed and total quantity updated" });
   } catch (error) {

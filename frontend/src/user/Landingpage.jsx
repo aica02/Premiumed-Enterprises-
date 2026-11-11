@@ -91,18 +91,20 @@ function ProductModal({ product, onClose }) {
   const [showInvalid, setShowInvalid] = useState(false);
   const navigate = useNavigate();
 
-  if (!product) return null;
-
-  const quantityPerBox = Number(product.quantityPerBox) || 0;
+  const quantityPerBox = Number(product?.quantityPerBox) || 0;
   const hasBoxOption = quantityPerBox > 0;
-  const unitType = product.unitType || "Piece";
-  const orderByLabel =
-    String(unitType).trim().toLowerCase() === "box" ? "Case" : "Box";
 
-  // Mode toggle only if the product actually has quantityPerBox
+  // Mode toggle only if the product actually has quantityPerBox. Hooks run
+  // before the early return below, so their order never changes.
   useEffect(() => {
     if (!hasBoxOption) setMode("piece");
   }, [hasBoxOption]);
+
+  if (!product) return null;
+
+  const unitType = product.unitType || "Piece";
+  const orderByLabel =
+    String(unitType).trim().toLowerCase() === "box" ? "Case" : "Box";
 
   const effectiveQuantity = mode === "box" ? boxes * quantityPerBox : pieces;
 
@@ -211,6 +213,10 @@ function ProductModal({ product, onClose }) {
       sessionStorage.setItem(
         "checkoutItems",
         JSON.stringify([checkoutProduct]),
+      );
+      sessionStorage.setItem(
+        "checkoutOwner",
+        localStorage.getItem("username") || "",
       );
       onClose();
       navigate("/OrderSummary");

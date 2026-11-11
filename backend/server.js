@@ -3,7 +3,6 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import xss from "xss";
 import cors from "cors";
-import jwt from "jsonwebtoken";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -25,32 +24,26 @@ import activityLogRoutes from "./routes/ActivityLogRoute.js";
 import warehouseMapRoutes from "./routes/WarehouseMapRoute.js";
 import exportActivityLogs from "./utils/exportActivityLogs.js";
 import { startPaymentAlertJob } from "./utils/paymentService.js";
+import {
+  assertJwtSecret,
+  authenticate,
+  requireApiAccess,
+} from "./utils/auth.js";
 
 dotenv.config();
+
+// Refuse to start without a real token secret: a missing or default secret
+// would let anyone forge an Admin login.
+try {
+  assertJwtSecret();
+} catch (error) {
+  console.error(`FATAL: ${error.message}`);
+  process.exit(1);
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
-
-const pickFirst = (...values) => {
-  for (const value of values) {
-    if (value !== undefined && value !== null && value !== "") {
-      return value;
-    }
-  }
-  return null;
-};
-
-const getNestedValue = (obj, path) => {
-  if (!obj || typeof obj !== "object") return null;
-  let current = obj;
-  for (const key of path) {
-    if (!current || typeof current !== "object" || !(key in current)) {
-      return null;
-    }
-    current = current[key];
-  }
-  return current;
-};
 
 // --- Middleware ---
 const allowedOrigins = [
@@ -104,65 +97,20 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Who is calling: set from the verified login token only (req.user and
+// req.actor). X-Username / X-Role headers and body names are not trusted.
+app.use(authenticate);
+
+// Express 5 re-parses req.query on every read, so changes made by the
+// sanitizers below were thrown away. Parse it once and keep that object.
 app.use((req, res, next) => {
-  const authHeader = req.headers.authorization || req.headers.Authorization;
-  const authToken = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : null;
-
-  if (authToken) {
-    try {
-      const decoded = jwt.verify(
-        authToken,
-        process.env.JWT_SECRET || "your-secret-key",
-      );
-      req.user = {
-        userId: decoded.userId || decoded._id || decoded.id,
-        username: decoded.username,
-        role: decoded.role,
-      };
-    } catch (error) {
-      console.warn("Invalid auth token:", error.message);
-    }
-  }
-
-  const body = req.body || {};
-  const query = req.query || {};
-  const headers = req.headers || {};
-
-  const candidateUserId = pickFirst(
-    req.user?.userId,
-    headers["x-user-id"],
-    headers["X-User-Id"],
-    body.userId,
-    body._id,
-    body.user?.id,
-    body.user?._id,
-    query.userId,
-    query.user?.id,
-  );
-
-  const candidateUsername = pickFirst(
-    req.user?.username,
-    headers["x-username"],
-    headers["X-Username"],
-    body.username,
-    body.user?.username,
-    query.username,
-  );
-
-  const candidateRole = pickFirst(
-    req.user?.role,
-    headers["x-role"],
-    headers["X-Role"],
-  );
-
-  req.actor = {
-    userId: candidateUserId,
-    username: candidateUsername,
-    role: candidateRole,
-  };
-
+  const query = req.query;
+  Object.defineProperty(req, "query", {
+    value: query,
+    writable: true,
+    configurable: true,
+    enumerable: true,
+  });
   next();
 });
 
@@ -221,13 +169,8 @@ app.use((req, res, next) => {
     return next();
   }
 
-  // Check if current route should skip MongoDB sanitization
-  const shouldSkip = skipXSSRoutes.some(route => req.path.includes(route));
-  
-  if (shouldSkip) {
-    return next();
-  }
-
+  // Every JSON route gets the MongoDB sanitizer, including the password
+  // routes: they only skip the XSS filter, which would change passwords.
   if (req.body) sanitizeMongo(req.body);
   if (req.query) sanitizeMongo(req.query);
   if (req.params) sanitizeMongo(req.params);
@@ -241,6 +184,9 @@ mongoose
   .catch((err) => console.error("MongoDB error:", err));
 
 // --- Routes ---
+// Login required for every /api route except the public ones; roles and
+// own-account checks per route are in utils/auth.js.
+app.use("/api", requireApiAccess);
 app.use("/api/inventoryPage", itemsRouter);
 app.use("/api/putaway", putawayRoutes);
 app.use("/api/usersAccessControlPage", userRoutes);

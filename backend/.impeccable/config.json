@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "files": [
+          "routes/UserRoute.js"
+        ],
+        "createdAt": "2026-11-11T00:34:27.993Z",
+        "reason": "Claude triage: Arial in UserRoute.js is the inline font of the password-reset email HTML; email clients need web-safe fonts, not a UI face choice"
+      }
+    ]
+  }
+}

@@ -31,7 +31,41 @@ router.get("/get/:username", async (req, res) => {
 router.put("/update/:username",upload.single("profileImage"),async (req, res) => {
     try {
       const { username } = req.params;
-      const updateData = { ...req.body };
+
+      // Only the profile fields a client can edit on the Profile page. The
+      // whole body used to be saved, so anyone could set their own role to
+      // "Admin", their status, or their password hash.
+      const EDITABLE_FIELDS = [
+        "fullName",
+        "facilityType",
+        "yearEstablished",
+        "registrationNumber",
+        "machines",
+        "address",
+        "phoneNumber",
+        "landline",
+        "email",
+        "ownership",
+        "ownerName",
+        "medicalDirector",
+        "nephrologist",
+        "unitManager",
+        "purchasingContact",
+        "designation",
+        "procurementMobile",
+        "procurementEmail",
+      ];
+      const updateData = {};
+      for (const field of EDITABLE_FIELDS) {
+        const value = req.body?.[field];
+        if (typeof value === "string") {
+          updateData[field] = value;
+        }
+      }
+      if (updateData.machines !== undefined) {
+        const machines = Number(updateData.machines);
+        updateData.machines = Number.isFinite(machines) && machines >= 0 ? machines : 0;
+      }
 
       const user = await User.findOne({ username });
       if (!user) {

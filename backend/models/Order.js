@@ -129,6 +129,11 @@ paymentAcceptedBy: { type: String }, // ← NEW
     },
     // Set by the cancel routes; was silently dropped before it was declared.
     cancelledDate: { type: Date, default: null },
+    // Set when the order moves to TO SHIP; was silently dropped before.
+    shippedDate: { type: Date, default: null },
+    // When picking deducted this order's stock. Claimed atomically before any
+    // deduction, so a replayed "complete" request cannot deduct twice.
+    inventoryDeductedAt: { type: Date, default: null },
 
     // Pay-after-delivery: the driver's photo of the signed delivery receipt
     // (a Cloudinary URL) and who delivered the order.

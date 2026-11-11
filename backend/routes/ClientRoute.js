@@ -23,7 +23,10 @@ const getActor = (req) => ({
 
 router.post("/register-request", async (req, res) => {
   try {
-    const newRequest = new ClientRequest(req.body);
+    // Public form: the applicant cannot set the review status or ids.
+    const { status, _id, createdAt, updatedAt, ...applicationFields } =
+      req.body || {};
+    const newRequest = new ClientRequest(applicationFields);
     await newRequest.save();
 
     const actor = getActor(req);

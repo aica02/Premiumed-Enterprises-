@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  createNavigationContainerRef,
+} from '@react-navigation/native';
+import { DeviceEventEmitter } from 'react-native';
+import { sessionExpiredEvent } from './shared/offlineApi';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +26,8 @@ import { useNetworkStatus } from './utils/useNetworkStatus';
 import OfflineBanner from './components/offlineBanner';
 
 const Stack = createStackNavigator();
+const navigationRef = createNavigationContainerRef();
+let sessionExpiredShown = false;
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -77,6 +84,32 @@ useEffect(() => {
   checkForUpdates();
 }, []);
 
+  // The login token expired (401 from the server): sign out and go back to
+  // the login screen once, instead of every screen failing on its own.
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      sessionExpiredEvent,
+      async () => {
+        if (sessionExpiredShown) return;
+        sessionExpiredShown = true;
+        try {
+          await AsyncStorage.multiRemove(['userToken', 'userRole', 'status']);
+        } catch (error) {
+          console.error('Failed to clear expired session:', error);
+        }
+        if (navigationRef.isReady()) {
+          navigationRef.reset({ index: 0, routes: [{ name: 'Login' }] });
+        }
+        Alert.alert(
+          'Session expired',
+          'Please log in again. Changes saved offline will sync after you log in.',
+          [{ text: 'OK', onPress: () => { sessionExpiredShown = false; } }],
+        );
+      },
+    );
+    return () => subscription.remove();
+  }, []);
+
   const checkLoginStatus = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
@@ -116,7 +149,7 @@ useEffect(() => {
     <View style={styles.appWrapper}>
       <OfflineBanner isOnline={isOnline} />
 
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator
           initialRouteName={initialRoute}
           screenOptions={{ headerShown: false }}

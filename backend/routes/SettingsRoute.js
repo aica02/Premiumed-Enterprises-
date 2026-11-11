@@ -140,29 +140,10 @@ router.patch('/upload-attachment', upload.single('attachment'), async (req, res)
     let settings = await Settings.findOne({});
     if (!settings) settings = await Settings.create({});
 
-    // ── 2. Delete the CURRENT file from Cloudinary ──
-    if (settings.profileImage) {
-      const oldPublicId = getPublicIdFromUrl(settings.profileImage);
-      console.log('Attempting to delete:', oldPublicId);
-
-      if (oldPublicId) {
-        let deleted = false;
-        for (const rt of ['image', 'raw', 'video']) {
-          try {
-            const delRes = await deleteFromCloudinary(oldPublicId, { resource_type: rt });
-            console.log(`Delete [${rt}]:`, delRes);
-            if (delRes?.result === 'ok') {
-              deleted = true;
-              console.log(`✅ Deleted with resource_type: ${rt}`);
-              break;
-            }
-          } catch (err) {
-            console.log(`❌ [${rt}] failed:`, err.message);
-          }
-        }
-        if (!deleted) console.warn('⚠️ Could not delete old file:', oldPublicId);
-      }
-    }
+    // The old file is deleted only AFTER the new one is uploaded and saved
+    // (step 6). Deleting it first left settings pointing at a missing file
+    // whenever the upload failed.
+    const previousFileUrl = settings.profileImage;
 
     // ── 3. Unique public_id so filename changes every upload ──
     const originalName = file.originalname.replace(/\.[^/.]+$/, '');
@@ -190,8 +171,28 @@ router.patch('/upload-attachment', upload.single('attachment'), async (req, res)
       { new: true }
     );
 
+    // ── 6. Now that the new file is saved, delete the previous one ──
+    if (previousFileUrl && previousFileUrl !== result.secure_url) {
+      const oldPublicId = getPublicIdFromUrl(previousFileUrl);
+      if (oldPublicId) {
+        let deleted = false;
+        for (const rt of ['image', 'raw', 'video']) {
+          try {
+            const delRes = await deleteFromCloudinary(oldPublicId, { resource_type: rt });
+            if (delRes?.result === 'ok') {
+              deleted = true;
+              break;
+            }
+          } catch (err) {
+            console.log(`Delete old settings file [${rt}] failed:`, err.message);
+          }
+        }
+        if (!deleted) console.warn('Could not delete old settings file:', oldPublicId);
+      }
+    }
+
     await createActivityLog({
-      userId: user?._id || null,
+      userId: user?.userId || null,
       username: user?.username || 'Unknown',
       role: user?.role || 'Admin',
       action: "Upload document",

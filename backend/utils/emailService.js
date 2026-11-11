@@ -126,11 +126,11 @@ export const sendOrderStatusUpdate = async (
           </h3>
 
           <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
-            <strong>Old Date:</strong> ${oldDate || "N/A"}
+            <strong>Old Date:</strong> ${escapeHtml(oldDate || "N/A")}
           </p>
 
           <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
-            <strong>New Date:</strong> ${newDate || "N/A"}
+            <strong>New Date:</strong> ${escapeHtml(newDate || "N/A")}
           </p>
 
           <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
@@ -183,7 +183,7 @@ export const sendOrderStatusUpdate = async (
           let itemDetails = `
           <div style="margin-bottom: 12px; padding: 15px 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
             <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.5;">
-              <strong>${index + 1}. ${itemName}</strong>
+              <strong>${index + 1}. ${escapeHtml(itemName)}</strong>
             </p>
 
             <p style="margin: 5px 0; font-size: 14px; line-height: 1.5;">
@@ -444,11 +444,11 @@ export const sendDepositSlipToAccountant = async (
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; color: #333333;">
-            ${item.name}
+            ${escapeHtml(item.name)}
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; color: #333333;">
-            ${item.unitType || "N/A"}
+            ${escapeHtml(item.unitType || "N/A")}
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; text-align: center; color: #333333; white-space: nowrap;">
@@ -564,7 +564,7 @@ Premiumed Enterprises
 
                   <p style="margin: 8px 0; font-size: 14px;">
                     <strong>Client Name:</strong>
-                    ${orderData.customerName || orderData.name || "N/A"}
+                    ${escapeHtml(orderData.customerName || orderData.name || "N/A")}
                   </p>
 
                   <p style="margin: 8px 0; font-size: 14px;">
@@ -635,12 +635,12 @@ Premiumed Enterprises
 
                   <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
                     <strong>Delivery Address:</strong><br>
-                    ${orderData.deliveryAddress || orderData.shippingAddress || "N/A"}
+                    ${escapeHtml(orderData.deliveryAddress || orderData.shippingAddress || "N/A")}
                   </p>
 
                   <p style="margin: 8px 0; font-size: 14px;">
                     <strong>Contact:</strong>
-                    ${orderData.contactNumber || orderData.procurementMobile || "N/A"}
+                    ${escapeHtml(orderData.contactNumber || orderData.procurementMobile || "N/A")}
                   </p>
                 </div>
 
@@ -752,7 +752,7 @@ export const getDepositSlipRejectedEmail = ({
               </h2>
 
               <p style="font-size: 15px; line-height: 1.6;">
-                Dear <strong>${username || "Valued Client"}</strong>,
+                Dear <strong>${escapeHtml(username || "Valued Client")}</strong>,
               </p>
 
               <p style="font-size: 15px; line-height: 1.6;">
@@ -894,7 +894,7 @@ export const sendOrderReceipt = async (orderData, clientEmail) => {
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; color: #333333;">
-            ${item.name}
+            ${escapeHtml(item.name)}
           </td>
 
           <td style="padding: 12px; border-bottom: 1px solid #dddddd; font-size: 14px; color: #333333;">
@@ -1010,17 +1010,17 @@ Premiumed Enterprises
                 <div style="padding: 20px; background-color: #f8f8f8; border: 1px solid #dddddd;">
                   <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
                     <strong>Client Name:</strong><br>
-                    ${orderData.clientName || orderData.name || "N/A"}
+                    ${escapeHtml(orderData.clientName || orderData.name || "N/A")}
                   </p>
 
                   <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
                     <strong>Delivery Address:</strong><br>
-                    ${orderData.shippingAddress || orderData.address || "N/A"}
+                    ${escapeHtml(orderData.shippingAddress || orderData.address || "N/A")}
                   </p>
 
                   <p style="margin: 8px 0; font-size: 14px;">
                     <strong>Contact:</strong>
-                    ${orderData.contactNumber || orderData.procurementMobile || "N/A"}
+                    ${escapeHtml(orderData.contactNumber || orderData.procurementMobile || "N/A")}
                   </p>
                 </div>
 
@@ -1159,7 +1159,7 @@ Premiumed Enterprises
               </h2>
 
               <p style="font-size: 15px; line-height: 1.6;">
-                Dear <strong>${centerName}</strong>,
+                Dear <strong>${escapeHtml(centerName)}</strong>,
               </p>
 
               <p style="font-size: 15px; line-height: 1.6;">

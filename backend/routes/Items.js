@@ -786,16 +786,11 @@ router.get("/pending-kits", async (req, res) => {
 //DISPOSE BATCH on Mobile
 router.patch("/batch/:batchCode/dispose", async (req, res) => {
   const { batchCode } = req.params;
-  const { userId, username, role } = req.body;
+  // Who disposed it: the verified login, not names sent in the body.
   const actor = {
-    userId: userId || req.actor?.userId || null,
-    username: username || req.actor?.username || "Unknown",
-    role:
-      role && role !== "Unknown"
-        ? role
-        : req.actor?.role && req.actor.role !== "Unknown"
-          ? req.actor.role
-          : "Staff",
+    userId: req.actor?.userId || null,
+    username: req.actor?.username || "Unknown",
+    role: req.actor?.role || "Staff",
   };
 
   try {

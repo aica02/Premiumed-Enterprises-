@@ -150,6 +150,7 @@ export default function Cart() {
     }));
 
     sessionStorage.setItem("checkoutItems", JSON.stringify(itemsWithPrice));
+    sessionStorage.setItem("checkoutOwner", localStorage.getItem("username") || "");
     navigate("/OrderSummary");
   };
 
@@ -186,6 +187,7 @@ export default function Cart() {
       .filter((item) => item.quantity > 0);
 
     sessionStorage.setItem("checkoutItems", JSON.stringify(checkoutItems));
+    sessionStorage.setItem("checkoutOwner", localStorage.getItem("username") || "");
     setShowStockModal(false);
     navigate("/OrderSummary");
   };

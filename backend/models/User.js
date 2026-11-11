@@ -54,10 +54,24 @@ const UserSchema = new mongoose.Schema({
   },
   lastLogin: {
     type: Date
-  }
+  },
+  // When the last "forgot password" reset was sent; limits how often anyone
+  // can reset this account's password by entering its email.
+  passwordResetRequestedAt: { type: Date, default: null }
 }, { timestamps: true });
 
-UserSchema.pre("validate", function(next) {
+// Never send the password hash to a browser or app: every res.json(user)
+// goes through toJSON.
+const hidePassword = (doc, ret) => {
+  delete ret.password;
+  return ret;
+};
+UserSchema.set("toJSON", { transform: hidePassword });
+UserSchema.set("toObject", { transform: hidePassword });
+
+// No `next` parameter: a hook that takes `next` must call it, and this one
+// never did, so every user.save() and validate() hung forever.
+UserSchema.pre("validate", function() {
   if (this.role !== "User" && !this.employeeId) {
     this.invalidate("employeeId", "Employee ID is required for Staff, Drivers, and Admins.");
   }
