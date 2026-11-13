@@ -1384,3 +1384,125 @@
     height: 40px;
   }
 }
+
+/* ---------- Brand change review (client) ---------- */
+.brand-review-intro {
+  font-size: 13px;
+  color: #444;
+  margin: 0 0 12px;
+  text-transform: none;
+}
+
+.brand-offer {
+  border: 1px solid #ece3c4;
+  background: #fffcf2;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.brand-offer-row {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.brand-offer-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 999px;
+  background: #eeeeee;
+  color: #555;
+}
+.brand-offer-tag.new {
+  background: #f6e7b4;
+  color: #6b500c;
+}
+
+.brand-offer-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2937;
+}
+.brand-offer-name.was {
+  font-weight: 600;
+  color: #666;
+  text-decoration: line-through;
+}
+
+.brand-offer-qty {
+  font-size: 12px;
+  color: #555;
+  margin-top: 2px;
+}
+
+.brand-offer-reason {
+  font-size: 12px;
+  color: #555;
+  padding-top: 8px;
+  border-top: 1px dashed #e4d9b5;
+}
+
+.brand-offer-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.brand-offer-choice button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  border: 1px solid #d6d6d6;
+  border-radius: 10px;
+  background: #fff;
+  color: #444;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.brand-offer-choice button:hover {
+  border-color: #bdbdbd;
+}
+.brand-offer-choice button.chosen.accept {
+  background: #d4af37;
+  border-color: #d4af37;
+  color: #fff;
+}
+.brand-offer-choice button.chosen.decline {
+  background: #4b4b4b;
+  border-color: #4b4b4b;
+  color: #fff;
+}
+
+.brand-review-note {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 12px;
+  text-transform: none;
+}
+
+.brand-review-submit {
+  width: 100%;
+}
+.brand-review-submit:disabled {
+  background-color: #cfcfcf;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.brand-changed-note {
+  color: #7a5c0f;
+  font-weight: 600;
+}

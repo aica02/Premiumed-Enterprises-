@@ -7,6 +7,7 @@ import {
   FaPen,
   FaFilter,
   FaPrint,
+  FaExchangeAlt,
 } from "react-icons/fa";
 import { IoIosInformationCircleOutline } from "react-icons/io";
 import axios from "axios";
@@ -59,6 +60,21 @@ const ClientsOrder = () => {
   });
   const [clients, setClients] = useState([]);
 
+  // Brand change: the order line being changed, the products that can
+  // replace it, and the admin's offer.
+  const [brandLine, setBrandLine] = useState(null);
+  const [brandOptions, setBrandOptions] = useState([]);
+  const [brandLoading, setBrandLoading] = useState(false);
+  const [brandSearch, setBrandSearch] = useState("");
+  const [brandSaving, setBrandSaving] = useState(false);
+  const [brandForm, setBrandForm] = useState({
+    toItemCode: "",
+    replaceQuantity: "",
+    newQuantity: "",
+    newOrderMode: "piece",
+    reason: "",
+  });
+
   const [isStockSufficient, setIsStockSufficient] = useState(true);
   const [insufficientItems, setInsufficientItems] = useState([]);
   const [checkingStock, setCheckingStock] = useState(false);
@@ -98,7 +114,15 @@ const ClientsOrder = () => {
         },
       );
 
-      const insufficient = response.data.insufficientItems || [];
+      // Add each item's unit so the warning says "72 Boxes", not "72 pcs".
+      const insufficient = (response.data.insufficientItems || []).map(
+        (entry) => ({
+          ...entry,
+          unitType:
+            order.items.find((item) => item.itemCode === entry.itemCode)
+              ?.unitType || entry.unitType,
+        }),
+      );
       setInsufficientItems(insufficient);
       const sufficient = insufficient.length === 0;
       setIsStockSufficient(sufficient);
@@ -152,7 +176,10 @@ const ClientsOrder = () => {
                     {item.productName || "Unknown Product"}
                   </strong>
                 </div>
-                <div>Available: {item.available ?? 0} pcs</div>
+                <div>
+                  Available: {item.available ?? 0}{" "}
+                  {unitLabel(item.available ?? 0, item.unitType)}
+                </div>
                 <div style={{ marginTop: "5px", fontWeight: "600" }}>
                   Partial delivery is recommended.
                 </div>
@@ -379,9 +406,14 @@ const ClientsOrder = () => {
     } catch (err) {
       if (err.response?.status === 409) {
         const data = err.response.data || {};
-        const insufficientItems = Array.isArray(data.insufficientItems)
-          ? data.insufficientItems
-          : [];
+        const insufficientItems = (
+          Array.isArray(data.insufficientItems) ? data.insufficientItems : []
+        ).map((entry) => ({
+          ...entry,
+          unitType: selectedOrder?.items?.find(
+            (item) => item.itemCode === entry.itemCode,
+          )?.unitType,
+        }));
 
         showInsufficientStockToast(insufficientItems);
         return;
@@ -562,6 +594,142 @@ const ClientsOrder = () => {
       });
     }
   };
+
+  const closeBrandChange = () => {
+    setBrandLine(null);
+    setBrandOptions([]);
+    setBrandSearch("");
+    setBrandSaving(false);
+  };
+
+  const openBrandChange = async (item) => {
+    setBrandLine(item);
+    setBrandOptions([]);
+    setBrandSearch("");
+    // Start with only the missing amount, so the client keeps what is in stock.
+    const inStock = productStockLevels[item.itemCode] ?? 0;
+    const shortfall = item.quantity - inStock;
+    setBrandForm({
+      toItemCode: "",
+      replaceQuantity: String(
+        shortfall > 0 && shortfall < item.quantity ? shortfall : item.quantity,
+      ),
+      newQuantity: "",
+      newOrderMode: "piece",
+      reason: "",
+    });
+    setBrandLoading(true);
+    try {
+      const response = await axios.get(
+        `${BACKEND_URL}/api/orders/${encodeURIComponent(selectedOrder.orderId)}/brand-alternatives/${item._id}`,
+      );
+      setBrandOptions(response.data.alternatives || []);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not load other brands");
+    } finally {
+      setBrandLoading(false);
+    }
+  };
+
+  const selectedBrandOption = brandOptions.find(
+    (option) => option.itemCode === brandForm.toItemCode,
+  );
+
+  // Suggests enough of the new brand to cover the pieces being replaced:
+  // whole boxes in box mode, the same count in piece mode.
+  const suggestNewQuantity = (option, replaceQuantity, mode) => {
+    const pieces = Number(replaceQuantity) || 0;
+    if (!option || pieces <= 0) return "";
+    if (mode === "box" && option.quantityPerBox > 0) {
+      return String(Math.ceil(pieces / option.quantityPerBox));
+    }
+    return String(pieces);
+  };
+
+  // The new brand is offered in the same unit as the line it replaces
+  // (90 Boxes replaces 90 Boxes), so both fields count the same thing.
+  // Pack sizes differ between brands, so cases are only shown as a hint.
+  const handlePickBrand = (option) => {
+    const mode = "piece";
+    setBrandForm((prev) => ({
+      ...prev,
+      toItemCode: option.itemCode,
+      newOrderMode: mode,
+      newQuantity: suggestNewQuantity(option, prev.replaceQuantity, mode),
+    }));
+  };
+
+  const brandNewPieces = (() => {
+    const count = Number(brandForm.newQuantity) || 0;
+    if (!selectedBrandOption) return 0;
+    return brandForm.newOrderMode === "box"
+      ? count * selectedBrandOption.quantityPerBox
+      : count;
+  })();
+
+  const handleProposeBrand = async () => {
+    const replaceQuantity = Number(brandForm.replaceQuantity);
+    const newQuantity = Number(brandForm.newQuantity);
+    if (!selectedBrandOption) {
+      toast.error("Please pick the new brand");
+      return;
+    }
+    if (
+      !Number.isInteger(replaceQuantity) ||
+      replaceQuantity < 1 ||
+      replaceQuantity > brandLine.quantity
+    ) {
+      toast.error(`Quantity to replace must be 1 to ${brandLine.quantity}`);
+      return;
+    }
+    if (!Number.isInteger(newQuantity) || newQuantity < 1) {
+      toast.error("Please enter the new quantity");
+      return;
+    }
+    if (brandNewPieces > selectedBrandOption.available) {
+      toast.error(
+        `Only ${selectedBrandOption.available} pcs of ${selectedBrandOption.name} in stock`,
+      );
+      return;
+    }
+    if (!brandForm.reason.trim()) {
+      toast.error("Please give a reason for the brand change");
+      return;
+    }
+
+    setBrandSaving(true);
+    const toastId = toast.loading("Sending brand change to the client...");
+    try {
+      const response = await axios.patch(
+        `${BACKEND_URL}/api/orders/${encodeURIComponent(selectedOrder.orderId)}/propose-brand`,
+        {
+          lineId: brandLine._id,
+          toItemCode: selectedBrandOption.itemCode,
+          replaceQuantity,
+          newQuantity,
+          newOrderMode: brandForm.newOrderMode,
+          reason: brandForm.reason.trim(),
+        },
+      );
+      toast.success(response.data.message || "Brand change sent", {
+        id: toastId,
+      });
+      if (response.data.order) setSelectedOrder(response.data.order);
+      closeBrandChange();
+      fetchOrders();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Brand change failed", {
+        id: toastId,
+      });
+      setBrandSaving(false);
+    }
+  };
+
+  const filteredBrandOptions = brandOptions.filter((option) =>
+    `${option.name} ${option.itemCode}`
+      .toLowerCase()
+      .includes(brandSearch.trim().toLowerCase()),
+  );
 
   const isLocked =
     selectedOrder?.status === "APPROVED" ||
@@ -1329,7 +1497,7 @@ const ClientsOrder = () => {
                   <h4>Items Ordered</h4>
                 </div>
                 <div className="detail-group full">
-                  <div className="order-items-table-container">
+                  <div className="order-items-table-container brand-scroll">
                     <table className="order-items-table">
                       <thead>
                         <tr>
@@ -1343,19 +1511,41 @@ const ClientsOrder = () => {
                       </thead>
                       <tbody>
                         {selectedOrder.items.map((item, index) => {
+                          const availableStock =
+                            productStockLevels[item.itemCode] ?? 0;
+                          // On a PENDING order, show what stock can actually
+                          // ship now, not the ordered quantity.
+                          const hasStockInfo =
+                            selectedOrder.status === "PENDING" &&
+                            !checkingStock &&
+                            item.itemCode in productStockLevels;
+                          const shippableNow = hasStockInfo
+                            ? Math.min(item.quantity, availableStock)
+                            : item.quantity;
                           const inputQty = isPartialMode
                             ? (partialQuantities[item.productId] ?? 0)
-                            : item.quantity;
+                            : shippableNow;
 
                           const numericInputQty =
                             inputQty === "" ? 0 : Number(inputQty);
                           const balance = item.quantity - numericInputQty;
-                          const availableStock =
-                            productStockLevels[item.itemCode] ?? 0;
+                          const isShort =
+                            hasStockInfo && availableStock < item.quantity;
 
                           return (
                             <tr key={index}>
-                              <td>{item.name}</td>
+                              <td>
+                                <div>{item.name}</div>
+                                <BrandCell
+                                  item={item}
+                                  canChange={
+                                    selectedOrder.status === "PENDING" &&
+                                    !isPartialMode &&
+                                    isShort
+                                  }
+                                  onChange={() => openBrandChange(item)}
+                                />
+                              </td>
                               <td>{item.quantity} {unitLabel(item.quantity, item.unitType)}</td>
                               <td>
                                 <input
@@ -1372,15 +1562,14 @@ const ClientsOrder = () => {
                                     )
                                   }
                                   style={{
-                                    ...(isPartialMode &&
-                                      availableStock < item.quantity && {
-                                        borderColor: "#ff6b6b",
-                                        backgroundColor: "#fff5f5",
-                                      }),
+                                    ...(isShort && {
+                                      borderColor: "#ff6b6b",
+                                      backgroundColor: "#fff5f5",
+                                    }),
                                   }}
                                 />
                               </td>
-                              <td>
+                              <td className={balance > 0 ? "backorder-short" : ""}>
                                 {balance > 0
                                   ? `${balance} ${unitLabel(balance, item.unitType)}`
                                   : "Full Delivery"}
@@ -1464,6 +1653,231 @@ const ClientsOrder = () => {
           </div>
         )}
 
+        {brandLine && selectedOrder && (
+          <div className="order-modal-overlay" style={{ zIndex: 1100 }}>
+            <div className="order-modal-container brand-modal">
+              <div className="order-modal-header">
+                <h3>CHANGE BRAND</h3>
+                <FaTimes
+                  className="order-close-icon"
+                  onClick={closeBrandChange}
+                />
+              </div>
+
+              <div className="order-modal-body">
+                {(() => {
+                  const inStock = productStockLevels[brandLine.itemCode] ?? 0;
+                  const short = Math.max(0, brandLine.quantity - inStock);
+                  const unit = (n) => unitLabel(n, brandLine.unitType);
+                  return (
+                    <div className="brand-current">
+                      <div className="brand-current-name">{brandLine.name}</div>
+                      <div className="brand-current-line">
+                        Ordered <strong>{brandLine.quantity} {unit(brandLine.quantity)}</strong>
+                        {" · "}
+                        {inStock} in stock
+                        {short > 0 && (
+                          <span className="brand-short">
+                            {" · "}
+                            {short} {unit(short)} short
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <section>
+                  <p className="brand-step-title">1. Pick the replacement brand</p>
+                  {brandOptions.length > 4 && (
+                    <div className="brand-search">
+                      <FaSearch />
+                      <input
+                        type="text"
+                        className="brand-input"
+                        placeholder="Search brand"
+                        value={brandSearch}
+                        onChange={(e) => setBrandSearch(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <div className="brand-options">
+                    {brandLoading ? (
+                      <div className="brand-empty">Loading other brands...</div>
+                    ) : filteredBrandOptions.length === 0 ? (
+                      <div className="brand-empty">
+                        {brandOptions.length === 0
+                          ? "No other brand in this category has stock."
+                          : "No brand matches your search."}
+                      </div>
+                    ) : (
+                      filteredBrandOptions.map((option) => {
+                        const picked = option.itemCode === brandForm.toItemCode;
+                        return (
+                          <button
+                            type="button"
+                            key={option.itemCode}
+                            className={`brand-option ${picked ? "picked" : ""}`}
+                            onClick={() => handlePickBrand(option)}
+                            aria-pressed={picked}
+                          >
+                            <span className="brand-radio" aria-hidden="true" />
+                            <span className="brand-option-main">
+                              <span className="brand-option-name">
+                                {option.name}
+                              </span>
+                            </span>
+                            <span className="brand-option-stock">
+                              {option.available} in stock
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </section>
+
+                <section>
+                  <p className="brand-step-title">2. How many</p>
+                  <div className="brand-qty-grid">
+                    <div>
+                      <div className="brand-qty-label">
+                        Replace {unitLabel(2, brandLine.unitType)}
+                      </div>
+                      <div className="brand-qty-row">
+                        <input
+                          type="number"
+                          min="1"
+                          max={brandLine.quantity}
+                          className="brand-input"
+                          value={brandForm.replaceQuantity}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setBrandForm((prev) => ({
+                              ...prev,
+                              replaceQuantity: value,
+                              newQuantity: suggestNewQuantity(
+                                selectedBrandOption,
+                                value,
+                                prev.newOrderMode,
+                              ),
+                            }));
+                          }}
+                        />
+                        <span className="brand-suffix">
+                          of {brandLine.quantity}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="brand-qty-label">
+                        Give{" "}
+                        {selectedBrandOption
+                          ? unitLabel(2, selectedBrandOption.unitType)
+                          : ""}{" "}
+                        Of New Brand
+                      </div>
+                      <div className="brand-qty-row">
+                        <input
+                          type="number"
+                          min="1"
+                          className="brand-input"
+                          value={brandForm.newQuantity}
+                          disabled={!selectedBrandOption}
+                          placeholder={selectedBrandOption ? "" : "Pick a brand first"}
+                          onChange={(e) =>
+                            setBrandForm((prev) => ({
+                              ...prev,
+                              newQuantity: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      {selectedBrandOption &&
+                        brandNewPieces > selectedBrandOption.available && (
+                          <div className="brand-hint error">
+                            Only {selectedBrandOption.available} in stock
+                          </div>
+                        )}
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const replace = Number(brandForm.replaceQuantity) || 0;
+                    if (!selectedBrandOption || replace < 1 || brandNewPieces < 1) {
+                      return null;
+                    }
+                    const keep = Math.max(0, brandLine.quantity - replace);
+                    return (
+                      <div className="brand-summary">
+                        The client will receive{" "}
+                        {keep > 0 && (
+                          <>
+                            <strong>
+                              {keep} {unitLabel(keep, brandLine.unitType)}
+                            </strong>{" "}
+                            of {brandLine.name} and{" "}
+                          </>
+                        )}
+                        <strong>
+                          {brandNewPieces}{" "}
+                          {unitLabel(brandNewPieces, selectedBrandOption.unitType)}
+                        </strong>{" "}
+                        of {selectedBrandOption.name}
+                        {keep === 0 && ` instead of ${brandLine.name}`}.
+                      </div>
+                    );
+                  })()}
+                </section>
+
+                <section>
+                  <p className="brand-step-title">
+                    3. Reason{" "}
+                    <span className="brand-required" aria-label="required">
+                      *
+                    </span>
+                  </p>
+                  <select
+                    className="brand-select"
+                    value={brandForm.reason}
+                    onChange={(e) =>
+                      setBrandForm((prev) => ({ ...prev, reason: e.target.value }))
+                    }
+                  >
+                    <option value="">Select a reason</option>
+                    {BRAND_CHANGE_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>
+                        {reason}
+                      </option>
+                    ))}
+                  </select>
+                </section>
+              </div>
+
+              <div className="modal-action-footer">
+                <button className="btn-cancel" onClick={closeBrandChange}>
+                  CANCEL
+                </button>
+                <button
+                  className="btn-approve"
+                  onClick={handleProposeBrand}
+                  disabled={
+                    brandSaving || !selectedBrandOption || !brandForm.reason
+                  }
+                  style={
+                    brandSaving || !selectedBrandOption || !brandForm.reason
+                      ? disabledStyle
+                      : {}
+                  }
+                >
+                  {brandSaving ? "SENDING..." : "SEND TO CLIENT"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showInvalidPartialModal && (
           <div
             className="cart-modal-overlay"
@@ -1520,6 +1934,51 @@ const formatShortDate = (value) =>
     month: "short",
     day: "numeric",
   });
+
+// Reasons the admin can give the client for a brand change.
+const BRAND_CHANGE_REASONS = [
+  "Out of stock",
+  "Not enough stock",
+  "Supplier delay",
+  "Product discontinued",
+  "Stock near expiry",
+];
+
+// The Brand column: the state of a brand change on this line, and the
+// button that starts one. The button shows only on PENDING orders, on lines
+// that do not have enough stock.
+const BrandCell = ({ item, canChange, onChange }) => {
+  const offer = item.brandChange || {};
+  const showButton = canChange && offer.status !== "PROPOSED";
+  const hasNote =
+    item.originalName || ["PROPOSED", "DECLINED"].includes(offer.status);
+  if (!hasNote && !showButton) return null;
+
+  return (
+    <div className="brand-cell">
+      {item.originalName && (
+        <span className="brand-note changed" title={`Changed from ${item.originalName}`}>
+          Was {item.originalName}
+        </span>
+      )}
+      {offer.status === "PROPOSED" && (
+        <span className="brand-note waiting" title={`Offered ${offer.toName}`}>
+          Waiting For Client
+        </span>
+      )}
+      {offer.status === "DECLINED" && (
+        <span className="brand-note declined" title={`Client declined ${offer.toName}`}>
+          Declined
+        </span>
+      )}
+      {showButton && (
+        <button type="button" className="brand-change-btn" onClick={onChange}>
+          <FaExchangeAlt aria-hidden="true" /> Change
+        </button>
+      )}
+    </div>
+  );
+};
 
 const DetailItem = ({ label, value, fullWidth }) => (
   <div className={`field-group ${fullWidth ? "full-width" : ""}`}>

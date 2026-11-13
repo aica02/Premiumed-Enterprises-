@@ -140,10 +140,13 @@ const RULES = [
   { method: "PATCH", path: /^\/orders\/[^/]+\/cancel$/, roles: [ROLES.ADMIN, ROLES.CLIENT] },
   // Which status each role may set is checked in the route.
   { method: "PATCH", path: /^\/orders\/[^/]+\/status$/, roles: ALL },
+  // The client answers a brand change on their own order (checked in the route).
+  { method: "PATCH", path: /^\/orders\/[^/]+\/brand-response$/, roles: CLIENT },
 
   // ---- Admin only ----
   { method: "GET", path: /^\/orders\/reset-counters$/, roles: [] },
-  { method: "PATCH", path: /^\/orders\/[^/]+\/(partial|edit-date)$/, roles: ADMIN },
+  { method: "PATCH", path: /^\/orders\/[^/]+\/(partial|edit-date|propose-brand)$/, roles: ADMIN },
+  { method: "GET", path: /^\/orders\/[^/]+\/brand-alternatives\/[^/]+$/, roles: ADMIN },
   { method: "*", path: /^\/usersAccessControlPage(\/.*)?$/, roles: ADMIN },
   { method: "*", path: /^\/auth\/(requests|approve-client)$/, roles: ADMIN },
   { method: "*", path: /^\/clients\/(requests|check-username|approve-client)$/, roles: ADMIN },
@@ -159,9 +162,19 @@ const RULES = [
 
 const DEFAULT_RULE = { roles: EMPLOYEES };
 
+// Express matches routes regardless of letter case (/api/USERSACCESSCONTROLPAGE
+// reaches the same router), so the rules must too, or a changed case would
+// fall through to the employee default and skip an Admin-only rule.
+const CASE_INSENSITIVE_RULES = RULES.map((rule) => ({
+  ...rule,
+  path: new RegExp(rule.path.source, rule.path.flags.includes("i") ? rule.path.flags : `${rule.path.flags}i`),
+}));
+
 const findRule = (method, path) => {
-  for (const rule of RULES) {
-    if (rule.method !== "*" && rule.method !== method) continue;
+  // Express answers HEAD with the GET handler, so HEAD follows GET rules.
+  const effectiveMethod = method === "HEAD" ? "GET" : method;
+  for (const rule of CASE_INSENSITIVE_RULES) {
+    if (rule.method !== "*" && rule.method !== effectiveMethod) continue;
     const parts = path.match(rule.path);
     if (parts) return { rule, parts };
   }

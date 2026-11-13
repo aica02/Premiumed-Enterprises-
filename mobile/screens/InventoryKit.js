@@ -1834,7 +1834,17 @@ export default function InventoryKit({
         <View style={styles.modalOverlay}>
           <View style={styles.batchModalContainer}>
             <View style={styles.modalHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
+              {/* flex + minWidth 0 let a long name wrap instead of pushing
+                  the close button off the screen. */}
+              <View
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginRight: 12,
+                }}
+              >
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel={
@@ -1865,11 +1875,13 @@ export default function InventoryKit({
                     <Upload size={20} color="#9CA3AF" />
                   )}
                 </TouchableOpacity>
-                <View>
-                  <Text style={styles.modalSubTitle}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.modalSubTitle} numberOfLines={1}>
                     ITEM CODE: {selectedItem?.itemCode}
                   </Text>
-                  <Text style={styles.modalTitle}>{selectedItem?.name}</Text>
+                  <Text style={styles.modalTitle} numberOfLines={2}>
+                    {selectedItem?.name}
+                  </Text>
                   <TouchableOpacity
                     disabled={uploading}
                     onPress={() => showImageOptions(saveBatchModalImage)}
@@ -1884,7 +1896,13 @@ export default function InventoryKit({
                   </TouchableOpacity>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setShowBatchModal(false)}>
+              <TouchableOpacity
+                onPress={() => setShowBatchModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                style={{ flexShrink: 0 }}
+              >
                 <XCircle size={28} color="#EF4444" />
               </TouchableOpacity>
             </View>

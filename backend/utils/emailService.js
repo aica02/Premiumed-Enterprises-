@@ -116,7 +116,55 @@ export const sendOrderStatusUpdate = async (
       orderData.dateNote ||
       lastChange.reason ||
       "No reason provided";
-    const hasDateChange = newStatus === "RETURNED" && Boolean(newDate);
+    // A brand-change email only shows date details while a new date is
+    // still waiting for the client's answer.
+    const brandChanges = Array.isArray(orderData.brandChanges)
+      ? orderData.brandChanges
+      : [];
+    const hasBrandChange = newStatus === "RETURNED" && brandChanges.length > 0;
+    const hasDateChange =
+      newStatus === "RETURNED" &&
+      Boolean(newDate) &&
+      (!hasBrandChange || Boolean(orderData.awaitingDateApproval));
+    if (hasBrandChange) {
+      statusMessage =
+        "An item in your order is not available in the brand you picked. We are offering another brand. Kindly check the Orders & Transactions page to accept or decline.";
+    }
+    const brandChangeInfo = hasBrandChange
+      ? `
+        <div style="margin: 25px 0; padding: 20px; background-color: #f8f8f8; border-left: 4px solid #d4af37;">
+          <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #222222;">
+            Brand Change Details
+          </h3>
+          ${brandChanges
+            .map(
+              (change) => `
+          <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
+            <strong>Ordered:</strong> ${escapeHtml(change.fromName)}<br/>
+            <strong>Offered instead:</strong> ${escapeHtml(change.toText)}<br/>
+            <strong>Reason:</strong> ${escapeHtml(change.reason)}
+          </p>`,
+            )
+            .join("")}
+          <p style="margin: 15px 0 0; font-size: 14px; line-height: 1.5;">
+            Please log in to accept or decline the new brand.
+          </p>
+        </div>
+      `
+      : "";
+    const brandChangeText = hasBrandChange
+      ? `
+BRAND CHANGE DETAILS
+${brandChanges
+  .map(
+    (change) =>
+      `Ordered: ${change.fromName}\nOffered instead: ${change.toText}\nReason: ${change.reason}`,
+  )
+  .join("\n\n")}
+
+Please log in to accept or decline the new brand.
+`
+      : "";
 
     if (hasDateChange) {
       dateChangeInfo = `
@@ -134,7 +182,7 @@ export const sendOrderStatusUpdate = async (
           </p>
 
           <p style="margin: 8px 0; font-size: 14px; line-height: 1.5;">
-            <strong>Reason:</strong> ${changeReason}
+            <strong>Reason:</strong> ${escapeHtml(changeReason)}
           </p>
 
           <p style="margin: 15px 0 0; font-size: 14px; line-height: 1.5;">
@@ -243,7 +291,7 @@ Please review and approve the new delivery date by logging into your account.
 `
     : ""
 }
-
+${brandChangeText}
 ORDER SUMMARY
 
 ${
@@ -320,6 +368,8 @@ Premiumed Enterprises
               </div>
 
               ${dateChangeInfo}
+
+              ${brandChangeInfo}
 
               <div style="margin: 25px 0;">
                 <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px; color: #222222;">

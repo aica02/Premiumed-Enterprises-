@@ -34,6 +34,10 @@ export default function OrderTrans() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
 
+  // Brand change answers on the open order: { [lineId]: true | false }.
+  const [brandAnswers, setBrandAnswers] = useState({});
+  const [brandSubmitting, setBrandSubmitting] = useState(false);
+
   const [depositSlipData, setDepositSlipData] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -212,6 +216,87 @@ export default function OrderTrans() {
       }
     }
   };
+
+  // Lines where the admin offered another brand and the client has not
+  // answered yet.
+  const openBrandOffers = (selectedOrder?.items || []).filter(
+    (item) => item.brandChange?.status === "PROPOSED",
+  );
+  // A RETURNED order made before brand changes existed is always a date
+  // change; newer ones say so with awaitingDateApproval.
+  const isDatePending =
+    selectedOrder?.status === "RETURNED" &&
+    (Boolean(selectedOrder.awaitingDateApproval) ||
+      (openBrandOffers.length === 0 && Boolean(selectedOrder.dateNote)));
+
+  useEffect(() => {
+    setBrandAnswers({});
+  }, [selectedOrder?.orderId]);
+
+  const handleSubmitBrandAnswers = async () => {
+    const unanswered = openBrandOffers.filter(
+      (item) => typeof brandAnswers[item._id] !== "boolean",
+    );
+    if (unanswered.length > 0) {
+      toast.error("Please accept or decline each brand change.");
+      return;
+    }
+
+    setBrandSubmitting(true);
+    const toastId = toast.loading("Sending your answer...");
+    try {
+      const response = await axios.patch(
+        `${BACKEND_URL}/api/orders/${encodeURIComponent(selectedOrder.orderId)}/brand-response`,
+        {
+          responses: openBrandOffers.map((item) => ({
+            lineId: item._id,
+            accept: brandAnswers[item._id],
+          })),
+        },
+      );
+      toast.success(response.data.message || "Answer sent", { id: toastId });
+      if (response.data.order) setSelectedOrder(response.data.order);
+      setBrandAnswers({});
+      fetchOrders();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not send your answer.", {
+        id: toastId,
+      });
+    } finally {
+      setBrandSubmitting(false);
+    }
+  };
+
+  // "3 Boxes", "1 Case (50 Boxes)": same words as the order list below.
+  const pluralizeUnit = (label, count) => {
+    const text = String(label || "Piece").trim();
+    if (Number(count) === 1) return text.replace(/s$/i, "") || text;
+    const lower = text.toLowerCase();
+    if (lower.endsWith("s")) return text;
+    return /(x|z|ch|sh)$/.test(lower) ? `${text}es` : `${text}s`;
+  };
+  const packageOf = (unitType) =>
+    String(unitType || "").trim().toLowerCase() === "box" ? "Case" : "Box";
+
+  const describeOrdered = (item, quantity) => {
+    if (item.orderMode === "box" && Number(item.quantityPerBox) > 0) {
+      const boxes = Math.round((quantity / item.quantityPerBox) * 100) / 100;
+      return `${boxes} ${pluralizeUnit(packageOf(item.unitType), boxes)} (${quantity} ${pluralizeUnit(item.unitType, quantity)})`;
+    }
+    return `${quantity} ${pluralizeUnit(item.unitType, quantity)}`;
+  };
+
+  const describeOffer = (offer) => {
+    const pieces = `${offer.newQuantity} ${pluralizeUnit(offer.toUnitType, offer.newQuantity)}`;
+    if (offer.newOrderMode === "box" && offer.newBoxes > 0) {
+      return `${offer.newBoxes} ${pluralizeUnit(packageOf(offer.toUnitType), offer.newBoxes)} (${pieces})`;
+    }
+    return pieces;
+  };
+
+  const allBrandAnswersGiven = openBrandOffers.every(
+    (item) => typeof brandAnswers[item._id] === "boolean",
+  );
 
   const handleApproveReturnedOrder = () => {
     if (!selectedOrder) return;
@@ -744,16 +829,16 @@ export default function OrderTrans() {
                     remarks += "Payment Slip: Not yet sent\n";
                   }
 
-                  if (
-                    selectedOrder.status === "RETURNED" &&
-                    selectedOrder.dateNote
-                  ) {
+                  if (isDatePending) {
                     remarks += `Proposed Date: ${selectedOrder.newDate}\nReason: ${selectedOrder.dateNote}\n\nPlease review and approve or cancel this order.`;
                   } else if (
                     selectedOrder.status === "PENDING" &&
                     selectedOrder.newDate
                   ) {
                     remarks += `You have approved the new delivery date. Please wait for admin confirmation.\n\nNew Date: ${selectedOrder.newDate}\nReason: ${selectedOrder.dateNote || "No reason provided"}`;
+                  } else if (openBrandOffers.length > 0) {
+                    remarks +=
+                      "An item is not available in the brand you picked. Please review the brand change below.";
                   } else {
                     remarks += selectedOrder.notes || "No remarks yet.";
                   }
@@ -814,6 +899,13 @@ export default function OrderTrans() {
                     <div className="item-top">
                       <span className="item-name">{item.name}</span>
                     </div>
+                    {item.originalName && (
+                      <div className="item-bottom">
+                        <span className="brand-changed-note">
+                          Brand changed from {item.originalName}
+                        </span>
+                      </div>
+                    )}
                     <div className="item-bottom">
                       {/* <span>{item.description || item.category || "N/A"}</span> */}
                       <span>
@@ -838,14 +930,98 @@ export default function OrderTrans() {
               <span>{(selectedOrder.status || "PENDING").toUpperCase()}</span>
             </div>
 
+            {selectedOrder.status === "RETURNED" &&
+              openBrandOffers.length > 0 && (
+                <div className="receipt-section brand-review">
+                  <h4>BRAND CHANGE</h4>
+                  <p className="brand-review-intro">
+                    {openBrandOffers.length === 1
+                      ? "One item is not available in the brand you picked."
+                      : `${openBrandOffers.length} items are not available in the brand you picked.`}
+                  </p>
+                  {openBrandOffers.map((item) => {
+                    const offer = item.brandChange;
+                    const answer = brandAnswers[item._id];
+                    const partial = offer.replaceQuantity < item.quantity;
+                    return (
+                      <div key={item._id} className="brand-offer">
+                        <div className="brand-offer-row">
+                          <span className="brand-offer-tag">Ordered</span>
+                          <div>
+                            <div className="brand-offer-name was">{item.name}</div>
+                            <div className="brand-offer-qty">
+                              {describeOrdered(item, offer.replaceQuantity)}
+                              {partial && ` of ${describeOrdered(item, item.quantity)}`}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="brand-offer-row">
+                          <span className="brand-offer-tag new">Offered</span>
+                          <div>
+                            <div className="brand-offer-name">{offer.toName}</div>
+                            <div className="brand-offer-qty">
+                              {describeOffer(offer)}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="brand-offer-reason">
+                          Reason: {offer.reason}
+                        </div>
+                        <div className="brand-offer-choice" role="group">
+                          <button
+                            type="button"
+                            className={answer === true ? "chosen accept" : ""}
+                            aria-pressed={answer === true}
+                            onClick={() =>
+                              setBrandAnswers((prev) => ({
+                                ...prev,
+                                [item._id]: true,
+                              }))
+                            }
+                          >
+                            <FaCheck aria-hidden="true" /> Accept
+                          </button>
+                          <button
+                            type="button"
+                            className={answer === false ? "chosen decline" : ""}
+                            aria-pressed={answer === false}
+                            onClick={() =>
+                              setBrandAnswers((prev) => ({
+                                ...prev,
+                                [item._id]: false,
+                              }))
+                            }
+                          >
+                            <FaTimes aria-hidden="true" /> Keep Original
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="brand-review-note">
+                    If you keep the original brand, we deliver it when it is
+                    back in stock.
+                  </p>
+                  <button
+                    className="btn-approve-proposal brand-review-submit"
+                    onClick={handleSubmitBrandAnswers}
+                    disabled={brandSubmitting || !allBrandAnswersGiven}
+                  >
+                    {brandSubmitting ? "SENDING..." : "SEND MY ANSWER"}
+                  </button>
+                </div>
+              )}
+
             {selectedOrder.status === "RETURNED" && (
               <div className="client-decision-group">
-                <button
-                  className="btn-approve-proposal"
-                  onClick={handleApproveReturnedOrder}
-                >
-                  APPROVE NEW DATE
-                </button>
+                {isDatePending && (
+                  <button
+                    className="btn-approve-proposal"
+                    onClick={handleApproveReturnedOrder}
+                  >
+                    APPROVE NEW DATE
+                  </button>
+                )}
 
                 <button
                   className="btn-cancel-order"

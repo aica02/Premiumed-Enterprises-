@@ -130,7 +130,11 @@ const findReservedOrderItem = async (req, username, items) => {
     orderingAs.push(resolveClientUsername(req));
   }
   for (const item of items) {
-    const product = await findProductForOrderItem(item.itemCode);
+    // Same lookup as priceOrderItems (itemCode, then productId), so an item
+    // sent with only a productId cannot skip the reservation check.
+    const product =
+      (await findProductForOrderItem(item?.itemCode)) ||
+      (await findProductForOrderItem(item?.productId));
     if (product && !orderingAs.every((u) => canClientSee(product, u))) {
       return `${product.name}: ${RESERVED_SUPPLY_MESSAGE}`;
     }
@@ -938,8 +942,10 @@ router.patch("/:orderId/status", async (req, res) => {
         });
       }
     } else if (role !== "Admin") {
+      // Staff approve from the picking screen; TO SHIP comes from picking
+      // (/complete), which deducts stock. Setting it here would skip that.
       const allowedByRole = {
-        Staff: ["APPROVED", "TO SHIP"],
+        Staff: ["APPROVED"],
         Driver: ["DELIVERED"],
       };
       if (!(allowedByRole[role] || []).includes(status)) {
@@ -965,7 +971,16 @@ router.patch("/:orderId/status", async (req, res) => {
 
     // Handle RETURNED -> PENDING (Client approves new delivery date)
     if (order.status === "RETURNED" && status === "PENDING") {
-      order.status = "PENDING";
+      // A brand change on the same order is answered on its own route; the
+      // order goes back to PENDING once both are answered.
+      const brandChangeOpen = hasOpenBrandChange(order);
+      if (brandChangeOpen && !order.awaitingDateApproval) {
+        return res.status(400).json({
+          message: "Please accept or decline the brand change on this order.",
+        });
+      }
+      order.awaitingDateApproval = false;
+      if (!brandChangeOpen) order.status = "PENDING";
 
       const approvalNote = `Client approved the new delivery date on ${new Date().toISOString().split("T")[0]}`;
       order.notes = order.notes
@@ -991,7 +1006,9 @@ router.patch("/:orderId/status", async (req, res) => {
 
       return res.json({
         success: true,
-        message: "Client approved the new delivery date",
+        message: brandChangeOpen
+          ? "New delivery date approved. Please also answer the brand change."
+          : "Client approved the new delivery date",
         order,
       });
     }
@@ -1873,6 +1890,11 @@ router.patch("/:orderId/partial", async (req, res) => {
         message: `Order ${originalOrder.orderId} is ${originalOrder.status} and can no longer be split.`,
       });
     }
+    if (hasOpenBrandChange(originalOrder)) {
+      return res.status(400).json({
+        message: `Order ${originalOrder.orderId} has a brand change waiting for the client.`,
+      });
+    }
     if (await Order.exists({ orderId: `${orderId}-P` })) {
       return res.status(409).json({
         message: `Order ${originalOrder.orderId} already has a backorder (${orderId}-P).`,
@@ -1898,6 +1920,14 @@ router.patch("/:orderId/partial", async (req, res) => {
 
       const orderMode = item.orderMode === "box" ? "box" : "piece";
       const quantityPerBox = Number(item.quantityPerBox) || 0;
+      // Brand-change history stays with both halves of the split.
+      const sourceLine = originalOrder.items.find(
+        (line) => String(line.productId) === String(item.productId),
+      );
+      const brandFields = {
+        originalItemCode: sourceLine?.originalItemCode || "",
+        originalName: sourceLine?.originalName || "",
+      };
       const calcBoxes = (qty) => {
         if (orderMode !== "box" || !quantityPerBox) return 0;
         return Math.round((qty / quantityPerBox) * 100) / 100;
@@ -1917,6 +1947,7 @@ router.patch("/:orderId/partial", async (req, res) => {
           orderMode,
           boxes: calcBoxes(deliveredQty),
           quantityPerBox,
+          ...brandFields,
         });
       }
 
@@ -1933,6 +1964,7 @@ router.patch("/:orderId/partial", async (req, res) => {
           orderMode,
           boxes: calcBoxes(remainingQty),
           quantityPerBox,
+          ...brandFields,
         });
       }
     });
@@ -2054,6 +2086,438 @@ router.patch("/:orderId/partial", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Brand change. When the brand a client ordered is short, the admin offers
+// another product from the same category. The order goes to RETURNED, the
+// client accepts or declines each offer, and an accepted offer swaps the
+// line. The client never sees the new brand's price or the new total.
+// ---------------------------------------------------------------------------
+
+const MAX_BRAND_REASON_LENGTH = 500;
+
+const hasOpenBrandChange = (order) =>
+  (order.items || []).some((item) => item.brandChange?.status === "PROPOSED");
+
+const findOrderLine = (order, lineId) =>
+  mongoose.isValidObjectId(lineId) ? order.items.id(lineId) : null;
+
+// Unexpired, stored stock per item code, counted the same way as the
+// approve check: { [itemCode]: pieces }.
+const getAvailableStockByItemCode = async (itemCodes) => {
+  const codes = [...new Set(itemCodes.filter(Boolean).map(String))];
+  if (codes.length === 0) return {};
+  const rows = await Batch.aggregate([
+    {
+      $match: {
+        itemCode: { $in: codes },
+        quantity: { $gt: 0 },
+        status: "stored",
+        expirationDate: { $gt: new Date() },
+      },
+    },
+    { $group: { _id: "$itemCode", available: { $sum: "$quantity" } } },
+  ]);
+  const stock = {};
+  rows.forEach((row) => {
+    stock[String(row._id)] = Number(row.available) || 0;
+  });
+  return stock;
+};
+
+const boxesFor = (quantity, orderMode, quantityPerBox) =>
+  orderMode === "box" && quantityPerBox > 0
+    ? Math.round((quantity / quantityPerBox) * 100) / 100
+    : 0;
+
+// GET /:orderId/brand-alternatives/:lineId (Admin)
+// Products the admin may offer instead of one order line: same category,
+// visible to this client, with unexpired stock.
+router.get("/:orderId/brand-alternatives/:lineId", async (req, res) => {
+  try {
+    const order = await Order.findOne({ orderId: req.params.orderId }).lean();
+    if (!order) return res.status(404).json({ message: "Order not found." });
+
+    const line = (order.items || []).find(
+      (item) => String(item._id) === String(req.params.lineId),
+    );
+    if (!line) return res.status(404).json({ message: "Order line not found." });
+
+    const current = await findProductForOrderItem(line.itemCode);
+    const category = current?.category || line.category;
+    if (!category) return res.json({ alternatives: [] });
+
+    const products = await Product.find({
+      category,
+      itemCode: { $ne: line.itemCode },
+      isKit: { $ne: true },
+      price: { $gt: 0 },
+    })
+      .select("itemCode name unitType quantityPerBox price itemImage reservedFor")
+      .lean();
+
+    const visible = products.filter((product) =>
+      canClientSee(product, order.username),
+    );
+    const stock = await getAvailableStockByItemCode(
+      visible.map((product) => product.itemCode),
+    );
+
+    const alternatives = visible
+      .map((product) => ({
+        itemCode: product.itemCode,
+        name: product.name,
+        unitType: normalizeUnitType(product.unitType) || "Piece",
+        quantityPerBox: Number(product.quantityPerBox) || 0,
+        price: Number(product.price) || 0,
+        image: product.itemImage || "",
+        available: stock[product.itemCode] || 0,
+      }))
+      .filter((product) => product.available > 0)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({ category, alternatives });
+  } catch (err) {
+    console.error("Brand alternatives error:", err);
+    res.status(500).json({ message: "Could not load other brands." });
+  }
+});
+
+// PATCH /:orderId/propose-brand (Admin)
+// Body: { lineId, toItemCode, replaceQuantity, newQuantity, newOrderMode, reason }
+//   replaceQuantity: pieces of the line the new brand replaces
+//   newQuantity:     boxes of the new brand (newOrderMode "box") or pieces
+router.patch("/:orderId/propose-brand", async (req, res) => {
+  const { lineId, toItemCode, replaceQuantity, newQuantity, newOrderMode } =
+    req.body || {};
+  const reason = String(req.body?.reason || "").trim();
+
+  try {
+    if (!reason) {
+      return res.status(400).json({ message: "Please give a reason for the brand change." });
+    }
+    if (reason.length > MAX_BRAND_REASON_LENGTH) {
+      return res.status(400).json({
+        message: `The reason can be at most ${MAX_BRAND_REASON_LENGTH} characters.`,
+      });
+    }
+
+    const order = await Order.findOne({ orderId: req.params.orderId });
+    if (!order) return res.status(404).json({ message: "Order not found." });
+
+    // Only before payment review and picking (decision 2026-11-13).
+    if (order.status !== "PENDING") {
+      return res.status(400).json({
+        message: `The brand can only be changed while the order is PENDING. Order ${order.orderId} is ${order.status}.`,
+      });
+    }
+
+    const line = findOrderLine(order, lineId);
+    if (!line) return res.status(404).json({ message: "Order line not found." });
+    if (line.brandChange?.status === "PROPOSED") {
+      return res.status(409).json({ message: "This line already has a brand change waiting for the client." });
+    }
+
+    const product =
+      typeof toItemCode === "string" && toItemCode
+        ? await Product.findOne({ itemCode: toItemCode })
+        : null;
+    if (!product) return res.status(404).json({ message: "The new product was not found." });
+    if (product.itemCode === line.itemCode) {
+      return res.status(400).json({ message: "Pick a different product from the one ordered." });
+    }
+    if (!(Number(product.price) > 0)) {
+      return res.status(400).json({ message: `${product.name} has no price set.` });
+    }
+    if (!canClientSee(product, order.username)) {
+      return res.status(400).json({ message: `${product.name}: ${RESERVED_SUPPLY_MESSAGE}` });
+    }
+    const current = await findProductForOrderItem(line.itemCode);
+    const lineCategory = current?.category || line.category;
+    if (lineCategory && product.category !== lineCategory) {
+      return res.status(400).json({ message: "The new product must be in the same category." });
+    }
+
+    const replaceQty = Number(replaceQuantity);
+    if (!Number.isInteger(replaceQty) || replaceQty < 1 || replaceQty > line.quantity) {
+      return res.status(400).json({
+        message: `The quantity to replace must be a whole number from 1 to ${line.quantity}.`,
+      });
+    }
+
+    const quantityPerBox = Number(product.quantityPerBox) || 0;
+    const mode = newOrderMode === "box" && quantityPerBox > 0 ? "box" : "piece";
+    const count = Number(newQuantity);
+    if (!Number.isInteger(count) || count < 1 || count > MAX_ORDER_QUANTITY) {
+      return res.status(400).json({
+        message: `The new quantity must be a whole number of ${mode === "box" ? "boxes" : "pieces"} above 0.`,
+      });
+    }
+    const pieces = mode === "box" ? count * quantityPerBox : count;
+    if (pieces > MAX_ORDER_QUANTITY) {
+      return res.status(400).json({ message: "The new quantity is too large." });
+    }
+
+    const stock = await getAvailableStockByItemCode([product.itemCode]);
+    const available = stock[product.itemCode] || 0;
+    if (available < pieces) {
+      return res.status(409).json({
+        message: `Only ${available} pcs of ${product.name} are in stock.`,
+        available,
+      });
+    }
+
+    const actor = getActor(req);
+    const unitType = normalizeUnitType(product.unitType) || "Piece";
+    line.brandChange = {
+      status: "PROPOSED",
+      toItemCode: product.itemCode,
+      toName: product.name,
+      toUnitType: unitType,
+      toQuantityPerBox: quantityPerBox,
+      replaceQuantity: replaceQty,
+      newQuantity: pieces,
+      newOrderMode: mode,
+      newBoxes: mode === "box" ? count : 0,
+      reason,
+      proposedBy: actor.username,
+      proposedAt: new Date(),
+      answeredAt: null,
+    };
+    order.status = "RETURNED";
+    order.brandChangeHistory.push({
+      fromItemCode: line.itemCode,
+      fromName: line.name,
+      toItemCode: product.itemCode,
+      toName: product.name,
+      replaceQuantity: replaceQty,
+      newQuantity: pieces,
+      newOrderMode: mode,
+      newBoxes: mode === "box" ? count : 0,
+      reason,
+      status: "PROPOSED",
+      by: actor.username,
+      at: new Date(),
+    });
+    await order.save();
+
+    const offerText =
+      mode === "box"
+        ? `${count} box(es) of ${product.name} (${pieces} pcs)`
+        : `${pieces} pcs of ${product.name}`;
+
+    await createActivityLog({
+      userId: actor.userId,
+      username: actor.username,
+      role: actor.role,
+      action: "Propose brand change",
+      module: "Order",
+      description: `Order ${order.orderId}: offered ${offerText} instead of ${replaceQty} pcs of ${line.name}.`,
+    });
+
+    await Notification.create({
+      name: order.name,
+      orderId: order.orderId,
+      message: `Order #${order.orderId}: ${line.name} is not available. We are offering ${offerText} instead. Reason: ${reason}. Please accept or decline.`,
+    });
+
+    try {
+      const clientEmail = await getClientEmail(order.username);
+      if (clientEmail) {
+        await sendOrderStatusUpdate(
+          {
+            ...order.toObject(),
+            brandChanges: [{ fromName: line.name, toText: offerText, reason }],
+          },
+          clientEmail,
+          "RETURNED",
+        );
+      }
+    } catch (emailError) {
+      console.error("Failed to send brand change email:", emailError);
+    }
+
+    res.json({ success: true, message: "Brand change sent to the client.", order });
+  } catch (err) {
+    console.error("Propose brand error:", err);
+    res.status(500).json({ message: "Could not propose the brand change." });
+  }
+});
+
+// PATCH /:orderId/brand-response (the order's own client)
+// Body: { responses: [{ lineId, accept: true|false }] }
+router.patch("/:orderId/brand-response", async (req, res) => {
+  const responses = Array.isArray(req.body?.responses) ? req.body.responses : [];
+
+  try {
+    const order = await Order.findOne({ orderId: req.params.orderId });
+    if (!order) return res.status(404).json({ message: "Order not found." });
+
+    const ownsOrder =
+      String(order.username || "").trim() === String(req.user?.username || "").trim();
+    if (!ownsOrder) {
+      return res.status(403).json({ message: "You can only answer your own orders." });
+    }
+    if (order.status !== "RETURNED" || !hasOpenBrandChange(order)) {
+      return res.status(400).json({ message: "This order has no brand change to answer." });
+    }
+    if (responses.length === 0) {
+      return res.status(400).json({ message: "Please accept or decline the brand change." });
+    }
+
+    // Check every answer before changing anything.
+    const answers = [];
+    for (const response of responses) {
+      const line = findOrderLine(order, response?.lineId);
+      if (!line || line.brandChange?.status !== "PROPOSED") {
+        return res.status(400).json({ message: "One of the brand changes is no longer open. Please refresh." });
+      }
+      if (answers.some((answer) => answer.line === line)) continue;
+
+      let product = null;
+      if (response.accept === true) {
+        product = await Product.findOne({ itemCode: line.brandChange.toItemCode });
+        if (!product || !(Number(product.price) > 0) || !canClientSee(product, order.username)) {
+          return res.status(409).json({
+            message: `${line.brandChange.toName} is no longer available. Please decline and contact us.`,
+          });
+        }
+      } else if (response.accept !== false) {
+        return res.status(400).json({ message: "Each answer must be accept or decline." });
+      }
+      answers.push({ line, accept: response.accept === true, product });
+    }
+
+    const answeredAt = new Date();
+    const actor = getActor(req);
+    const summary = [];
+
+    for (const { line, accept, product } of answers) {
+      const offer = line.brandChange;
+      order.brandChangeHistory.push({
+        fromItemCode: line.itemCode,
+        fromName: line.name,
+        toItemCode: offer.toItemCode,
+        toName: offer.toName,
+        replaceQuantity: offer.replaceQuantity,
+        newQuantity: offer.newQuantity,
+        newOrderMode: offer.newOrderMode,
+        newBoxes: offer.newBoxes,
+        reason: offer.reason,
+        status: accept ? "ACCEPTED" : "DECLINED",
+        by: actor.username,
+        at: answeredAt,
+      });
+
+      if (!accept) {
+        line.brandChange.status = "DECLINED";
+        line.brandChange.answeredAt = answeredAt;
+        summary.push(`declined ${offer.toName} for ${line.name}`);
+        continue;
+      }
+
+      const quantityPerBox = Number(product.quantityPerBox) || 0;
+      const newMode = offer.newOrderMode === "box" && quantityPerBox > 0 ? "box" : "piece";
+      // The pieces follow today's box size, in case it was edited meanwhile.
+      const newQuantity =
+        newMode === "box" && offer.newBoxes > 0
+          ? offer.newBoxes * quantityPerBox
+          : offer.newQuantity;
+      const newLine = {
+        productId: String(product._id),
+        itemCode: product.itemCode,
+        name: product.name,
+        category: product.category || line.category,
+        unitType: normalizeUnitType(product.unitType) || "Piece",
+        quantity: newQuantity,
+        price: Number(product.price),
+        image: product.itemImage || "",
+        orderMode: newMode,
+        boxes: boxesFor(newQuantity, newMode, quantityPerBox),
+        quantityPerBox,
+        originalItemCode: line.originalItemCode || line.itemCode,
+        originalName: line.originalName || line.name,
+      };
+      const acceptedOffer = {
+        ...line.toObject().brandChange,
+        status: "ACCEPTED",
+        answeredAt,
+      };
+      summary.push(`accepted ${offer.toName} for ${line.name}`);
+
+      const replacesWholeLine = offer.replaceQuantity >= line.quantity;
+      if (replacesWholeLine) {
+        line.set({ ...newLine, brandChange: acceptedOffer });
+      } else {
+        line.quantity -= offer.replaceQuantity;
+        line.boxes = boxesFor(line.quantity, line.orderMode, Number(line.quantityPerBox) || 0);
+        line.brandChange = acceptedOffer;
+      }
+
+      // One line per product and mode, so the partial-split screen (keyed by
+      // product) never shows two rows for the same product.
+      const twin = order.items.find(
+        (item) =>
+          item !== line &&
+          item.itemCode === newLine.itemCode &&
+          item.orderMode === newLine.orderMode,
+      );
+      if (twin) {
+        twin.quantity += newQuantity;
+        twin.boxes = boxesFor(twin.quantity, twin.orderMode, Number(twin.quantityPerBox) || 0);
+        // Pickers still need to see that this line now holds a swapped brand.
+        if (!twin.originalItemCode) {
+          twin.originalItemCode = newLine.originalItemCode;
+          twin.originalName = newLine.originalName;
+        }
+        if (replacesWholeLine) order.items.pull(line._id);
+      } else if (!replacesWholeLine) {
+        order.items.push({ ...newLine, brandChange: acceptedOffer });
+      }
+    }
+
+    // The client is billed for what they now receive; any fee on top of the
+    // items stays.
+    const extraCharges = Math.max(
+      0,
+      (Number(order.total) || 0) - (Number(order.subtotal) || 0),
+    );
+    order.subtotal = orderLineTotal(order.items);
+    order.total = roundMoney(order.subtotal + extraCharges);
+
+    if (!hasOpenBrandChange(order) && !order.awaitingDateApproval) {
+      order.status = "PENDING";
+    }
+    await order.save();
+
+    await createActivityLog({
+      userId: actor.userId,
+      username: actor.username,
+      role: actor.role,
+      action: "Answer brand change",
+      module: "Order",
+      description: `Order ${order.orderId}: client ${summary.join("; ")}.`,
+    });
+
+    await Notification.create({
+      name: order.name,
+      orderId: order.orderId,
+      message: `Client answered the brand change for Order #${order.orderId}: ${summary.join("; ")}.`,
+    });
+
+    res.json({
+      success: true,
+      message:
+        order.status === "PENDING"
+          ? "Thank you. Your answer was sent and the order is back to PENDING."
+          : "Thank you. Your answer was saved.",
+      order,
+    });
+  } catch (err) {
+    console.error("Brand response error:", err);
+    res.status(500).json({ message: "Could not save your answer." });
+  }
+});
+
 //return for new proposed date ni admin
 router.patch("/:orderId/edit-date", async (req, res) => {
   const { newDate, reason } = req.body;
@@ -2084,6 +2548,7 @@ router.patch("/:orderId/edit-date", async (req, res) => {
           newDate: newDate,
           dateNote: reason,
           notes: dateChangeNote,
+          awaitingDateApproval: true,
         },
         $push: {
           dateChangeHistory: {

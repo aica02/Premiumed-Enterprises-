@@ -30,6 +30,25 @@ import { offlineFetch as fetch } from "../shared/offlineApi";
 import useWarehouseMapAdditions from "../shared/useWarehouseMapAdditions";
 import { unitLabel } from "../utils/units";
 
+// Shown on an order line whose brand the client accepted changing, so the
+// picker does not pick the brand that was first ordered.
+const BrandChangedBadge = ({ originalName }) => (
+  <View
+    style={{
+      alignSelf: "flex-start",
+      marginTop: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+      backgroundColor: "#FEF3C7",
+    }}
+  >
+    <Text style={{ fontSize: 11, fontWeight: "700", color: "#92400E" }}>
+      BRAND CHANGED · was {originalName}
+    </Text>
+  </View>
+);
+
 export default function DeliveryList({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -908,9 +927,14 @@ export default function DeliveryList({ navigation }) {
                     item.orderMode === "box" && item.quantityPerBox > 0;
                   return (
                     <View key={index} style={pickingStyles.itemRow}>
-                      <Text style={pickingStyles.itemName}>
-                        {item.name || item.itemName}
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={pickingStyles.itemName}>
+                          {item.name || item.itemName}
+                        </Text>
+                        {Boolean(item.originalName) && (
+                          <BrandChangedBadge originalName={item.originalName} />
+                        )}
+                      </View>
                       <View style={{ alignItems: "flex-end" }}>
                         {isBox ? (
                           <>
@@ -1061,14 +1085,19 @@ export default function DeliveryList({ navigation }) {
 
                   return (
                     <View key={index} style={pickingStyles.itemRow}>
-                      <Text
-                        style={[
-                          pickingStyles.itemName,
-                          isPicked && pickingStyles.completedItem,
-                        ]}
-                      >
-                        {`${item.name || item.itemName} ${picked}/${item.quantity}`}
-                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={[
+                            pickingStyles.itemName,
+                            isPicked && pickingStyles.completedItem,
+                          ]}
+                        >
+                          {`${item.name || item.itemName} ${picked}/${item.quantity}`}
+                        </Text>
+                        {Boolean(item.originalName) && (
+                          <BrandChangedBadge originalName={item.originalName} />
+                        )}
+                      </View>
 
                       {isPicked && (
                         <Check size={18} color="#10B981" strokeWidth={3} />

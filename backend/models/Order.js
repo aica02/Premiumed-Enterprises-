@@ -38,6 +38,35 @@ const orderSchema = new mongoose.Schema(
         orderMode: { type: String, enum: ["box", "piece"], default: "piece" },
         boxes: { type: Number, default: 0, min: 0 },
         quantityPerBox: { type: Number, default: 0, min: 0 },
+
+        // Brand change: set when the client accepted another brand for this
+        // line. Holds the product the client first ordered.
+        originalItemCode: { type: String, trim: true, default: "" },
+        originalName: { type: String, trim: true, default: "" },
+        // An open or answered brand-change offer for this line. No price is
+        // stored here: the client never sees the new brand's price.
+        brandChange: {
+          status: {
+            type: String,
+            enum: ["", "PROPOSED", "ACCEPTED", "DECLINED"],
+            default: "",
+          },
+          toItemCode: { type: String, trim: true, default: "" },
+          toName: { type: String, trim: true, default: "" },
+          toUnitType: { type: String, trim: true, default: "" },
+          toQuantityPerBox: { type: Number, default: 0, min: 0 },
+          // Pieces of this line that the new brand replaces.
+          replaceQuantity: { type: Number, default: 0, min: 0 },
+          // What the client gets of the new brand, in pieces, and how it was
+          // ordered (boxes of the new brand, or pieces).
+          newQuantity: { type: Number, default: 0, min: 0 },
+          newOrderMode: { type: String, enum: ["box", "piece"], default: "piece" },
+          newBoxes: { type: Number, default: 0, min: 0 },
+          reason: { type: String, trim: true, default: "" },
+          proposedBy: { type: String, trim: true, default: "" },
+          proposedAt: { type: Date, default: null },
+          answeredAt: { type: Date, default: null },
+        },
       },
     ],
     role: {
@@ -121,6 +150,26 @@ paymentAcceptedBy: { type: String }, // ← NEW
           type: Date,
           default: Date.now,
         },
+      },
+    ],
+    // True while a proposed delivery date waits for the client. A RETURNED
+    // order can also be waiting on a brand change, so status alone does not
+    // say which.
+    awaitingDateApproval: { type: Boolean, default: false },
+    brandChangeHistory: [
+      {
+        fromItemCode: String,
+        fromName: String,
+        toItemCode: String,
+        toName: String,
+        replaceQuantity: Number,
+        newQuantity: Number,
+        newOrderMode: String,
+        newBoxes: Number,
+        reason: String,
+        status: String, // PROPOSED, ACCEPTED or DECLINED
+        by: String,
+        at: { type: Date, default: Date.now },
       },
     ],
     deliveredDate: {
