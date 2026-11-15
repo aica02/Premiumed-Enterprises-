@@ -67,6 +67,7 @@ const ClientsOrder = () => {
   const [brandLoading, setBrandLoading] = useState(false);
   const [brandSearch, setBrandSearch] = useState("");
   const [brandSaving, setBrandSaving] = useState(false);
+  const [brandSending, setBrandSending] = useState(false);
   const [brandForm, setBrandForm] = useState({
     toItemCode: "",
     replaceQuantity: "",
@@ -606,24 +607,58 @@ const ClientsOrder = () => {
     setBrandLine(item);
     setBrandOptions([]);
     setBrandSearch("");
-    // Start with only the missing amount, so the client keeps what is in stock.
-    const inStock = productStockLevels[item.itemCode] ?? 0;
-    const shortfall = item.quantity - inStock;
-    setBrandForm({
-      toItemCode: "",
-      replaceQuantity: String(
-        shortfall > 0 && shortfall < item.quantity ? shortfall : item.quantity,
-      ),
-      newQuantity: "",
-      newOrderMode: "piece",
-      reason: "",
-    });
+    const draft = item.brandChange?.status === "DRAFT" ? item.brandChange : null;
+    if (draft) {
+      // Editing a saved, unsent change: start from what was saved.
+      setBrandForm({
+        toItemCode: draft.toItemCode,
+        replaceQuantity: String(draft.replaceQuantity),
+        newQuantity: String(
+          draft.newOrderMode === "box" && draft.newBoxes > 0
+            ? draft.newBoxes
+            : draft.newQuantity,
+        ),
+        newOrderMode: draft.newOrderMode || "piece",
+        reason: draft.reason || "",
+      });
+    } else {
+      // Start with only the missing amount, so the client keeps what is in stock.
+      const inStock = productStockLevels[item.itemCode] ?? 0;
+      const shortfall = item.quantity - inStock;
+      setBrandForm({
+        toItemCode: "",
+        replaceQuantity: String(
+          shortfall > 0 && shortfall < item.quantity ? shortfall : item.quantity,
+        ),
+        newQuantity: "",
+        newOrderMode: "piece",
+        reason: "",
+      });
+    }
     setBrandLoading(true);
     try {
       const response = await axios.get(
         `${BACKEND_URL}/api/orders/${encodeURIComponent(selectedOrder.orderId)}/brand-alternatives/${item._id}`,
       );
-      setBrandOptions(response.data.alternatives || []);
+      // Other unsent changes on this order already use some of this stock.
+      const usedByOtherDrafts = {};
+      (selectedOrder.items || []).forEach((other) => {
+        if (other._id === item._id || other.brandChange?.status !== "DRAFT") return;
+        const code = other.brandChange.toItemCode;
+        usedByOtherDrafts[code] =
+          (usedByOtherDrafts[code] || 0) + (Number(other.brandChange.newQuantity) || 0);
+      });
+      setBrandOptions(
+        (response.data.alternatives || [])
+          .map((option) => ({
+            ...option,
+            available: Math.max(
+              0,
+              option.available - (usedByOtherDrafts[option.itemCode] || 0),
+            ),
+          }))
+          .filter((option) => option.available > 0 || option.itemCode === draft?.toItemCode),
+      );
     } catch (err) {
       toast.error(err.response?.data?.message || "Could not load other brands");
     } finally {
@@ -698,7 +733,7 @@ const ClientsOrder = () => {
     }
 
     setBrandSaving(true);
-    const toastId = toast.loading("Sending brand change to the client...");
+    const toastId = toast.loading("Saving brand change...");
     try {
       const response = await axios.patch(
         `${BACKEND_URL}/api/orders/${encodeURIComponent(selectedOrder.orderId)}/propose-brand`,
@@ -711,7 +746,7 @@ const ClientsOrder = () => {
           reason: brandForm.reason.trim(),
         },
       );
-      toast.success(response.data.message || "Brand change sent", {
+      toast.success(response.data.message || "Brand change saved", {
         id: toastId,
       });
       if (response.data.order) setSelectedOrder(response.data.order);
@@ -722,6 +757,55 @@ const ClientsOrder = () => {
         id: toastId,
       });
       setBrandSaving(false);
+    }
+  };
+
+  // Saved brand changes that have not gone to the client yet.
+  const brandDrafts = (selectedOrder?.items || []).filter(
+    (item) => item.brandChange?.status === "DRAFT",
+  );
+  const hasBrandDrafts = brandDrafts.length > 0;
+  const canSendBrandDrafts =
+    hasBrandDrafts &&
+    (selectedOrder?.status === "PENDING" ||
+      (selectedOrder?.status === "RETURNED" &&
+        Boolean(selectedOrder.awaitingDateApproval) &&
+        !(selectedOrder.items || []).some(
+          (item) => item.brandChange?.status === "PROPOSED",
+        )));
+
+  const handleRemoveBrandDraft = async (item) => {
+    const toastId = toast.loading("Removing brand change...");
+    try {
+      const response = await axios.delete(
+        `${BACKEND_URL}/api/orders/${encodeURIComponent(selectedOrder.orderId)}/brand-draft/${item._id}`,
+      );
+      toast.success(response.data.message || "Brand change removed", { id: toastId });
+      if (response.data.order) setSelectedOrder(response.data.order);
+      fetchOrders();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not remove the brand change", {
+        id: toastId,
+      });
+    }
+  };
+
+  const handleSendBrandDrafts = async () => {
+    setBrandSending(true);
+    const toastId = toast.loading("Sending brand changes to the client...");
+    try {
+      const response = await axios.patch(
+        `${BACKEND_URL}/api/orders/${encodeURIComponent(selectedOrder.orderId)}/send-brand-changes`,
+      );
+      toast.success(response.data.message || "Brand changes sent", { id: toastId });
+      if (response.data.order) setSelectedOrder(response.data.order);
+      fetchOrders();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Could not send the brand changes", {
+        id: toastId,
+      });
+    } finally {
+      setBrandSending(false);
     }
   };
 
@@ -747,6 +831,8 @@ const ClientsOrder = () => {
   const getApproveButtonDisabledState = () => {
     if (checkingStock) return true;
     if (isLocked) return true;
+    // Approving now would ship the original brands.
+    if (hasBrandDrafts) return true;
     if (selectedOrder?.status === "PENDING" && !isStockSufficient) return true;
     if (selectedOrder?.status === "CANCELLED") return true;
     return false;
@@ -754,6 +840,7 @@ const ClientsOrder = () => {
 
   const getPartialButtonDisabledState = () => {
     if (isLocked) return true;
+    if (hasBrandDrafts) return true;
     // A PARTIAL order was already split; splitting it again would replace
     // its backorder (-P) order.
     if (["CANCELLED", "PARTIAL"].includes(selectedOrder?.status)) return true;
@@ -763,6 +850,7 @@ const ClientsOrder = () => {
   const getApproveButtonDisabledReason = () => {
     if (checkingStock) return "Checking stock availability...";
     if (isLocked) return "Order is locked";
+    if (hasBrandDrafts) return "Send or remove the brand changes first";
     if (selectedOrder?.status === "PENDING" && !isStockSufficient)
       return "Insufficient stock";
     return "";
@@ -1541,9 +1629,10 @@ const ClientsOrder = () => {
                                   canChange={
                                     selectedOrder.status === "PENDING" &&
                                     !isPartialMode &&
-                                    isShort
+                                    (isShort || item.brandChange?.status === "DRAFT")
                                   }
                                   onChange={() => openBrandChange(item)}
+                                  onRemove={() => handleRemoveBrandDraft(item)}
                                 />
                               </td>
                               <td>{item.quantity} {unitLabel(item.quantity, item.unitType)}</td>
@@ -1589,6 +1678,65 @@ const ClientsOrder = () => {
                     TOTAL: ₱ {Number(selectedOrder.total || 0).toFixed(2)}
                   </span>
                 </div>
+
+                {hasBrandDrafts && (
+                  <div className="brand-drafts-tray" role="region" aria-label="Brand changes to send">
+                    <div className="brand-drafts-head">
+                      <span className="brand-drafts-title">
+                        Brand changes to send ({brandDrafts.length})
+                      </span>
+                      <span className="brand-drafts-sub">
+                        The client gets all of them in one message.
+                      </span>
+                    </div>
+                    <ul className="brand-drafts-list">
+                      {brandDrafts.map((item) => {
+                        const offer = item.brandChange;
+                        return (
+                          <li key={item._id} className="brand-drafts-row">
+                            <span className="brand-drafts-text">
+                              <strong>{offer.replaceQuantity} {unitLabel(offer.replaceQuantity, item.unitType)}</strong>{" "}
+                              {item.name}
+                              <span className="brand-drafts-arrow" aria-hidden="true"> → </span>
+                              <strong>{offer.newQuantity} {unitLabel(offer.newQuantity, offer.toUnitType)}</strong>{" "}
+                              {offer.toName}
+                            </span>
+                            <span className="brand-drafts-actions">
+                              {selectedOrder.status === "PENDING" && (
+                                <button type="button" onClick={() => openBrandChange(item)}>
+                                  Edit
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="danger"
+                                onClick={() => handleRemoveBrandDraft(item)}
+                              >
+                                Remove
+                              </button>
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <button
+                      type="button"
+                      className="btn-approve brand-drafts-send"
+                      onClick={handleSendBrandDrafts}
+                      disabled={brandSending || !canSendBrandDrafts}
+                      style={brandSending || !canSendBrandDrafts ? disabledStyle : {}}
+                      title={
+                        canSendBrandDrafts
+                          ? ""
+                          : "Brand changes can only be sent while the order is PENDING"
+                      }
+                    >
+                      {brandSending
+                        ? "SENDING..."
+                        : `SEND ${brandDrafts.length} ${brandDrafts.length === 1 ? "CHANGE" : "CHANGES"} TO CLIENT`}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="modal-action-footer">
                 {selectedOrder.status === "TO SHIP" ? (
@@ -1871,7 +2019,7 @@ const ClientsOrder = () => {
                       : {}
                   }
                 >
-                  {brandSaving ? "SENDING..." : "SEND TO CLIENT"}
+                  {brandSaving ? "SAVING..." : "SAVE CHANGE"}
                 </button>
               </div>
             </div>
@@ -1946,12 +2094,13 @@ const BRAND_CHANGE_REASONS = [
 
 // The Brand column: the state of a brand change on this line, and the
 // button that starts one. The button shows only on PENDING orders, on lines
-// that do not have enough stock.
-const BrandCell = ({ item, canChange, onChange }) => {
+// that do not have enough stock or that hold an unsent change.
+const BrandCell = ({ item, canChange, onChange, onRemove }) => {
   const offer = item.brandChange || {};
+  const isDraft = offer.status === "DRAFT";
   const showButton = canChange && offer.status !== "PROPOSED";
   const hasNote =
-    item.originalName || ["PROPOSED", "DECLINED"].includes(offer.status);
+    item.originalName || ["DRAFT", "PROPOSED", "DECLINED"].includes(offer.status);
   if (!hasNote && !showButton) return null;
 
   return (
@@ -1959,6 +2108,11 @@ const BrandCell = ({ item, canChange, onChange }) => {
       {item.originalName && (
         <span className="brand-note changed" title={`Changed from ${item.originalName}`}>
           Was {item.originalName}
+        </span>
+      )}
+      {isDraft && (
+        <span className="brand-note draft" title={`Not sent yet: ${offer.toName}`}>
+          Draft: {offer.toName}
         </span>
       )}
       {offer.status === "PROPOSED" && (
@@ -1973,7 +2127,12 @@ const BrandCell = ({ item, canChange, onChange }) => {
       )}
       {showButton && (
         <button type="button" className="brand-change-btn" onClick={onChange}>
-          <FaExchangeAlt aria-hidden="true" /> Change
+          <FaExchangeAlt aria-hidden="true" /> {isDraft ? "Edit" : "Change"}
+        </button>
+      )}
+      {isDraft && onRemove && (
+        <button type="button" className="brand-change-btn remove" onClick={onRemove}>
+          Remove
         </button>
       )}
     </div>

@@ -1454,6 +1454,62 @@ button:disabled {
   transition: background 0.15s ease;
 }
 .brand-change-btn:hover { background: #fbf3dc; }
+.brand-note.draft { background: #eaf1fb; color: #23508e; }
+.brand-change-btn.remove { border-color: #e3b4b1; color: #a52a24; }
+.brand-change-btn.remove:hover { background: #fdeaea; }
+
+/* Unsent brand changes, above the order footer */
+.brand-drafts-tray {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #ecdca4;
+  border-radius: 10px;
+  background: #fffaeb;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.brand-drafts-head { display: flex; flex-direction: column; gap: 2px; }
+.brand-drafts-title { font-weight: 700; font-size: 14px; color: #3d3d3d; }
+.brand-drafts-sub { font-size: 12px; color: #6b6b6b; }
+.brand-drafts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.brand-drafts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #f0e6c4;
+  font-size: 13px;
+  color: #3d3d3d;
+}
+.brand-drafts-text { min-width: 0; overflow-wrap: anywhere; }
+.brand-drafts-arrow { color: #a8892b; }
+.brand-drafts-actions { display: inline-flex; gap: 6px; }
+.brand-drafts-actions button {
+  padding: 4px 10px;
+  border: 1px solid #d4af37;
+  border-radius: 6px;
+  background: #fff;
+  color: #7a5c0f;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.brand-drafts-actions button:hover { background: #fbf3dc; }
+.brand-drafts-actions button.danger { border-color: #e3b4b1; color: #a52a24; }
+.brand-drafts-actions button.danger:hover { background: #fdeaea; }
+.brand-drafts-send { align-self: flex-end; }
 
 
 /* The Change brand window */

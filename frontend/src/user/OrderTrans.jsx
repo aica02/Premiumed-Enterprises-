@@ -297,6 +297,29 @@ export default function OrderTrans() {
   const allBrandAnswersGiven = openBrandOffers.every(
     (item) => typeof brandAnswers[item._id] === "boolean",
   );
+  const brandAnswerCount = openBrandOffers.filter(
+    (item) => typeof brandAnswers[item._id] === "boolean",
+  ).length;
+
+  const answerAllBrandOffers = (accept) => {
+    const next = {};
+    openBrandOffers.forEach((item) => {
+      next[item._id] = accept;
+    });
+    setBrandAnswers(next);
+  };
+
+  // What the client gets for each offer once answered: no prices.
+  const brandReceiveSummary = openBrandOffers.flatMap((item) => {
+    const offer = item.brandChange;
+    if (brandAnswers[item._id] !== true) {
+      return [`${describeOrdered(item, item.quantity)} ${item.name}`];
+    }
+    const keep = item.quantity - offer.replaceQuantity;
+    const rows = [`${describeOffer(offer)} ${offer.toName}`];
+    if (keep > 0) rows.unshift(`${describeOrdered(item, keep)} ${item.name}`);
+    return rows;
+  });
 
   const handleApproveReturnedOrder = () => {
     if (!selectedOrder) return;
@@ -680,6 +703,22 @@ export default function OrderTrans() {
                             OVERDUE
                           </span>
                         )}
+                        {(() => {
+                          if (order.status !== "RETURNED") return null;
+                          const offers = (order.items || []).filter(
+                            (item) => item.brandChange?.status === "PROPOSED",
+                          ).length;
+                          if (offers === 0) return null;
+                          return (
+                            <span
+                              className="brand-action-badge"
+                              title="Open the order to accept or decline"
+                            >
+                              Action needed · {offers}{" "}
+                              {offers === 1 ? "brand change" : "brand changes"}
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       <td className="col-partial">
@@ -939,6 +978,16 @@ export default function OrderTrans() {
                       ? "One item is not available in the brand you picked."
                       : `${openBrandOffers.length} items are not available in the brand you picked.`}
                   </p>
+                  {openBrandOffers.length > 1 && (
+                    <div className="brand-review-bulk" role="group" aria-label="Answer all">
+                      <button type="button" onClick={() => answerAllBrandOffers(true)}>
+                        <FaCheck aria-hidden="true" /> Accept all
+                      </button>
+                      <button type="button" onClick={() => answerAllBrandOffers(false)}>
+                        <FaTimes aria-hidden="true" /> Keep all original
+                      </button>
+                    </div>
+                  )}
                   {openBrandOffers.map((item) => {
                     const offer = item.brandChange;
                     const answer = brandAnswers[item._id];
@@ -1002,6 +1051,23 @@ export default function OrderTrans() {
                     If you keep the original brand, we deliver it when it is
                     back in stock.
                   </p>
+                  {allBrandAnswersGiven && (
+                    <div className="brand-review-summary">
+                      <div className="brand-review-summary-title">
+                        For these items you will receive:
+                      </div>
+                      <ul>
+                        {brandReceiveSummary.map((row, index) => (
+                          <li key={index}>{row}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {openBrandOffers.length > 1 && (
+                    <p className="brand-review-progress" aria-live="polite">
+                      {brandAnswerCount} of {openBrandOffers.length} answered
+                    </p>
+                  )}
                   <button
                     className="btn-approve-proposal brand-review-submit"
                     onClick={handleSubmitBrandAnswers}

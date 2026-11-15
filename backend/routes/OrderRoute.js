@@ -1009,7 +1009,7 @@ router.patch("/:orderId/status", async (req, res) => {
         message: brandChangeOpen
           ? "New delivery date approved. Please also answer the brand change."
           : "Client approved the new delivery date",
-        order,
+        order: hideBrandDrafts(order),
       });
     }
 
@@ -1038,7 +1038,7 @@ router.patch("/:orderId/status", async (req, res) => {
       return res.json({
         success: true,
         message: "Order cancelled by client",
-        order,
+        order: hideBrandDrafts(order),
       });
     }
 
@@ -1476,7 +1476,9 @@ router.get("/user/:username", async (req, res) => {
 
     const orders = await Order.find({ $or: conditions }).sort({ createdAt: -1 });
 
-    res.json(await addUnitTypesToOrders(orders));
+    const withUnits = await addUnitTypesToOrders(orders);
+    // Unsent brand changes stay with the admin.
+    res.json(isStaffRequest(req) ? withUnits : withUnits.map(hideBrandDrafts));
   } catch (err) {
     console.error("Error fetching user orders:", err);
     res.status(500).json({ error: err.message });
@@ -2098,6 +2100,40 @@ const MAX_BRAND_REASON_LENGTH = 500;
 const hasOpenBrandChange = (order) =>
   (order.items || []).some((item) => item.brandChange?.status === "PROPOSED");
 
+const brandDraftLines = (order) =>
+  (order.items || []).filter((item) => item.brandChange?.status === "DRAFT");
+
+// Pieces of each replacement product that the order's drafts already use,
+// so two drafts cannot promise the same stock: { [itemCode]: pieces }.
+const draftPiecesByItemCode = (order, exceptLine = null) => {
+  const used = {};
+  brandDraftLines(order).forEach((item) => {
+    if (exceptLine && String(item._id) === String(exceptLine._id)) return;
+    const code = item.brandChange.toItemCode;
+    used[code] = (used[code] || 0) + (Number(item.brandChange.newQuantity) || 0);
+  });
+  return used;
+};
+
+const describeBrandOffer = (offer) =>
+  offer.newOrderMode === "box" && offer.newBoxes > 0
+    ? `${offer.newBoxes} box(es) of ${offer.toName} (${offer.newQuantity} pcs)`
+    : `${offer.newQuantity} pcs of ${offer.toName}`;
+
+// The client must not see brand changes the admin has not sent yet.
+const hideBrandDrafts = (order) => {
+  const plain = typeof order?.toObject === "function" ? order.toObject() : order;
+  if (!plain || !Array.isArray(plain.items)) return plain;
+  return {
+    ...plain,
+    items: plain.items.map((item) =>
+      item.brandChange?.status === "DRAFT"
+        ? { ...item, brandChange: { status: "" } }
+        : item,
+    ),
+  };
+};
+
 const findOrderLine = (order, lineId) =>
   mongoose.isValidObjectId(lineId) ? order.items.id(lineId) : null;
 
@@ -2257,19 +2293,25 @@ router.patch("/:orderId/propose-brand", async (req, res) => {
       return res.status(400).json({ message: "The new quantity is too large." });
     }
 
+    // Other drafts on this order may already use some of this brand's stock.
     const stock = await getAvailableStockByItemCode([product.itemCode]);
-    const available = stock[product.itemCode] || 0;
+    const usedByDrafts = draftPiecesByItemCode(order, line)[product.itemCode] || 0;
+    const available = Math.max(0, (stock[product.itemCode] || 0) - usedByDrafts);
     if (available < pieces) {
       return res.status(409).json({
-        message: `Only ${available} pcs of ${product.name} are in stock.`,
+        message: usedByDrafts > 0
+          ? `Only ${available} pcs of ${product.name} are left after the other brand changes on this order.`
+          : `Only ${available} pcs of ${product.name} are in stock.`,
         available,
       });
     }
 
+    // Saved as a draft. The order stays PENDING so the admin can change other
+    // lines too; send-brand-changes sends every draft to the client at once.
     const actor = getActor(req);
     const unitType = normalizeUnitType(product.unitType) || "Piece";
     line.brandChange = {
-      status: "PROPOSED",
+      status: "DRAFT",
       toItemCode: product.itemCode,
       toName: product.name,
       toUnitType: unitType,
@@ -2283,27 +2325,129 @@ router.patch("/:orderId/propose-brand", async (req, res) => {
       proposedAt: new Date(),
       answeredAt: null,
     };
-    order.status = "RETURNED";
-    order.brandChangeHistory.push({
-      fromItemCode: line.itemCode,
-      fromName: line.name,
-      toItemCode: product.itemCode,
-      toName: product.name,
-      replaceQuantity: replaceQty,
-      newQuantity: pieces,
-      newOrderMode: mode,
-      newBoxes: mode === "box" ? count : 0,
-      reason,
-      status: "PROPOSED",
-      by: actor.username,
-      at: new Date(),
-    });
     await order.save();
 
-    const offerText =
-      mode === "box"
-        ? `${count} box(es) of ${product.name} (${pieces} pcs)`
-        : `${pieces} pcs of ${product.name}`;
+    res.json({
+      success: true,
+      message: "Brand change saved. Send it to the client when all changes are ready.",
+      order,
+    });
+  } catch (err) {
+    console.error("Propose brand error:", err);
+    res.status(500).json({ message: "Could not save the brand change." });
+  }
+});
+
+// DELETE /:orderId/brand-draft/:lineId (Admin)
+// Removes a brand change that was saved but not sent.
+router.delete("/:orderId/brand-draft/:lineId", async (req, res) => {
+  try {
+    const order = await Order.findOne({ orderId: req.params.orderId });
+    if (!order) return res.status(404).json({ message: "Order not found." });
+
+    const line = findOrderLine(order, req.params.lineId);
+    if (!line) return res.status(404).json({ message: "Order line not found." });
+    if (line.brandChange?.status !== "DRAFT") {
+      return res.status(400).json({ message: "This line has no unsent brand change." });
+    }
+
+    line.brandChange = { status: "" };
+    await order.save();
+    res.json({ success: true, message: "Brand change removed.", order });
+  } catch (err) {
+    console.error("Remove brand draft error:", err);
+    res.status(500).json({ message: "Could not remove the brand change." });
+  }
+});
+
+// PATCH /:orderId/send-brand-changes (Admin)
+// Sends every saved brand change on the order to the client together: one
+// notification and one email. The order goes to RETURNED.
+router.patch("/:orderId/send-brand-changes", async (req, res) => {
+  try {
+    const order = await Order.findOne({ orderId: req.params.orderId });
+    if (!order) return res.status(404).json({ message: "Order not found." });
+
+    // PENDING, or RETURNED only for a new delivery date that the client has
+    // not answered yet (the client then answers both).
+    const canSend =
+      order.status === "PENDING" ||
+      (order.status === "RETURNED" &&
+        order.awaitingDateApproval &&
+        !hasOpenBrandChange(order));
+    if (!canSend) {
+      return res.status(400).json({
+        message: `Brand changes can only be sent while the order is PENDING. Order ${order.orderId} is ${order.status}.`,
+      });
+    }
+
+    const drafts = brandDraftLines(order);
+    if (drafts.length === 0) {
+      return res.status(400).json({ message: "There are no brand changes to send." });
+    }
+
+    // Check every draft again: stock or products may have changed since.
+    const codes = drafts.map((line) => line.brandChange.toItemCode);
+    const stock = await getAvailableStockByItemCode(codes);
+    const needed = draftPiecesByItemCode(order);
+    for (const line of drafts) {
+      const offer = line.brandChange;
+      const product = await Product.findOne({ itemCode: offer.toItemCode });
+      if (!product || !(Number(product.price) > 0) || !canClientSee(product, order.username)) {
+        return res.status(409).json({
+          message: `${offer.toName} is no longer available. Remove the change for ${line.name} and try again.`,
+        });
+      }
+      if (offer.replaceQuantity < 1 || offer.replaceQuantity > line.quantity) {
+        return res.status(409).json({
+          message: `The change for ${line.name} no longer matches the ordered quantity. Please edit it.`,
+        });
+      }
+      const available = stock[offer.toItemCode] || 0;
+      if (available < needed[offer.toItemCode]) {
+        return res.status(409).json({
+          message: `Only ${available} pcs of ${offer.toName} are in stock, but the brand changes need ${needed[offer.toItemCode]} pcs.`,
+          available,
+        });
+      }
+    }
+
+    const actor = getActor(req);
+    const sentAt = new Date();
+    const changes = [];
+    for (const line of drafts) {
+      const offer = line.brandChange;
+      offer.status = "PROPOSED";
+      offer.proposedBy = actor.username;
+      offer.proposedAt = sentAt;
+      offer.answeredAt = null;
+      order.brandChangeHistory.push({
+        fromItemCode: line.itemCode,
+        fromName: line.name,
+        toItemCode: offer.toItemCode,
+        toName: offer.toName,
+        replaceQuantity: offer.replaceQuantity,
+        newQuantity: offer.newQuantity,
+        newOrderMode: offer.newOrderMode,
+        newBoxes: offer.newBoxes,
+        reason: offer.reason,
+        status: "PROPOSED",
+        by: actor.username,
+        at: sentAt,
+      });
+      changes.push({
+        fromName: line.name,
+        replaceQuantity: offer.replaceQuantity,
+        toText: describeBrandOffer(offer),
+        reason: offer.reason,
+      });
+    }
+    order.status = "RETURNED";
+    await order.save();
+
+    const list = changes
+      .map((change) => `${change.toText} instead of ${change.replaceQuantity} pcs of ${change.fromName}`)
+      .join("; ");
 
     await createActivityLog({
       userId: actor.userId,
@@ -2311,13 +2455,16 @@ router.patch("/:orderId/propose-brand", async (req, res) => {
       role: actor.role,
       action: "Propose brand change",
       module: "Order",
-      description: `Order ${order.orderId}: offered ${offerText} instead of ${replaceQty} pcs of ${line.name}.`,
+      description: `Order ${order.orderId}: offered ${list}.`,
     });
 
     await Notification.create({
       name: order.name,
       orderId: order.orderId,
-      message: `Order #${order.orderId}: ${line.name} is not available. We are offering ${offerText} instead. Reason: ${reason}. Please accept or decline.`,
+      message:
+        changes.length === 1
+          ? `Order #${order.orderId}: ${changes[0].fromName} is not available. We are offering ${changes[0].toText} instead. Reason: ${changes[0].reason}. Please accept or decline.`
+          : `Order #${order.orderId}: ${changes.length} items are not available in the brand you picked. We are offering other brands. Please review and accept or decline each one.`,
     });
 
     try {
@@ -2326,7 +2473,11 @@ router.patch("/:orderId/propose-brand", async (req, res) => {
         await sendOrderStatusUpdate(
           {
             ...order.toObject(),
-            brandChanges: [{ fromName: line.name, toText: offerText, reason }],
+            brandChanges: changes.map(({ fromName, toText, reason }) => ({
+              fromName,
+              toText,
+              reason,
+            })),
           },
           clientEmail,
           "RETURNED",
@@ -2336,10 +2487,17 @@ router.patch("/:orderId/propose-brand", async (req, res) => {
       console.error("Failed to send brand change email:", emailError);
     }
 
-    res.json({ success: true, message: "Brand change sent to the client.", order });
+    res.json({
+      success: true,
+      message:
+        changes.length === 1
+          ? "Brand change sent to the client."
+          : `${changes.length} brand changes sent to the client.`,
+      order,
+    });
   } catch (err) {
-    console.error("Propose brand error:", err);
-    res.status(500).json({ message: "Could not propose the brand change." });
+    console.error("Send brand changes error:", err);
+    res.status(500).json({ message: "Could not send the brand changes." });
   }
 });
 

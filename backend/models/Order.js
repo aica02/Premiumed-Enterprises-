@@ -45,10 +45,12 @@ const orderSchema = new mongoose.Schema(
         originalName: { type: String, trim: true, default: "" },
         // An open or answered brand-change offer for this line. No price is
         // stored here: the client never sees the new brand's price.
+        // DRAFT: saved by the admin, not sent yet. All drafts on an order go
+        // to the client together (PATCH /:orderId/send-brand-changes).
         brandChange: {
           status: {
             type: String,
-            enum: ["", "PROPOSED", "ACCEPTED", "DECLINED"],
+            enum: ["", "DRAFT", "PROPOSED", "ACCEPTED", "DECLINED"],
             default: "",
           },
           toItemCode: { type: String, trim: true, default: "" },

@@ -145,7 +145,8 @@ const RULES = [
 
   // ---- Admin only ----
   { method: "GET", path: /^\/orders\/reset-counters$/, roles: [] },
-  { method: "PATCH", path: /^\/orders\/[^/]+\/(partial|edit-date|propose-brand)$/, roles: ADMIN },
+  { method: "PATCH", path: /^\/orders\/[^/]+\/(partial|edit-date|propose-brand|send-brand-changes)$/, roles: ADMIN },
+  { method: "DELETE", path: /^\/orders\/[^/]+\/brand-draft\/[^/]+$/, roles: ADMIN },
   { method: "GET", path: /^\/orders\/[^/]+\/brand-alternatives\/[^/]+$/, roles: ADMIN },
   { method: "*", path: /^\/usersAccessControlPage(\/.*)?$/, roles: ADMIN },
   { method: "*", path: /^\/auth\/(requests|approve-client)$/, roles: ADMIN },
