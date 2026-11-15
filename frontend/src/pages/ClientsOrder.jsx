@@ -8,6 +8,7 @@ import {
   FaFilter,
   FaPrint,
   FaExchangeAlt,
+  FaPaperPlane,
 } from "react-icons/fa";
 import { IoIosInformationCircleOutline } from "react-icons/io";
 import axios from "axios";
@@ -1683,11 +1684,23 @@ const ClientsOrder = () => {
                   <div className="brand-drafts-tray" role="region" aria-label="Brand changes to send">
                     <div className="brand-drafts-head">
                       <span className="brand-drafts-title">
-                        Brand changes to send ({brandDrafts.length})
+                        Brand changes to send
+                        <span className="brand-drafts-count">{brandDrafts.length}</span>
                       </span>
-                      <span className="brand-drafts-sub">
-                        The client gets all of them in one message.
-                      </span>
+                      <button
+                        type="button"
+                        className="brand-drafts-send"
+                        onClick={handleSendBrandDrafts}
+                        disabled={brandSending || !canSendBrandDrafts}
+                        title={
+                          canSendBrandDrafts
+                            ? ""
+                            : "Brand changes can only be sent while the order is PENDING"
+                        }
+                      >
+                        <FaPaperPlane aria-hidden="true" />
+                        {brandSending ? "SENDING..." : "SEND TO CLIENT"}
+                      </button>
                     </div>
                     <ul className="brand-drafts-list">
                       {brandDrafts.map((item) => {
@@ -1719,22 +1732,6 @@ const ClientsOrder = () => {
                         );
                       })}
                     </ul>
-                    <button
-                      type="button"
-                      className="btn-approve brand-drafts-send"
-                      onClick={handleSendBrandDrafts}
-                      disabled={brandSending || !canSendBrandDrafts}
-                      style={brandSending || !canSendBrandDrafts ? disabledStyle : {}}
-                      title={
-                        canSendBrandDrafts
-                          ? ""
-                          : "Brand changes can only be sent while the order is PENDING"
-                      }
-                    >
-                      {brandSending
-                        ? "SENDING..."
-                        : `SEND ${brandDrafts.length} ${brandDrafts.length === 1 ? "CHANGE" : "CHANGES"} TO CLIENT`}
-                    </button>
                   </div>
                 )}
               </div>

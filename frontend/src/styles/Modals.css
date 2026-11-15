@@ -1461,41 +1461,85 @@ button:disabled {
 /* Unsent brand changes, above the order footer */
 .brand-drafts-tray {
   margin-top: 16px;
-  padding: 12px 14px;
-  border: 1px solid #ecdca4;
-  border-radius: 10px;
-  background: #fffaeb;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  /* Product names keep their own casing (e.g. "Amical1B24pcs"). */
+  text-transform: none;
 }
-.brand-drafts-head { display: flex; flex-direction: column; gap: 2px; }
-.brand-drafts-title { font-weight: 700; font-size: 14px; color: #3d3d3d; }
-.brand-drafts-sub { font-size: 12px; color: #6b6b6b; }
+.brand-drafts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: #f4f4f4;
+  border-bottom: 1px solid #e6e6e6;
+}
+.brand-drafts-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #3d3d3d;
+}
+.brand-drafts-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #d4af37;
+  color: #fff;
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+}
+/* Same shape as the footer buttons; gold like CONFIRM PARTIAL. */
+.brand-drafts-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  background: #d4af37;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.brand-drafts-send:hover:not(:disabled) { background: #b8962e; }
+.brand-drafts-send:focus-visible { outline: 2px solid #7a5c0f; outline-offset: 2px; }
+.brand-drafts-send:disabled { background: #b3b3b3; cursor: not-allowed; }
 .brand-drafts-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 .brand-drafts-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: #fff;
-  border: 1px solid #f0e6c4;
+  gap: 12px;
+  padding: 10px 14px;
   font-size: 13px;
   color: #3d3d3d;
 }
-.brand-drafts-text { min-width: 0; overflow-wrap: anywhere; }
+.brand-drafts-row + .brand-drafts-row { border-top: 1px solid #eee; }
+.brand-drafts-text { min-width: 0; line-height: 1.45; overflow-wrap: anywhere; }
 .brand-drafts-arrow { color: #a8892b; }
 .brand-drafts-actions { display: inline-flex; gap: 6px; }
+@media (max-width: 560px) {
+  .brand-drafts-row { grid-template-columns: 1fr; }
+  .brand-drafts-actions { justify-self: start; }
+}
 .brand-drafts-actions button {
   padding: 4px 10px;
   border: 1px solid #d4af37;
@@ -1509,7 +1553,6 @@ button:disabled {
 .brand-drafts-actions button:hover { background: #fbf3dc; }
 .brand-drafts-actions button.danger { border-color: #e3b4b1; color: #a52a24; }
 .brand-drafts-actions button.danger:hover { background: #fdeaea; }
-.brand-drafts-send { align-self: flex-end; }
 
 
 /* The Change brand window */
