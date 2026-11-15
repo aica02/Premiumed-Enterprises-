@@ -17,7 +17,8 @@ import "../styles/Modals.css";
 import "../styles/capsules.css";
 import "../styles/ConfirmModal.css";
 import { Toaster, toast } from "react-hot-toast";
-import logo from "../assets/Premiumed logo.png";
+// Reports use the black-tile logo; the app screens keep the transparent one.
+import logo from "../assets/Premiumed-Report-Logo.png";
 import EmptyState from "../components/EmptyState";
 import {
   generateClientProfilePDF,

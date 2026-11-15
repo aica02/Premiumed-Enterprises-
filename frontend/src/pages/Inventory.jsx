@@ -9,7 +9,8 @@ import { FaPesoSign } from "react-icons/fa6";
 import { IoIosArrowDown } from "react-icons/io";
 import axios from "axios";
 import { Toaster, toast } from "react-hot-toast";
-import logo from "../assets/Premiumed logo.png";
+// Reports use the black-tile logo; the app screens keep the transparent one.
+import logo from "../assets/Premiumed-Report-Logo.png";
 import { generateInventoryReport } from "../utils/pdf/reportEngine";
 import { formatReportDate } from "../utils/pdf/pdfLayout";
 import logReportPrinted from "../utils/logReportPrinted";

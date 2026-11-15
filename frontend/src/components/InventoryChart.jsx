@@ -17,7 +17,8 @@ import "../styles/Dashboard.css";
 import EmptyState from "./EmptyState";
 import logReportPrinted from "../utils/logReportPrinted";
 
-import logo from "../assets/Premiumed logo.png";
+// Reports use the black-tile logo; the app screens keep the transparent one.
+import logo from "../assets/Premiumed-Report-Logo.png";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ||

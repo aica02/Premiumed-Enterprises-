@@ -19,7 +19,8 @@ import "../styles/ConfirmModal.css";
 import "../styles/formValidation.css";
 import { Toaster, toast } from "react-hot-toast";
 import AddressFields from "../components/AddressFields";
-import logo from "../assets/Premiumed logo.png";
+// Reports use the black-tile logo; the app screens keep the transparent one.
+import logo from "../assets/Premiumed-Report-Logo.png";
 import EmptyState from "../components/EmptyState";
 import { generateSupplyFilteredReport } from "../utils/pdf/SupplierInfoReportEngine";
 import { formatReportDate } from "../utils/pdf/pdfLayout";

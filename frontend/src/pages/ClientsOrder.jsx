@@ -17,7 +17,8 @@ import "../styles/InformationLayout.css";
 import "../styles/Modals.css";
 import "../styles/capsules.css";
 import { Toaster, toast } from "react-hot-toast";
-import logo from "../assets/Premiumed logo.png";
+// Reports use the black-tile logo; the app screens keep the transparent one.
+import logo from "../assets/Premiumed-Report-Logo.png";
 import EmptyState from "../components/EmptyState";
 import {
   generateReport,
@@ -1664,7 +1665,7 @@ const ClientsOrder = () => {
                                   ? `${balance} ${unitLabel(balance, item.unitType)}`
                                   : "Full Delivery"}
                               </td>
-                              <td> ₱{Number(item.price || 0).toFixed(2)} </td>
+                              <td> ₱{formatAmount(item.price)} </td>
                               <td>{availableStock} {unitLabel(availableStock, item.unitType)}</td>
                             </tr>
                           );
@@ -1676,7 +1677,7 @@ const ClientsOrder = () => {
 
                 <div>
                   <span className="detail-group total-amount">
-                    TOTAL: ₱ {Number(selectedOrder.total || 0).toFixed(2)}
+                    TOTAL: ₱ {formatAmount(selectedOrder.total)}
                   </span>
                 </div>
 
@@ -2072,6 +2073,13 @@ const isPaymentOverdue = (order) =>
   Boolean(order.paymentDueDate) &&
   new Date(order.paymentDueDate) <= new Date() &&
   !["COMPLETED", "AWAITING REVIEW"].includes(order.paymentStatus);
+
+// 5700 -> "5,700.00": thousands separators and always two decimals.
+const formatAmount = (value) =>
+  (Number(value) || 0).toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const formatShortDate = (value) =>
   new Date(value).toLocaleDateString("en-PH", {
