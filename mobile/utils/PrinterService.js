@@ -378,6 +378,27 @@ const ensureLabelSetup = async (device, char) => {
   await writeChunks(char, Buffer.from(`CLS\n`).toString("base64"));
 };
 
+// ---------------------------------------------------------------------------
+// Text wrapping for the item name
+//
+// The old code did itemName.slice(0, 20), which DROPPED everything past 20
+// characters. This splits the name into up to `maxLines` lines of at most
+// `maxLen` chars, breaking on spaces where possible and hard-breaking any
+// single word that is longer than a whole line.
+// ---------------------------------------------------------------------------
+const wrapText = (text, maxLen, maxLines = 2) => {
+  if (!text) return [];
+  const str = String(text);
+  const lines = [];
+  for (let i = 0; i < str.length && lines.length < maxLines; i += maxLen) {
+    lines.push(str.slice(i, i + maxLen));
+  }
+  return lines;
+};
+
+// TSPL treats a double quote as a string terminator, so strip/escape it
+const escapeTsplText = (value) => String(value ?? "").replace(/"/g, "'");
+
 const PRINTER_UNAVAILABLE_MESSAGE =
   "The printer is not connected. Make sure it is turned on and nearby, then try again.";
 
@@ -421,12 +442,24 @@ export const printBarcodeTSPL = async (
     // Send SIZE/GAP/DIRECTION/CLS once per connection
     await ensureLabelSetup(liveDevice, char);
 
-    // Only the label content + PRINT goes over the wire now
+    // Wrap the item name onto up to 2 lines instead of truncating it.
+    // 20 chars is about what fits per line at font "3" on a 50 mm label.
+    const safeName = escapeTsplText(itemName);
+    const nameLines = wrapText(safeName, 20, 2);
+
+    // One TEXT command per line, stacked vertically (40 dots apart)
+    const nameCommands = nameLines
+      .map((line, i) => `TEXT 40,${40 + i * 40},"3",0,1,1,"${line}"\n`)
+      .join("");
+
+    // Only the label content + PRINT goes over the wire now.
+    // Everything below the name is pushed down 20 dots to make room for
+    // a possible second line.
     const labelCommand =
-      `TEXT 40,40,"3",0,1,1,"${itemName.slice(0, 20)}"\n` +
-      `BARCODE 100,100,"128",120,0,0,1,2,"${batchCode}"\n` +
-      `TEXT 70,230,"3",0,1,1,"${batchCode}"\n` +
-      `TEXT 40,340,"3",0,1,1,"Exp: ${formattedExp}"\n` +
+      nameCommands +
+      `BARCODE 100,120,"128",120,0,0,1,2,"${escapeTsplText(batchCode)}"\n` +
+      `TEXT 70,250,"3",0,1,1,"${escapeTsplText(batchCode)}"\n` +
+      `TEXT 40,360,"3",0,1,1,"Exp: ${formattedExp}"\n` +
       `PRINT ${printQty},1\n`;
 
     const base64Data = Buffer.from(labelCommand).toString("base64");
