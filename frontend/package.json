@@ -14,6 +14,7 @@
     "bcrypt": "^6.0.0",
     "exceljs": "^4.4.0",
     "html5-qrcode": "^2.3.8",
+    "jsbarcode": "^3.11.6",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^1.14.0",

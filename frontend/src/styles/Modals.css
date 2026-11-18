@@ -569,6 +569,106 @@
   opacity: 0.7;
 }
 
+/* inventory management - edit batch */
+.btn-edit-batch {
+  background-color: #1565c0;
+  color: white;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  align-items: center;
+  transition: 0.3s;
+}
+.btn-edit-batch:hover {
+  background-color: #0d47a1;
+}
+.btn-edit-batch:disabled {
+  background-color: #d9d9d9;
+  color: #888;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.modal-action-footer .btn-edit-cancel {
+  background-color: transparent;
+  color: #333;
+  border: 1px solid #bdbdbd;
+}
+.modal-action-footer .btn-edit-cancel:hover {
+  background-color: #ececec;
+}
+
+/* Editable fields inside the Batch details modal (edit mode) */
+.edit-batch-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.edit-batch-field input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #c9c9c9;
+  border-radius: 5px;
+  padding: 6px 10px;
+  font-size: 14px;
+  background: #fff;
+  color: #333;
+  font-family: inherit;
+}
+.edit-batch-field input {
+  min-height: 30px;
+}
+.edit-batch-field input:focus {
+  outline: none;
+  border-color: #1565c0;
+  box-shadow: 0 0 0 2px rgba(21, 101, 192, 0.2);
+}
+
+.edit-batch-error {
+  font-size: 12px;
+  color: #c62828;
+  margin: 2px 0 0;
+}
+
+.edit-batch-summary {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #fff8e1;
+  border: 1px solid #f3d27a;
+  color: #6d4c00;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.edit-batch-summary-note {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+/* inventory management - batch barcode */
+.batch-barcode {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0 16px;
+}
+.batch-barcode-image {
+  background: #ffffff;
+  padding: 10px 14px 14px;
+  border: 1px solid #dcdcdc;
+  border-radius: 6px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.batch-barcode-image svg {
+  display: block;
+  max-width: 260px;
+  height: auto;
+}
+
 /* supplier information - purchases */
 .purchase-item-table {
   grid-template-columns: 1fr;

@@ -12,6 +12,9 @@ const batchSchema = new mongoose.Schema(
     disposedDate: { type: Date },
     box: { type: Number, required: true, min: 0 },
     quantity: { type: Number, required: true, min: 0 },
+    // Set only when an Admin edits this batch's No. of box per case.
+    // Unset means the batch uses the product's quantityPerBox.
+    quantityPerBox: { type: Number, min: 0 },
     unitType: { type: String, trim: true },
     storageLocation: {
       type: String,

@@ -4,7 +4,7 @@ import "../styles/InformationLayout.css";
 import "../styles/Modals.css";
 import "../styles/capsules.css";
 import "../styles/ConfirmModal.css";
-import { FaPrint, FaSearch, FaTimes, FaTrashAlt } from "react-icons/fa";
+import { FaEdit, FaPrint, FaSearch, FaTimes, FaTrashAlt } from "react-icons/fa";
 import { FaPesoSign } from "react-icons/fa6";
 import { IoIosArrowDown } from "react-icons/io";
 import axios from "axios";
@@ -17,6 +17,7 @@ import logReportPrinted from "../utils/logReportPrinted";
 import { CATEGORIES } from "../components/Categories";
 import EmptyState from "../components/EmptyState";
 import PricingModal from "../components/PricingModal";
+import BatchBarcode from "../components/BatchBarcode";
 import usePolling from "../hooks/usePolling";
 
 const BACKEND_URL =
@@ -42,6 +43,10 @@ const Inventory = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [batchToDispose, setBatchToDispose] = useState(null);
   const [isDisposing, setIsDisposing] = useState(false);
+  // Non-null while the Batch details modal is in edit mode.
+  const [editForm, setEditForm] = useState(null);
+  const [editErrors, setEditErrors] = useState({});
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const getFefoStatus = (expirationDate) => {
     if (!expirationDate) return { label: "Safe", className: "safe" };
@@ -115,6 +120,122 @@ const Inventory = () => {
   const closeConfirmModal = () => {
     setShowConfirmModal(false);
     setBatchToDispose(null);
+  };
+
+  const toDateInputValue = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toISOString().slice(0, 10);
+  };
+
+  // No. of box per case: the batch's own value when an Admin set one,
+  // otherwise the product's value.
+  const getPerBox = (batchData) =>
+    batchData.batch?.quantityPerBox ?? batchData.item?.quantityPerBox ?? 0;
+
+  const getEditOriginal = (batchData) => ({
+    box: String(batchData.batch.box ?? ""),
+    quantityPerBox: String(getPerBox(batchData)),
+    quantity: String(batchData.batch.quantity ?? ""),
+    expirationDate: toDateInputValue(batchData.batch.expirationDate),
+  });
+
+  const EDIT_FIELD_LABELS = {
+    box: "No. of case",
+    quantityPerBox: "No. of box per case",
+    quantity: "Quantity",
+    expirationDate: "Expiration date",
+  };
+
+  const startEditing = (batchData) => {
+    setEditForm(getEditOriginal(batchData));
+    setEditErrors({});
+  };
+
+  const cancelEditing = () => {
+    if (isSavingEdit) return;
+    setEditForm(null);
+    setEditErrors({});
+  };
+
+  const closeBatchModal = () => {
+    if (isSavingEdit) return;
+    setShowModal(false);
+    setEditForm(null);
+    setEditErrors({});
+  };
+
+  const isEditing = Boolean(editForm);
+
+  const updateEditField = (field, value) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
+    setEditErrors((prev) => ({ ...prev, [field]: undefined }));
+  };
+
+  const isWholeNumber = (value) => /^\d+$/.test(String(value).trim());
+
+  const getEditChanges = () => {
+    if (!editForm || !selectedBatch) return [];
+    const original = getEditOriginal(selectedBatch);
+    return Object.keys(EDIT_FIELD_LABELS)
+      .filter((field) => String(editForm[field]) !== String(original[field]))
+      .map((field) => ({
+        field,
+        from: original[field] || "none",
+        to: editForm[field] || "none",
+      }));
+  };
+
+  const validateEditForm = () => {
+    const errors = {};
+
+    if (!isWholeNumber(editForm.box))
+      errors.box = "Enter a whole number of 0 or more.";
+    if (!isWholeNumber(editForm.quantityPerBox))
+      errors.quantityPerBox = "Enter a whole number of 0 or more.";
+    if (!isWholeNumber(editForm.quantity))
+      errors.quantity = "Enter a whole number of 0 or more.";
+    if (!editForm.expirationDate)
+      errors.expirationDate = "Choose an expiration date.";
+    if (Object.keys(errors).length === 0 && getEditChanges().length === 0)
+      errors.form = "Change at least one field before saving.";
+
+    setEditErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedBatch || !editForm || !validateEditForm()) return;
+
+    const payload = {};
+    for (const { field } of getEditChanges()) {
+      payload[field] =
+        field === "expirationDate" ? editForm[field] : Number(editForm[field]);
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const res = await axios.put(
+        `${BACKEND_URL}/api/putaway/batch/${encodeURIComponent(
+          selectedBatch.batch.batchCode,
+        )}/edit`,
+        payload,
+      );
+      setSelectedBatch((prev) =>
+        prev ? { ...prev, batch: { ...prev.batch, ...res.data.batch } } : prev,
+      );
+      await fetchItems();
+      setEditForm(null);
+      setEditErrors({});
+      toast.success("Batch updated");
+    } catch (err) {
+      toast.error(
+        err.response?.data?.message || "Couldn't update the batch. Try again.",
+      );
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const uniqueItemCodes = [...new Set(items.map((item) => item.itemCode))]
@@ -620,6 +741,8 @@ const Inventory = () => {
                             className="view-batch-btn"
                             onClick={() => {
                               setSelectedBatch({ item, batch });
+                              setEditForm(null);
+                              setEditErrors({});
                               setShowModal(true);
                             }}
                           >
@@ -710,13 +833,14 @@ const Inventory = () => {
           <div className="inventory-modal-overlay">
             <div className="batch-modal-container">
               <div className="batch-modal-header">
-                <h3>Batch Details</h3>
+                <h3>{isEditing ? "Edit Batch" : "Batch Details"}</h3>
                 <FaTimes
                   className="batch-close-icon"
-                  onClick={() => setShowModal(false)}
+                  onClick={closeBatchModal}
                 />
               </div>
               <div className="batch-modal-body">
+                <BatchBarcode value={selectedBatch.batch.batchCode} />
                 <div className="modal-section-grid">
                   <div className="detail-group full title">
                     <h4>Supply Information</h4>
@@ -747,18 +871,38 @@ const Inventory = () => {
                     }
                   />
 
-                  <DetailItem
-                    label={
-                      (selectedBatch.batch.unitType ||
-                        selectedBatch.item?.unitType) === "Box"
-                        ? "No. of Case"
-                        : "No. of Box"
-                    }
-                    value={selectedBatch.batch?.box || "N/A"}
-                  />
+                  {isEditing ? (
+                    <EditableItem
+                      label={
+                        (selectedBatch.batch.unitType ||
+                          selectedBatch.item?.unitType) === "Box"
+                          ? "No. of Case"
+                          : "No. of Box"
+                      }
+                      error={editErrors.box}
+                    >
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={editForm.box}
+                        onChange={(e) => updateEditField("box", e.target.value)}
+                      />
+                    </EditableItem>
+                  ) : (
+                    <DetailItem
+                      label={
+                        (selectedBatch.batch.unitType ||
+                          selectedBatch.item?.unitType) === "Box"
+                          ? "No. of Case"
+                          : "No. of Box"
+                      }
+                      value={selectedBatch.batch?.box || "N/A"}
+                    />
+                  )}
 
-                  <DetailItem
-                    label={`No. of ${
+                  {(() => {
+                    const perBoxLabel = `No. of ${
                       selectedBatch.batch.unitType ||
                       selectedBatch.item?.unitType ||
                       "N/A"
@@ -767,9 +911,48 @@ const Inventory = () => {
                         selectedBatch.item?.unitType) === "Box"
                         ? "Case"
                         : "Box"
-                    }`}
-                    value={selectedBatch.item?.quantityPerBox}
-                  />
+                    }`;
+                    return isEditing ? (
+                      <EditableItem
+                        label={perBoxLabel}
+                        error={editErrors.quantityPerBox}
+                      >
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={editForm.quantityPerBox}
+                          onChange={(e) =>
+                            updateEditField("quantityPerBox", e.target.value)
+                          }
+                        />
+                      </EditableItem>
+                    ) : (
+                      <DetailItem
+                        label={perBoxLabel}
+                        value={String(getPerBox(selectedBatch))}
+                      />
+                    );
+                  })()}
+
+                  {isEditing ? (
+                    <EditableItem label="Quantity" error={editErrors.quantity}>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={editForm.quantity}
+                        onChange={(e) =>
+                          updateEditField("quantity", e.target.value)
+                        }
+                      />
+                    </EditableItem>
+                  ) : (
+                    <DetailItem
+                      label="Quantity"
+                      value={String(selectedBatch.batch.quantity ?? "N/A")}
+                    />
+                  )}
 
                   <DetailItem
                     label="Status"
@@ -788,16 +971,31 @@ const Inventory = () => {
                   <div className="detail-group full title">
                     <h4>Status Information</h4>
                   </div>
-                  <DetailItem
-                    label="Expiration Date"
-                    value={
-                      selectedBatch.batch.expirationDate
-                        ? new Date(
-                            selectedBatch.batch.expirationDate,
-                          ).toLocaleDateString()
-                        : "N/A"
-                    }
-                  />
+                  {isEditing ? (
+                    <EditableItem
+                      label="Expiration Date"
+                      error={editErrors.expirationDate}
+                    >
+                      <input
+                        type="date"
+                        value={editForm.expirationDate}
+                        onChange={(e) =>
+                          updateEditField("expirationDate", e.target.value)
+                        }
+                      />
+                    </EditableItem>
+                  ) : (
+                    <DetailItem
+                      label="Expiration Date"
+                      value={
+                        selectedBatch.batch.expirationDate
+                          ? new Date(
+                              selectedBatch.batch.expirationDate,
+                            ).toLocaleDateString()
+                          : "N/A"
+                      }
+                    />
+                  )}
                   <DetailItem
                     label="FEFO Status"
                     value={
@@ -826,28 +1024,78 @@ const Inventory = () => {
                     }
                   />
                 </div>
+
+                {isEditing && getEditChanges().length > 0 && (
+                  <div className="edit-batch-summary">
+                    {getEditChanges().map(({ field, from, to }) => (
+                      <div key={field}>
+                        {EDIT_FIELD_LABELS[field]}: {from} → {to}
+                      </div>
+                    ))}
+                    <div className="edit-batch-summary-note">
+                      This change will be recorded in the activity logs.
+                    </div>
+                  </div>
+                )}
+                {isEditing && editErrors.form && (
+                  <p className="edit-batch-error">{editErrors.form}</p>
+                )}
               </div>
               <div className="modal-action-footer">
-                {selectedBatch.batch.status === "disposed" ? (
-                  <span className="btn-dispose disabled">
-                    BATCH ALREADY DISPOSED
-                  </span>
-                ) : selectedBatch.batch.status === "for disposal" ? (
-                  <span className="btn-dispose disabled">
-                    WAITING FOR DISPOSAL
-                  </span>
+                {isEditing ? (
+                  <>
+                    <button
+                      className="btn-edit-cancel"
+                      onClick={cancelEditing}
+                      disabled={isSavingEdit}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="btn-edit-batch"
+                      onClick={handleSaveEdit}
+                      disabled={isSavingEdit}
+                    >
+                      {isSavingEdit ? "Saving..." : "Save Changes"}
+                    </button>
+                  </>
                 ) : (
-                  <button
-                    className="btn-dispose"
-                    disabled={
-                      !["Expired", "Near Expiry"].includes(
-                        getFefoStatus(selectedBatch.batch.expirationDate).label,
-                      )
-                    }
-                    onClick={() => openConfirmModal(selectedBatch)}
-                  >
-                    DISPOSE
-                  </button>
+                  <>
+                    <button
+                      className="btn-edit-batch"
+                      disabled={selectedBatch.batch.status !== "stored"}
+                      title={
+                        selectedBatch.batch.status !== "stored"
+                          ? "Only stored batches can be edited"
+                          : undefined
+                      }
+                      onClick={() => startEditing(selectedBatch)}
+                    >
+                      <FaEdit /> EDIT
+                    </button>
+                    {selectedBatch.batch.status === "disposed" ? (
+                      <span className="btn-dispose disabled">
+                        BATCH ALREADY DISPOSED
+                      </span>
+                    ) : selectedBatch.batch.status === "for disposal" ? (
+                      <span className="btn-dispose disabled">
+                        WAITING FOR DISPOSAL
+                      </span>
+                    ) : (
+                      <button
+                        className="btn-dispose"
+                        disabled={
+                          !["Expired", "Near Expiry"].includes(
+                            getFefoStatus(selectedBatch.batch.expirationDate)
+                              .label,
+                          )
+                        }
+                        onClick={() => openConfirmModal(selectedBatch)}
+                      >
+                        DISPOSE
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -898,6 +1146,15 @@ const DetailItem = ({ label, value, fullWidth, className = "" }) => (
     <label className="field-label">{label}</label>
     <div className="field-box">{value || "N/A"}</div>
   </div>
+);
+
+// Same layout as DetailItem, with an input in place of the read-only box.
+const EditableItem = ({ label, error, children }) => (
+  <label className="field-group edit-batch-field">
+    <span className="field-label">{label}</span>
+    {children}
+    {error && <span className="edit-batch-error">{error}</span>}
+  </label>
 );
 
 export default Inventory;

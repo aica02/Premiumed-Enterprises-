@@ -156,6 +156,7 @@ const RULES = [
   { method: "PUT", path: /^\/products\/(updatePrices|[^/]+\/reserve)$/, roles: ADMIN },
   { method: "GET", path: /^\/products\/reservable-clients$/, roles: ADMIN },
   { method: "GET", path: /^\/activitylogs$/, roles: ADMIN },
+  { method: "PUT", path: /^\/putaway\/batch\/[^/]+\/edit$/, roles: ADMIN },
   { method: "*", path: /^\/notifications(\/.*)?$/, roles: ADMIN },
   { method: "GET", path: /^\/suppliers(\/all)?$/, roles: EMPLOYEES },
   { method: "*", path: /^\/suppliers(\/.*)?$/, roles: ADMIN },

@@ -125,8 +125,12 @@ const getBatchProduct = (batch, items) => {
 const getBatchUnitType = (batch, items) =>
   batch.unitType || getBatchProduct(batch, items)?.unitType || "N/A";
 
+// A batch's own No. of box per case (set when an Admin corrects it in
+// Inventory) wins over the product's value.
 const getBatchQuantityPerBox = (batch, items) => {
-  const quantityPerBox = Number(getBatchProduct(batch, items)?.quantityPerBox);
+  const quantityPerBox = Number(
+    batch.quantityPerBox ?? getBatchProduct(batch, items)?.quantityPerBox,
+  );
   return Number.isFinite(quantityPerBox) && quantityPerBox > 0
     ? quantityPerBox
     : "N/A";
