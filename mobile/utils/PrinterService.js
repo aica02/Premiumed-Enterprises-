@@ -388,40 +388,12 @@ const ensureLabelSetup = async (device, char) => {
 // ---------------------------------------------------------------------------
 const wrapText = (text, maxLen, maxLines = 2) => {
   if (!text) return [];
-  const words = String(text).trim().split(/\s+/);
+  const str = String(text);
   const lines = [];
-  let current = "";
-
-  for (const word of words) {
-    if (word.length > maxLen) {
-      // Flush whatever we have, then hard-break the long word
-      if (current) {
-        lines.push(current);
-        current = "";
-        if (lines.length === maxLines) break;
-      }
-      let rest = word;
-      while (rest.length > maxLen && lines.length < maxLines) {
-        lines.push(rest.slice(0, maxLen));
-        rest = rest.slice(maxLen);
-      }
-      if (lines.length === maxLines) break;
-      current = rest;
-      continue;
-    }
-
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxLen) {
-      current = candidate;
-    } else {
-      lines.push(current);
-      current = word;
-      if (lines.length === maxLines) break;
-    }
+  for (let i = 0; i < str.length && lines.length < maxLines; i += maxLen) {
+    lines.push(str.slice(i, i + maxLen));
   }
-
-  if (current && lines.length < maxLines) lines.push(current);
-  return lines.slice(0, maxLines);
+  return lines;
 };
 
 // TSPL treats a double quote as a string terminator, so strip/escape it
