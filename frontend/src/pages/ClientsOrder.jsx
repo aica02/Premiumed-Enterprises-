@@ -153,65 +153,57 @@ const ClientsOrder = () => {
   };
 
   const showInsufficientStockToast = (items) => {
+    // One warning for the whole order: a single icon, heading and
+    // recommendation, with the short items listed underneath.
+    const title =
+      items.length === 0
+        ? "There is not enough stock to approve this order."
+        : items.length === 1
+          ? `Insufficient stock for ${items[0].productName || "Unknown Product"}`
+          : `Insufficient stock for ${items.length} items`;
+
     toast(
-      <div>
-        {items.length > 0 ? (
-          items.map((item, index) => (
-            <div
-              key={item.itemCode || index}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-              }}
-            >
-              <IoIosInformationCircleOutline
-                style={{
-                  color: "red",
-                  fontSize: "40px",
-                  flexShrink: 0,
-                }}
-              />
-              <div>
-                <div style={{ marginBottom: "5px" }}>
-                  <strong>
-                    Insufficient Stock for{" "}
-                    {item.productName || "Unknown Product"}
-                  </strong>
-                </div>
-                <div>
-                  Available: {item.available ?? 0}{" "}
-                  {unitLabel(item.available ?? 0, item.unitType)}
-                </div>
-                <div style={{ marginTop: "5px", fontWeight: "600" }}>
-                  Partial delivery is recommended.
-                </div>
-              </div>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+        <IoIosInformationCircleOutline
+          style={{ color: "red", fontSize: "40px", flexShrink: 0 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <strong>{title}</strong>
+          {items.length > 0 && (
+            <div style={{ marginTop: "8px", borderTop: "1px solid #e5e5e5" }}>
+              {items.map((item, index) => {
+                const available = item.available ?? 0;
+                return (
+                  <div
+                    key={item.itemCode || index}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      padding: "6px 0",
+                      borderBottom: "1px solid #e5e5e5",
+                    }}
+                  >
+                    {items.length > 1 && (
+                      <span>{item.productName || "Unknown Product"}</span>
+                    )}
+                    <span
+                      style={{
+                        whiteSpace: "nowrap",
+                        color: available === 0 ? "red" : undefined,
+                      }}
+                    >
+                      Available: {available} {unitLabel(available, item.unitType)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          ))
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-            }}
-          >
-            <IoIosInformationCircleOutline
-              style={{
-                color: "red",
-                fontSize: "40px",
-                flexShrink: 0,
-              }}
-            />
-            <div>
-              <div>There is not enough stock to approve this order.</div>
-              <div style={{ marginTop: "5px", fontWeight: "600" }}>
-                Partial delivery is recommended.
-              </div>
-            </div>
+          )}
+          <div style={{ marginTop: "8px", fontWeight: "600" }}>
+            Partial delivery or brand change is recommended.
           </div>
-        )}
+        </div>
       </div>,
       { duration: 8000 },
     );
